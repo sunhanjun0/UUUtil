@@ -1,0 +1,86 @@
+/**
+ * 共享类型 —— 所有插件和核心模块共同使用的类型定义
+ */
+
+/** 插件清单 */
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  enabled: boolean;
+}
+
+/** 事件日志条目 */
+export interface EventLogEntry {
+  event: string;
+  payload?: string;
+  timestamp: string;
+}
+
+/** hello-world 插件对外暴露的数据 */
+export interface HelloWorldApi {
+  greet(name: string): string;
+}
+
+/** calculator 插件对外暴露的数据 */
+export interface CalculatorApi {
+  calculate(expression: string): string;
+}
+
+/** dev-utils 插件对外暴露的数据 */
+export interface DevUtilsApi {
+  jsonFormat(input: string): { success: boolean; output: string };
+  base64Encode(input: string): string;
+  base64Decode(input: string): { success: boolean; output: string };
+  timestampToDate(ts: string): { success: boolean; output: string };
+  dateToTimestamp(dateStr: string): { success: boolean; output: string };
+  regexTest(pattern: string, text: string, flags: string): { success: boolean; matches: string[]; error?: string };
+  uuidGenerate(version: 'v4' | 'v7'): string;
+}
+
+/** 知识库笔记 */
+export interface KnowledgeNote {
+  id: string;
+  title: string;
+  content: string;
+  categoryId: string;
+  tagIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 知识库分类 */
+export interface KnowledgeCategory {
+  id: string;
+  name: string;
+  color?: string;
+  createdAt: string;
+}
+
+/** 知识库标签 */
+export interface KnowledgeTag {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+/** 知识库搜索结果 */
+export interface KnowledgeSearchResult {
+  notes: KnowledgeNote[];
+  total: number;
+}
+
+/** knowledge-base 插件对外暴露的 API */
+export interface KnowledgeBaseApi {
+  createNote(title: string, content: string, categoryId: string, tagIds: string[]): { success: boolean; noteId?: string; error?: string };
+  updateNote(noteId: string, title: string, content: string, categoryId: string, tagIds: string[]): { success: boolean; error?: string };
+  deleteNote(noteId: string): { success: boolean; error?: string };
+  getNotes(categoryId?: string, tagId?: string): KnowledgeNote[];
+  searchNotes(keyword: string): KnowledgeSearchResult;
+  createCategory(name: string, color?: string): { success: boolean; categoryId?: string; error?: string };
+  getCategories(): KnowledgeCategory[];
+  deleteCategory(categoryId: string): { success: boolean; error?: string };
+  createTag(name: string): { success: boolean; tagId?: string; error?: string };
+  getTags(): KnowledgeTag[];
+  deleteTag(tagId: string): { success: boolean; error?: string };
+}
