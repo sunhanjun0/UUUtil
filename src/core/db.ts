@@ -35,6 +35,8 @@ export async function initDatabase(customPath?: string): Promise<SqlJsDatabase> 
     db = new SQL.Database();
   }
 
+  db.run('PRAGMA foreign_keys = ON');
+
   // 系统表：插件注册信息
   db.run(`
     CREATE TABLE IF NOT EXISTS _plugins (
@@ -54,6 +56,15 @@ export async function initDatabase(customPath?: string): Promise<SqlJsDatabase> 
       event       TEXT NOT NULL,
       payload     TEXT,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // 白板状态表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS whiteboard_state (
+      key         TEXT PRIMARY KEY,
+      value       TEXT NOT NULL,
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
 

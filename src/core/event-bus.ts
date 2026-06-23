@@ -16,6 +16,15 @@ class EventBus {
     this.listeners.get(event)!.add(handler);
   }
 
+  /** 监听一次事件 */
+  once(event: string, handler: EventHandler): void {
+    const wrappedHandler: EventHandler = (...args) => {
+      this.off(event, wrappedHandler);
+      handler(...args);
+    };
+    this.on(event, wrappedHandler);
+  }
+
   /** 取消监听 */
   off(event: string, handler: EventHandler): void {
     this.listeners.get(event)?.delete(handler);

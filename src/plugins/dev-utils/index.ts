@@ -23,8 +23,9 @@ export function activate(): void {
 
   bus.on('dev-utils:invoke', (action: string, ...args: any[]) => {
     const handler = (api as any)[action];
-    if (typeof handler !== 'function') return;
-    const result = handler(...args);
+    const result = typeof handler === 'function'
+      ? handler(...args)
+      : { success: false, output: `未知开发工具动作: ${action}` };
 
     try {
       const db = getDatabase();

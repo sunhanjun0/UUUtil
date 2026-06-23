@@ -6,26 +6,72 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, autoSave } from '../../core/db';
 import type { KnowledgeBaseApi, KnowledgeNote, KnowledgeCategory, KnowledgeTag, KnowledgeSearchResult } from '../../shared/types';
 
+function runInTransaction<T>(operation: () => T): T {
+  const db = getDatabase();
+  db.run('BEGIN');
+  try {
+    const result = operation();
+    db.run('COMMIT');
+    autoSave();
+    return result;
+  } catch (err) {
+    db.run('ROLLBACK');
+    throw err;
+  }
+}
+
+function selectRows(sql: string, params: any[] = []): any[][] {
+  const db = getDatabase();
+  const statement = db.prepare(sql);
+  try {
+    statement.bind(params);
+    const rows: any[][] = [];
+    while (statement.step()) {
+      rows.push(statement.get());
+    }
+    return rows;
+  } finally {
+    statement.free();
+  }
+}
+
+function getTagIds(noteId: string): string[] {
+  return selectRows(`SELECT tag_id FROM kb_note_tags WHERE note_id = ?`, [noteId]).map((row) => row[0]);
+}
+
+function mapNoteRow(row: any[]): KnowledgeNote {
+  return {
+    id: row[0],
+    title: row[1],
+    content: row[2],
+    categoryId: row[3],
+    tagIds: getTagIds(row[0]),
+    createdAt: row[4],
+    updatedAt: row[5],
+  };
+}
+
 export const api: KnowledgeBaseApi = {
   createNote(title: string, content: string, categoryId: string, tagIds: string[]): { success: boolean; noteId?: string; error?: string } {
     try {
-      const db = getDatabase();
       const noteId = uuidv4();
       const now = new Date().toISOString();
 
-      db.run(
-        `INSERT INTO kb_notes (id, title, content, category_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-        [noteId, title, content, categoryId, now, now]
-      );
-
-      for (const tagId of tagIds) {
+      runInTransaction(() => {
+        const db = getDatabase();
         db.run(
-          `INSERT INTO kb_note_tags (note_id, tag_id) VALUES (?, ?)`,
-          [noteId, tagId]
+          `INSERT INTO kb_notes (id, title, content, category_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          [noteId, title, content, categoryId || null, now, now]
         );
-      }
 
-      autoSave();
+        for (const tagId of tagIds) {
+          db.run(
+            `INSERT INTO kb_note_tags (note_id, tag_id) VALUES (?, ?)`,
+            [noteId, tagId]
+          );
+        }
+      });
+
       return { success: true, noteId };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -34,24 +80,25 @@ export const api: KnowledgeBaseApi = {
 
   updateNote(noteId: string, title: string, content: string, categoryId: string, tagIds: string[]): { success: boolean; error?: string } {
     try {
-      const db = getDatabase();
-      const now = new Date().toISOString();
+      runInTransaction(() => {
+        const db = getDatabase();
+        const now = new Date().toISOString();
 
-      db.run(
-        `UPDATE kb_notes SET title = ?, content = ?, category_id = ?, updated_at = ? WHERE id = ?`,
-        [title, content, categoryId, now, noteId]
-      );
-
-      db.run(`DELETE FROM kb_note_tags WHERE note_id = ?`, [noteId]);
-
-      for (const tagId of tagIds) {
         db.run(
-          `INSERT INTO kb_note_tags (note_id, tag_id) VALUES (?, ?)`,
-          [noteId, tagId]
+          `UPDATE kb_notes SET title = ?, content = ?, category_id = ?, updated_at = ? WHERE id = ?`,
+          [title, content, categoryId || null, now, noteId]
         );
-      }
 
-      autoSave();
+        db.run(`DELETE FROM kb_note_tags WHERE note_id = ?`, [noteId]);
+
+        for (const tagId of tagIds) {
+          db.run(
+            `INSERT INTO kb_note_tags (note_id, tag_id) VALUES (?, ?)`,
+            [noteId, tagId]
+          );
+        }
+      });
+
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -60,10 +107,11 @@ export const api: KnowledgeBaseApi = {
 
   deleteNote(noteId: string): { success: boolean; error?: string } {
     try {
-      const db = getDatabase();
-      db.run(`DELETE FROM kb_note_tags WHERE note_id = ?`, [noteId]);
-      db.run(`DELETE FROM kb_notes WHERE id = ?`, [noteId]);
-      autoSave();
+      runInTransaction(() => {
+        const db = getDatabase();
+        db.run(`DELETE FROM kb_note_tags WHERE note_id = ?`, [noteId]);
+        db.run(`DELETE FROM kb_notes WHERE id = ?`, [noteId]);
+      });
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -72,41 +120,26 @@ export const api: KnowledgeBaseApi = {
 
   getNotes(categoryId?: string, tagId?: string): KnowledgeNote[] {
     try {
-      const db = getDatabase();
-      let query = `SELECT n.id, n.title, n.content, n.category_id, n.created_at, n.updated_at FROM kb_notes n`;
+      const conditions: string[] = [];
+      const params: any[] = [];
 
       if (categoryId) {
-        query += ` WHERE n.category_id = '${categoryId}'`;
+        conditions.push(`n.category_id = ?`);
+        params.push(categoryId);
       }
 
       if (tagId) {
-        query += categoryId ? ` AND` : ` WHERE`;
-        query += ` n.id IN (SELECT note_id FROM kb_note_tags WHERE tag_id = '${tagId}')`;
+        conditions.push(`n.id IN (SELECT note_id FROM kb_note_tags WHERE tag_id = ?)`);
+        params.push(tagId);
       }
 
-      query += ` ORDER BY n.updated_at DESC`;
+      const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+      const rows = selectRows(
+        `SELECT n.id, n.title, n.content, n.category_id, n.created_at, n.updated_at FROM kb_notes n${whereClause} ORDER BY n.updated_at DESC`,
+        params
+      );
 
-      const result = db.exec(query);
-
-      if (result.length === 0) return [];
-
-      const rows = result[0].values;
-      return rows.map((row: any) => {
-        const tagsResult = db.exec(
-          `SELECT tag_id FROM kb_note_tags WHERE note_id = '${row[0]}'`
-        );
-        const tagIds = tagsResult.length > 0 ? tagsResult[0].values.map((t: any) => t[0]) : [];
-
-        return {
-          id: row[0],
-          title: row[1],
-          content: row[2],
-          categoryId: row[3],
-          tagIds,
-          createdAt: row[4],
-          updatedAt: row[5],
-        } as KnowledgeNote;
-      });
+      return rows.map(mapNoteRow);
     } catch (err) {
       console.error('[knowledge-base] getNotes 错误:', err);
       return [];
@@ -115,33 +148,13 @@ export const api: KnowledgeBaseApi = {
 
   searchNotes(keyword: string): KnowledgeSearchResult {
     try {
-      const db = getDatabase();
       const searchPattern = `%${keyword}%`;
-      const result = db.exec(
+      const rows = selectRows(
         `SELECT id, title, content, category_id, created_at, updated_at FROM kb_notes
-         WHERE title LIKE '${keyword}%' OR content LIKE '%${keyword}%' ORDER BY updated_at DESC`
+         WHERE title LIKE ? OR content LIKE ? ORDER BY updated_at DESC`,
+        [searchPattern, searchPattern]
       );
-
-      if (result.length === 0) return { notes: [], total: 0 };
-
-      const rows = result[0].values;
-      const notes = rows.map((row: any) => {
-        const tags = db.exec(
-          `SELECT tag_id FROM kb_note_tags WHERE note_id = '${row[0]}'`
-        );
-        const tagIds = tags.length > 0 ? tags[0].values.map((t: any) => t[0]) : [];
-
-        return {
-          id: row[0],
-          title: row[1],
-          content: row[2],
-          categoryId: row[3],
-          tagIds,
-          createdAt: row[4],
-          updatedAt: row[5],
-        } as KnowledgeNote;
-      });
-
+      const notes = rows.map(mapNoteRow);
       return { notes, total: notes.length };
     } catch (err) {
       console.error('[knowledge-base] searchNotes 错误:', err);
@@ -151,16 +164,17 @@ export const api: KnowledgeBaseApi = {
 
   createCategory(name: string, color?: string): { success: boolean; categoryId?: string; error?: string } {
     try {
-      const db = getDatabase();
       const categoryId = uuidv4();
       const now = new Date().toISOString();
 
-      db.run(
-        `INSERT INTO kb_categories (id, name, color, created_at) VALUES (?, ?, ?, ?)`,
-        [categoryId, name, color || '#999999', now]
-      );
+      runInTransaction(() => {
+        const db = getDatabase();
+        db.run(
+          `INSERT INTO kb_categories (id, name, color, created_at) VALUES (?, ?, ?, ?)`,
+          [categoryId, name, color || '#999999', now]
+        );
+      });
 
-      autoSave();
       return { success: true, categoryId };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -169,12 +183,7 @@ export const api: KnowledgeBaseApi = {
 
   getCategories(): KnowledgeCategory[] {
     try {
-      const db = getDatabase();
-      const result = db.exec(`SELECT id, name, color, created_at FROM kb_categories ORDER BY created_at`);
-
-      if (result.length === 0) return [];
-
-      return result[0].values.map((row: any) => ({
+      return selectRows(`SELECT id, name, color, created_at FROM kb_categories ORDER BY created_at`).map((row) => ({
         id: row[0],
         name: row[1],
         color: row[2],
@@ -188,9 +197,11 @@ export const api: KnowledgeBaseApi = {
 
   deleteCategory(categoryId: string): { success: boolean; error?: string } {
     try {
-      const db = getDatabase();
-      db.run(`DELETE FROM kb_categories WHERE id = ?`, [categoryId]);
-      autoSave();
+      runInTransaction(() => {
+        const db = getDatabase();
+        db.run(`UPDATE kb_notes SET category_id = NULL WHERE category_id = ?`, [categoryId]);
+        db.run(`DELETE FROM kb_categories WHERE id = ?`, [categoryId]);
+      });
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -199,16 +210,17 @@ export const api: KnowledgeBaseApi = {
 
   createTag(name: string): { success: boolean; tagId?: string; error?: string } {
     try {
-      const db = getDatabase();
       const tagId = uuidv4();
       const now = new Date().toISOString();
 
-      db.run(
-        `INSERT INTO kb_tags (id, name, created_at) VALUES (?, ?, ?)`,
-        [tagId, name, now]
-      );
+      runInTransaction(() => {
+        const db = getDatabase();
+        db.run(
+          `INSERT INTO kb_tags (id, name, created_at) VALUES (?, ?, ?)`,
+          [tagId, name, now]
+        );
+      });
 
-      autoSave();
       return { success: true, tagId };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -217,12 +229,7 @@ export const api: KnowledgeBaseApi = {
 
   getTags(): KnowledgeTag[] {
     try {
-      const db = getDatabase();
-      const result = db.exec(`SELECT id, name, created_at FROM kb_tags ORDER BY created_at`);
-
-      if (result.length === 0) return [];
-
-      return result[0].values.map((row: any) => ({
+      return selectRows(`SELECT id, name, created_at FROM kb_tags ORDER BY created_at`).map((row) => ({
         id: row[0],
         name: row[1],
         createdAt: row[2],
@@ -235,10 +242,11 @@ export const api: KnowledgeBaseApi = {
 
   deleteTag(tagId: string): { success: boolean; error?: string } {
     try {
-      const db = getDatabase();
-      db.run(`DELETE FROM kb_note_tags WHERE tag_id = ?`, [tagId]);
-      db.run(`DELETE FROM kb_tags WHERE id = ?`, [tagId]);
-      autoSave();
+      runInTransaction(() => {
+        const db = getDatabase();
+        db.run(`DELETE FROM kb_note_tags WHERE tag_id = ?`, [tagId]);
+        db.run(`DELETE FROM kb_tags WHERE id = ?`, [tagId]);
+      });
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };

@@ -17,6 +17,64 @@ export interface EventLogEntry {
   timestamp: string;
 }
 
+/** AI 消息角色 */
+export type AiMessageRole = 'system' | 'user' | 'assistant';
+
+/** AI 对话消息 */
+export interface AiMessage {
+  role: AiMessageRole;
+  content: string;
+}
+
+/** AI Provider 类型 */
+export type AiProviderType = 'openai-compatible' | 'custom';
+
+/** AI Provider 配置 */
+export interface AiProviderConfig {
+  id: string;
+  name: string;
+  type: AiProviderType;
+  baseUrl: string;
+  apiKey?: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** AI 默认模型与参数配置 */
+export interface AiRuntimeConfig {
+  defaultProviderId?: string;
+  defaultModel?: string;
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+}
+
+/** AI 文本生成请求 */
+export interface AiChatRequest {
+  messages: AiMessage[];
+  providerId?: string;
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+}
+
+/** AI 文本生成响应 */
+export interface AiChatResponse {
+  success: boolean;
+  content?: string;
+  providerId?: string;
+  model?: string;
+  error?: string;
+}
+
+/** AI 配置保存结果 */
+export interface AiConfigResult {
+  success: boolean;
+  error?: string;
+}
+
 /** hello-world 插件对外暴露的数据 */
 export interface HelloWorldApi {
   greet(name: string): string;
@@ -30,6 +88,8 @@ export interface CalculatorApi {
 /** dev-utils 插件对外暴露的数据 */
 export interface DevUtilsApi {
   jsonFormat(input: string): { success: boolean; output: string };
+  sqlFormat(input: string): { success: boolean; output: string };
+  sqlCompress(input: string): { success: boolean; output: string };
   base64Encode(input: string): string;
   base64Decode(input: string): { success: boolean; output: string };
   timestampToDate(ts: string): { success: boolean; output: string };

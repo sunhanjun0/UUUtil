@@ -2,14 +2,35 @@
  * Electron 主进程入口 —— 悬浮球 + 面板双窗口模式
  */
 
-import { app, BrowserWindow, ipcMain, Menu, screen, nativeImage, Tray } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, nativeImage, Tray } from 'electron';
 import path from 'path';
-import { initDatabase, closeDatabase, bus } from '../core';
+import {
+  initDatabase,
+  closeDatabase,
+  getDatabase,
+  autoSave,
+  bus,
+  initAi,
+  listAiProviders,
+  upsertAiProvider,
+  deleteAiProvider,
+  getAiRuntimeConfig,
+  updateAiRuntimeConfig,
+  chat,
+} from '../core';
 import { loadAllPlugins, listPlugins } from '../core/plugin-loader';
+import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig } from '../shared/types';
 
 // ---------- 尺寸常量 ----------
 const BALL_SIZE = 96;
 const BALL_CIRCLE_RADIUS = 22; // 视觉球半径 (44/2)，setShape 只裁切球体区域，光晕超出部分可见
+const PANEL_RADIUS = 3;
+const PLUGIN_RESPONSE_TIMEOUT = 5000;
+
+interface PluginResultMessage<T = any> {
+  action: string;
+  result: T;
+}
 
 function getPanelSize(): { width: number; height: number } {
   const { workAreaSize } = screen.getPrimaryDisplay();
@@ -32,20 +53,79 @@ function makeCircleShape(): Electron.Rectangle[] {
 }
 const CIRCLE_SHAPE = makeCircleShape();
 
+function makeRoundedRectShape(width: number, height: number, radius: number): Electron.Rectangle[] {
+  const rects: Electron.Rectangle[] = [];
+  for (let y = 0; y < height; y++) {
+    let inset = 0;
+    if (y < radius) {
+      const dy = radius - y - 0.5;
+      inset = Math.ceil(radius - Math.sqrt(Math.max(0, radius * radius - dy * dy)));
+    } else if (y >= height - radius) {
+      const dy = y - (height - radius) + 0.5;
+      inset = Math.ceil(radius - Math.sqrt(Math.max(0, radius * radius - dy * dy)));
+    }
+    rects.push({ x: inset, y, width: Math.max(0, width - inset * 2), height: 1 });
+  }
+  return rects;
+}
+
+function updatePanelShape(): void {
+  if (!panelWindow || panelWindow.isDestroyed()) return;
+  const [width, height] = panelWindow.getSize();
+  panelWindow.setShape(makeRoundedRectShape(width, height, PANEL_RADIUS));
+}
+
 let ballWindow: BrowserWindow | null = null;
 let panelWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let savedBallPos: { x: number; y: number } | null = null;
 let savedPanelPos: { x: number; y: number } | null = null;
+let savedPanelSize: { width: number; height: number } | null = null;
 let panelAnimating = false;
+let panelVisible = false;
 
 // ---------- 加载页面（开发 / 生产） ----------
 function loadWindow(win: BrowserWindow, hash: string): void {
   if (process.env.NODE_ENV === 'development') {
-    win.loadURL(`http://localhost:5173/#${hash}`);
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
+    win.loadURL(`${devServerUrl}/#${hash}`);
   } else {
     win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { hash });
   }
+}
+
+function waitForPluginEvent<T>(
+  event: string,
+  emitEvent: string,
+  args: any[],
+  match?: (data: T) => boolean,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      bus.off(event, handler);
+      reject(new Error(`插件事件超时: ${event}`));
+    }, PLUGIN_RESPONSE_TIMEOUT);
+
+    const handler = (data: T) => {
+      if (match && !match(data)) return;
+      clearTimeout(timeout);
+      bus.off(event, handler);
+      resolve(data);
+    };
+
+    bus.on(event, handler);
+    bus.emit(emitEvent, ...args);
+  });
+}
+
+async function invokeActionPlugin<T>(responseEvent: string, action: string, emitEvent: string, args: any[]): Promise<T> {
+  const data = await waitForPluginEvent<PluginResultMessage<T>>(
+    responseEvent,
+    emitEvent,
+    args,
+    (message) => message.action === action,
+  );
+  return data.result;
 }
 
 // ---------- 创建悬浮球窗口 ----------
@@ -91,10 +171,25 @@ function createBallWindow(): void {
 
 // ---------- 创建 / 显示面板窗口 ----------
 function showPanelWindow(): void {
-  // 如果已存在则聚焦
   if (panelWindow && !panelWindow.isDestroyed()) {
+    if (panelVisible) {
+      panelWindow.focus();
+      return;
+    }
+
+    const { workAreaSize } = screen.getPrimaryDisplay();
+    const currentPanelPos = panelWindow.getPosition();
+    const targetX = savedPanelPos?.x ?? currentPanelPos[0];
+    const targetY = savedPanelPos?.y ?? currentPanelPos[1];
+    const startX = workAreaSize.width;
+    panelWindow.setPosition(startX, targetY);
+    panelWindow.setOpacity(0);
+    updatePanelShape();
     panelWindow.show();
     panelWindow.focus();
+    panelVisible = true;
+    updateTrayMenu(true);
+    slideWindow(panelWindow, startX, targetX, 0, 1, 300, 'ease-out', 0.2, 300, 'ease-out');
     return;
   }
 
@@ -107,7 +202,9 @@ function showPanelWindow(): void {
   let targetX: number;
   let targetY: number;
   const { workAreaSize } = screen.getPrimaryDisplay();
-  const { width: PW, height: PH } = getPanelSize();
+  const defaultPanelSize = getPanelSize();
+  const PW = savedPanelSize?.width ?? defaultPanelSize.width;
+  const PH = savedPanelSize?.height ?? defaultPanelSize.height;
 
   if (savedPanelPos) {
     targetX = savedPanelPos.x;
@@ -132,9 +229,12 @@ function showPanelWindow(): void {
     y: Math.round(targetY),
     frame: false,
     transparent: true,
+    roundedCorners: false,
     alwaysOnTop: true,
-    resizable: false,
-    hasShadow: true,
+    resizable: true,
+    minWidth: 480,
+    minHeight: 360,
+    hasShadow: false,
     skipTaskbar: true,
     backgroundColor: '#00000000',
     opacity: 0,
@@ -148,6 +248,7 @@ function showPanelWindow(): void {
   loadWindow(panelWindow, 'panel');
 
   panelWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  updatePanelShape();
 
   panelWindow.on('move', () => {
     if (!panelWindow || panelWindow.isDestroyed() || panelAnimating) return;
@@ -155,22 +256,41 @@ function showPanelWindow(): void {
     savedPanelPos = { x, y };
   });
 
+  panelWindow.on('resize', () => {
+    if (!panelWindow || panelWindow.isDestroyed()) return;
+    const [width, height] = panelWindow.getSize();
+    savedPanelSize = { width, height };
+    updatePanelShape();
+  });
+
   panelWindow.on('closed', () => {
     panelWindow = null;
+    panelVisible = false;
   });
 
-  // 等渲染进程准备好后再播放滑入动画（渐隐滞后位移）
-  ipcMain.once('panel:ready', () => {
-    slideWindow(panelWindow!, startX, targetX, 0, 1, 400, 'ease-out', 0.3, 400, 'ease-out', () => {
+  const panelWebContentsId = panelWindow.webContents.id;
+  const playEnterAnimation = () => {
+    if (!panelWindow || panelWindow.isDestroyed() || panelWindow.webContents.id !== panelWebContentsId) return;
+    slideWindow(panelWindow, startX, targetX, 0, 1, 400, 'ease-out', 0.3, 400, 'ease-out', () => {
       savedPanelPos = { x: targetX, y: targetY };
     });
-  });
+  };
 
+  const handlePanelReady = (event: Electron.IpcMainEvent) => {
+    if (event.sender.id !== panelWebContentsId) return;
+    ipcMain.off('panel:ready', handlePanelReady);
+    playEnterAnimation();
+  };
+
+  ipcMain.on('panel:ready', handlePanelReady);
+  panelWindow.once('closed', () => ipcMain.off('panel:ready', handlePanelReady));
+
+  panelVisible = true;
   updateTrayMenu(true);
 }
 
 function hidePanelWindow(): void {
-  if (!panelWindow || panelWindow.isDestroyed()) return;
+  if (!panelWindow || panelWindow.isDestroyed() || !panelVisible) return;
   const [x, y] = panelWindow.getPosition();
   savedPanelPos = { x, y };
 
@@ -178,10 +298,27 @@ function hidePanelWindow(): void {
   const endX = screen.getPrimaryDisplay().workAreaSize.width;
   slideWindow(panelWindow, x, endX, panelWindow.getOpacity(), 0, 300, 'ease-in', 0, 200, 'ease-in', () => {
     if (panelWindow && !panelWindow.isDestroyed()) {
-      panelWindow.close();
+      panelWindow.hide();
+      panelWindow.setOpacity(1);
     }
-    panelWindow = null;
+    panelVisible = false;
     updateTrayMenu(false);
+  });
+}
+
+function togglePanelWindow(): void {
+  if (panelVisible && panelWindow && !panelWindow.isDestroyed()) {
+    hidePanelWindow();
+  } else {
+    showPanelWindow();
+  }
+}
+
+function registerGlobalShortcuts(): void {
+  const shortcuts = ['Control+Shift+U', 'Alt+Space'];
+  shortcuts.forEach((shortcut) => {
+    const registered = globalShortcut.register(shortcut, togglePanelWindow);
+    if (!registered) console.warn(`[Main] 全局快捷键注册失败: ${shortcut}`);
   });
 }
 
@@ -243,13 +380,7 @@ function createTray(): void {
   const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
   tray = new Tray(trayIcon);
   tray.setToolTip('个人辅助');
-  tray.on('click', () => {
-    if (panelWindow && !panelWindow.isDestroyed()) {
-      hidePanelWindow();
-    } else {
-      showPanelWindow();
-    }
-  });
+  tray.on('click', togglePanelWindow);
 
   updateTrayMenu(false);
 }
@@ -257,7 +388,7 @@ function createTray(): void {
 function updateTrayMenu(panelVisible: boolean): void {
   if (!tray) return;
   const contextMenu = Menu.buildFromTemplate([
-    { label: panelVisible ? '关闭面板' : '展开面板', click: () => (panelVisible ? hidePanelWindow() : showPanelWindow()) },
+    { label: `${panelVisible ? '关闭面板' : '展开面板'}  Ctrl+Shift+U`, click: togglePanelWindow },
     { type: 'separator' },
     { label: '退出', click: () => { closeDatabase(); app.quit(); } },
   ]);
@@ -267,9 +398,9 @@ function updateTrayMenu(panelVisible: boolean): void {
 // ---------- 右键菜单（悬浮球上） ----------
 function showBallContextMenu(): void {
   if (!ballWindow) return;
-  const panelOpen = panelWindow && !panelWindow.isDestroyed();
+  const panelOpen = panelVisible && panelWindow && !panelWindow.isDestroyed();
   const menu = Menu.buildFromTemplate([
-    { label: panelOpen ? '关闭面板' : '展开面板', click: () => (panelOpen ? hidePanelWindow() : showPanelWindow()) },
+    { label: `${panelOpen ? '关闭面板' : '展开面板'}  Ctrl+Shift+U`, click: togglePanelWindow },
     { label: '开发者工具', click: () => ballWindow?.webContents.openDevTools({ mode: 'detach' }) },
     { type: 'separator' },
     { label: '退出', click: () => { closeDatabase(); app.quit(); } },
@@ -278,13 +409,7 @@ function showBallContextMenu(): void {
 }
 
 // ---------- IPC 处理 ----------
-ipcMain.on('ball:expand', () => {
-  if (panelWindow && !panelWindow.isDestroyed()) {
-    hidePanelWindow();
-  } else {
-    showPanelWindow();
-  }
-});
+ipcMain.on('ball:expand', togglePanelWindow);
 ipcMain.on('ball:collapse', () => hidePanelWindow());
 ipcMain.on('panel:open-devtools', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -304,137 +429,111 @@ ipcMain.on('window:move', (event, dx: number, dy: number) => {
 // ---------- 插件 IPC ----------
 ipcMain.handle('core:list-plugins', () => listPlugins());
 
+ipcMain.handle('core:whiteboard:get-state', () => {
+  const db = getDatabase();
+  const statement = db.prepare(`SELECT value FROM whiteboard_state WHERE key = ?`);
+  try {
+    statement.bind(['default']);
+    if (statement.step()) return statement.get()[0] as string;
+    return null;
+  } finally {
+    statement.free();
+  }
+});
+
+ipcMain.handle('core:whiteboard:save-state', (_event, state: string) => {
+  const db = getDatabase();
+  db.run(
+    `INSERT INTO whiteboard_state (key, value, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+    ['default', state],
+  );
+  autoSave();
+  return { success: true };
+});
+
 ipcMain.handle('plugin:hello-world:greet', (_event, name: string) => {
   bus.emit('hello-world:greet', name);
   return { success: true };
 });
 
-ipcMain.handle('plugin:calculator:calculate', (_event, expression: string) => {
-  return new Promise((resolve) => {
-    bus.on('calculator:result', function handler(data: { expression: string; result: string }) {
-      bus.off('calculator:result', handler);
-      resolve(data.result);
-    });
-    bus.emit('calculator:calculate', expression);
-  });
+ipcMain.handle('plugin:calculator:calculate', async (_event, expression: string) => {
+  const data = await waitForPluginEvent<{ expression: string; result: string }>(
+    'calculator:result',
+    'calculator:calculate',
+    [expression],
+    (message) => message.expression === expression,
+  );
+  return data.result;
 });
 
 ipcMain.handle('plugin:dev-utils:invoke', (_event, action: string, ...args: any[]) => {
-  return new Promise((resolve) => {
-    bus.on('dev-utils:result', function handler(data: { action: string; result: any }) {
-      if (data.action === action) {
-        bus.off('dev-utils:result', handler);
-        resolve(data.result);
-      }
-    });
-    bus.emit('dev-utils:invoke', action, ...args);
-  });
+  return invokeActionPlugin('dev-utils:result', action, 'dev-utils:invoke', [action, ...args]);
 });
 
 // 知识库 IPC
 ipcMain.handle('plugin:knowledge-base:getNotes', (_event, categoryId?: string, tagId?: string) => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'getNotes') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:getNotes', categoryId, tagId);
-  });
+  return invokeActionPlugin('knowledge-base:result', 'getNotes', 'knowledge-base:getNotes', [categoryId, tagId]);
 });
 
 ipcMain.handle('plugin:knowledge-base:searchNotes', (_event, keyword: string) => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'searchNotes') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:searchNotes', keyword);
-  });
+  return invokeActionPlugin('knowledge-base:result', 'searchNotes', 'knowledge-base:searchNotes', [keyword]);
 });
 
 ipcMain.handle('plugin:knowledge-base:createNote', (_event, title: string, content: string, categoryId: string, tagIds: string[]) => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'createNote') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:createNote', title, content, categoryId, tagIds);
-  });
+  return invokeActionPlugin('knowledge-base:result', 'createNote', 'knowledge-base:createNote', [title, content, categoryId, tagIds]);
 });
 
 ipcMain.handle('plugin:knowledge-base:updateNote', (_event, noteId: string, title: string, content: string, categoryId: string, tagIds: string[]) => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'updateNote') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:updateNote', noteId, title, content, categoryId, tagIds);
-  });
+  return invokeActionPlugin('knowledge-base:result', 'updateNote', 'knowledge-base:updateNote', [noteId, title, content, categoryId, tagIds]);
 });
 
 ipcMain.handle('plugin:knowledge-base:deleteNote', (_event, noteId: string) => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'deleteNote') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:deleteNote', noteId);
-  });
+  return invokeActionPlugin('knowledge-base:result', 'deleteNote', 'knowledge-base:deleteNote', [noteId]);
 });
 
 ipcMain.handle('plugin:knowledge-base:getCategories', () => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'getCategories') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:getCategories');
-  });
+  return invokeActionPlugin('knowledge-base:result', 'getCategories', 'knowledge-base:getCategories', []);
 });
 
 ipcMain.handle('plugin:knowledge-base:createCategory', (_event, name: string, color?: string) => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'createCategory') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:createCategory', name, color);
-  });
+  return invokeActionPlugin('knowledge-base:result', 'createCategory', 'knowledge-base:createCategory', [name, color]);
 });
 
 ipcMain.handle('plugin:knowledge-base:deleteCategory', (_event, categoryId: string) => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'deleteCategory') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:deleteCategory', categoryId);
-  });
+  return invokeActionPlugin('knowledge-base:result', 'deleteCategory', 'knowledge-base:deleteCategory', [categoryId]);
 });
 
 ipcMain.handle('plugin:knowledge-base:getTags', () => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'getTags') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:getTags');
-  });
+  return invokeActionPlugin('knowledge-base:result', 'getTags', 'knowledge-base:getTags', []);
 });
 
 ipcMain.handle('plugin:knowledge-base:createTag', (_event, name: string) => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'createTag') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:createTag', name);
-  });
+  return invokeActionPlugin('knowledge-base:result', 'createTag', 'knowledge-base:createTag', [name]);
 });
 
 ipcMain.handle('plugin:knowledge-base:deleteTag', (_event, tagId: string) => {
-  return new Promise((resolve) => {
-    bus.on('knowledge-base:result', function handler(data: { action: string; result: any }) {
-      if (data.action === 'deleteTag') { bus.off('knowledge-base:result', handler); resolve(data.result); }
-    });
-    bus.emit('knowledge-base:deleteTag', tagId);
-  });
+  return invokeActionPlugin('knowledge-base:result', 'deleteTag', 'knowledge-base:deleteTag', [tagId]);
 });
+
+// ---------- AI 核心 IPC ----------
+ipcMain.handle('core:ai:list-providers', () => listAiProviders());
+ipcMain.handle('core:ai:get-runtime-config', () => getAiRuntimeConfig());
+ipcMain.handle('core:ai:upsert-provider', (_event, provider: Omit<AiProviderConfig, 'createdAt' | 'updatedAt'>) => {
+  return upsertAiProvider(provider);
+});
+ipcMain.handle('core:ai:delete-provider', (_event, providerId: string) => deleteAiProvider(providerId));
+ipcMain.handle('core:ai:update-runtime-config', (_event, config: AiRuntimeConfig) => updateAiRuntimeConfig(config));
+ipcMain.handle('core:ai:chat', (_event, request: AiChatRequest) => chat(request));
 
 // ---------- 启动 ----------
 async function bootstrap(): Promise<void> {
-  await initDatabase();
+  await initDatabase(path.join(app.getPath('userData'), 'assistant.db'));
   console.log('[Main] 数据库已初始化');
+
+  initAi();
+  console.log('[Main] AI 核心已初始化');
 
   await loadAllPlugins();
 
@@ -443,6 +542,7 @@ async function bootstrap(): Promise<void> {
 
   createBallWindow();
   createTray();
+  registerGlobalShortcuts();
 }
 
 app.whenReady().then(bootstrap);
@@ -457,6 +557,10 @@ app.on('activate', () => {
   } else {
     showPanelWindow();
   }
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on('before-quit', () => {

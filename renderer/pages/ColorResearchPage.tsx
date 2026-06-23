@@ -1,42 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import {
-  Box, Flex, Heading, Input, Text, Button, Stack, Select, Badge, Code, Tabs, TabList, Tab, TabPanels, TabPanel, SimpleGrid,
+  Box, Flex, Heading, Input, Text, Button, Stack, Badge, Code, SimpleGrid,
 } from '@chakra-ui/react';
 
 // ===== 颜色工具函数 =====
-function hexToHsl(hex: string) {
-  let r = 0, g = 0, b = 0;
-  if (hex.length === 4) {
-    r = parseInt(hex[1] + hex[1], 16) / 255;
-    g = parseInt(hex[2] + hex[2], 16) / 255;
-    b = parseInt(hex[3] + hex[3], 16) / 255;
-  } else {
-    r = parseInt(hex.slice(1, 3), 16) / 255;
-    g = parseInt(hex.slice(3, 5), 16) / 255;
-    b = parseInt(hex.slice(5, 7), 16) / 255;
-  }
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h = 0, s = 0, l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-    else if (max === g) h = ((b - r) / d + 2) / 6;
-    else h = ((r - g) / d + 4) / 6;
-  }
-  return { h: h * 360, s: s * 100, l: l * 100 };
-}
-function hslToHex(h: number, s: number, l: number) {
-  h = ((h % 360) + 360) % 360;
-  s /= 100; l /= 100;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12;
-    const c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(c * 255).toString(16).padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
-}
 function hexToRgb(hex: string) {
   const v = parseInt(hex.slice(1), 16);
   return { r: (v >> 16) & 255, g: (v >> 8) & 255, b: v & 255 };
@@ -83,29 +50,238 @@ const presets: Record<string, { brand: string; name: string }> = {
   pink:   { brand: '#db2777', name: '粉红' },
 };
 
-// ===== 拼色方案生成 =====
-type Harmony = 'complementary' | 'analogous' | 'triadic' | 'tetradic' | 'splitComplementary' | 'monochromatic';
-const harmonyLabels: Record<Harmony, string> = {
-  complementary: '互补色', analogous: '类似色', triadic: '三角色', tetradic: '四角色', splitComplementary: '分裂互补', monochromatic: '同色系',
-};
-
-function generateHarmony(hex: string, type: Harmony): string[] {
-  const { h, s, l } = hexToHsl(hex);
-  switch (type) {
-    case 'complementary':      return [hex, hslToHex(h + 180, s, l)];
-    case 'analogous':          return [hex, hslToHex(h + 30, s, l), hslToHex(h - 30, s, l)];
-    case 'triadic':            return [hex, hslToHex(h + 120, s, l), hslToHex(h - 120, s, l)];
-    case 'tetradic':           return [hex, hslToHex(h + 90, s, l), hslToHex(h + 180, s, l), hslToHex(h + 270, s, l)];
-    case 'splitComplementary': return [hex, hslToHex(h + 150, s, l), hslToHex(h - 150, s, l)];
-    case 'monochromatic':      return [hex, hslToHex(h, s, Math.min(l + 25, 90)), hslToHex(h, Math.max(s - 20, 10), Math.max(l - 15, 10)), hslToHex(h, Math.min(s + 10, 100), Math.min(l + 15, 85))];
-  }
+// ===== 设计界经典拼配色方案 =====
+interface ClassicScheme {
+  name: string;
+  desc: string;
+  scene: string;
+  principle: string;
+  colors: { role: string; color: string; usage: string }[];
 }
+
+const classicSchemes: ClassicScheme[] = [
+  {
+    name: '60-30-10 经典比例',
+    desc: '大面积中性色承托，品牌色建立识别，点缀色制造记忆点。',
+    scene: 'SaaS / 工具 / 管理后台',
+    principle: '60% 背景与表面，30% 主品牌，10% 高能点缀。',
+    colors: [
+      { role: 'Base', color: '#f8fafc', usage: '页面背景、空白区域' },
+      { role: 'Primary', color: '#2563eb', usage: '主按钮、导航选中、关键状态' },
+      { role: 'Accent', color: '#f59e0b', usage: '提醒、徽标、重点数据' },
+      { role: 'Text', color: '#0f172a', usage: '标题与正文' },
+    ],
+  },
+  {
+    name: '黑白灰 + 单色焦点',
+    desc: '用克制的灰阶做秩序，只让一个鲜明色承担交互焦点。',
+    scene: '效率工具 / 极简产品 / 开发者产品',
+    principle: '不要同时抢戏，强调色只用于可点击和当前状态。',
+    colors: [
+      { role: 'Ink', color: '#111827', usage: '标题、图标、主要文字' },
+      { role: 'Surface', color: '#ffffff', usage: '卡片、弹层、输入区' },
+      { role: 'Muted', color: '#e5e7eb', usage: '分割线、弱边框' },
+      { role: 'Focus', color: '#10b981', usage: '主操作、成功态、激活态' },
+    ],
+  },
+  {
+    name: '莫兰迪低饱和',
+    desc: '低饱和、带灰度的色彩组合，视觉温和但仍有层次。',
+    scene: '知识管理 / 内容产品 / 个人效率',
+    principle: '用灰度统一色相冲突，适合长时间阅读和记录。',
+    colors: [
+      { role: 'Sage', color: '#8fa99b', usage: '主色、标签、状态块' },
+      { role: 'Clay', color: '#c9a27e', usage: '提示、次级重点' },
+      { role: 'Mist', color: '#e8e3da', usage: '背景、浅色卡片' },
+      { role: 'Charcoal', color: '#3f3a36', usage: '文字、图标' },
+    ],
+  },
+  {
+    name: '冷暖对比',
+    desc: '冷色建立专业可信，暖色用于情绪和行动召唤。',
+    scene: 'AI 产品 / 数据分析 / 金融科技',
+    principle: '冷色做系统骨架，暖色只在需要用户行动时出现。',
+    colors: [
+      { role: 'Cool', color: '#1d4ed8', usage: '导航、信息态、主视觉' },
+      { role: 'Warm', color: '#f97316', usage: 'CTA、升级、关键提醒' },
+      { role: 'Ice', color: '#eff6ff', usage: '信息背景、浅色区域' },
+      { role: 'Night', color: '#172033', usage: '深色文字、深色区块' },
+    ],
+  },
+  {
+    name: '自然绿 + 土色',
+    desc: '来自自然景观的绿、土、米色组合，稳定、亲和、不刺激。',
+    scene: '生活方式 / 健康 / 个人空间',
+    principle: '绿色表达生长，土色提供温度，米色降低界面压力。',
+    colors: [
+      { role: 'Leaf', color: '#2f855a', usage: '主按钮、确认、积极状态' },
+      { role: 'Soil', color: '#a16207', usage: '强调、图表辅助色' },
+      { role: 'Linen', color: '#f5f1e8', usage: '背景、卡片底色' },
+      { role: 'Bark', color: '#2d2926', usage: '标题、正文' },
+    ],
+  },
+  {
+    name: '包豪斯原色',
+    desc: '高识别度的红黄蓝组合，适合强视觉、强模块化界面。',
+    scene: '创意工具 / 设计实验 / 品牌展示',
+    principle: '原色只用于模块标识，留足白色和黑色做秩序。',
+    colors: [
+      { role: 'Blue', color: '#0057b8', usage: '主模块、链接、导航' },
+      { role: 'Red', color: '#e11d48', usage: '警示、删除、强强调' },
+      { role: 'Yellow', color: '#facc15', usage: '提示、标签、装饰块' },
+      { role: 'Black', color: '#111111', usage: '文字、线条、结构' },
+    ],
+  },
+  {
+    name: '高级黑金',
+    desc: '深色背景配合金色点缀，营造高端、稀缺和仪式感。',
+    scene: '会员体系 / 高端品牌 / 金融资产',
+    principle: '黑色做空间，金色只用于身份、权益和关键价值点。',
+    colors: [
+      { role: 'Obsidian', color: '#0b0b0f', usage: '主背景、沉浸式区域' },
+      { role: 'Gold', color: '#d4af37', usage: '会员标识、价格、荣誉感' },
+      { role: 'Champagne', color: '#f3e7c9', usage: '浅色文字、柔和高光' },
+      { role: 'Slate', color: '#2f3340', usage: '卡片、边框、次级区域' },
+    ],
+  },
+  {
+    name: '科技霓虹暗色',
+    desc: '暗色基底叠加高亮蓝紫绿，适合强调未来感和技术感。',
+    scene: 'AI / 开发工具 / 数据大屏',
+    principle: '暗底降低噪音，霓虹色只承担状态、路径和实时反馈。',
+    colors: [
+      { role: 'Void', color: '#080b16', usage: '主背景、控制台区域' },
+      { role: 'Cyan', color: '#22d3ee', usage: '链接、实时状态、选中态' },
+      { role: 'Violet', color: '#8b5cf6', usage: 'AI、智能、生成态' },
+      { role: 'Lime', color: '#a3e635', usage: '成功、运行中、性能指标' },
+    ],
+  },
+  {
+    name: '日系留白柔色',
+    desc: '大量米白留白搭配轻柔粉橙，亲和、安静、没有攻击性。',
+    scene: '笔记 / 日程 / 个人工具',
+    principle: '用低对比保证舒适度，靠小面积暖色建立情绪。',
+    colors: [
+      { role: 'Paper', color: '#fbf7ef', usage: '页面背景、阅读底色' },
+      { role: 'Coral', color: '#f4a7a1', usage: '重点按钮、情绪提示' },
+      { role: 'Apricot', color: '#f7d9b0', usage: '标签、轻提示、装饰' },
+      { role: 'Ink', color: '#3b332f', usage: '正文、标题、图标' },
+    ],
+  },
+  {
+    name: '医疗可信蓝绿',
+    desc: '蓝色表达专业可信，绿色表达安全和恢复，整体清洁克制。',
+    scene: '医疗健康 / 保险 / 安全产品',
+    principle: '蓝绿负责信任与安全，浅背景保持干净和可读。',
+    colors: [
+      { role: 'Trust', color: '#0f75bc', usage: '品牌主色、导航、主要信息' },
+      { role: 'Care', color: '#22a06b', usage: '成功、健康、确认状态' },
+      { role: 'Clean', color: '#f1f8fb', usage: '页面背景、信息区块' },
+      { role: 'Navy', color: '#123047', usage: '标题、正文、深色控件' },
+    ],
+  },
+  {
+    name: '电商促销红橙',
+    desc: '红橙带来行动冲动，浅暖底降低压迫感，适合转化场景。',
+    scene: '电商 / 营销页 / 活动专题',
+    principle: '高能色集中给价格、折扣和购买按钮，其他区域降噪。',
+    colors: [
+      { role: 'Sale', color: '#ef4444', usage: '价格、折扣、紧急提示' },
+      { role: 'Action', color: '#f97316', usage: '购买按钮、主 CTA' },
+      { role: 'Cream', color: '#fff7ed', usage: '活动背景、优惠卡片' },
+      { role: 'Brown', color: '#431407', usage: '标题、说明文字' },
+    ],
+  },
+  {
+    name: '数据可视化四色',
+    desc: '区分度高但不过分刺眼，适合图表、状态和分类展示。',
+    scene: '仪表盘 / 报表 / 运营分析',
+    principle: '色彩用于分类而不是装饰，避免多个高饱和色争夺注意力。',
+    colors: [
+      { role: 'Blue', color: '#3b82f6', usage: '主指标、稳定增长' },
+      { role: 'Emerald', color: '#10b981', usage: '正向、完成、健康' },
+      { role: 'Amber', color: '#f59e0b', usage: '波动、预警、待处理' },
+      { role: 'Rose', color: '#f43f5e', usage: '异常、下降、风险' },
+    ],
+  },
+  {
+    name: '教育清新蓝黄',
+    desc: '蓝色保证清晰可靠，黄色带来鼓励和活力，适合轻松学习。',
+    scene: '教育 / 儿童产品 / 学习工具',
+    principle: '蓝色承载知识结构，黄色负责奖励、提示和正反馈。',
+    colors: [
+      { role: 'Learn', color: '#2563eb', usage: '课程、导航、主按钮' },
+      { role: 'Reward', color: '#facc15', usage: '徽章、积分、完成反馈' },
+      { role: 'Sky', color: '#dbeafe', usage: '背景、知识卡片' },
+      { role: 'Pencil', color: '#1f2937', usage: '正文、标题、题目' },
+    ],
+  },
+  {
+    name: '女性向柔粉紫',
+    desc: '粉色提供亲和与情绪，紫色提升精致感，适合轻奢和社区感。',
+    scene: '美妆 / 社区 / 情绪记录',
+    principle: '粉色大面积要降饱和，紫色用于建立层次和品牌记忆。',
+    colors: [
+      { role: 'Blush', color: '#f9a8d4', usage: '情绪点缀、标签、装饰' },
+      { role: 'Plum', color: '#9333ea', usage: '主按钮、品牌识别' },
+      { role: 'Petal', color: '#fdf2f8', usage: '背景、柔和卡片' },
+      { role: 'Grape', color: '#3b0764', usage: '标题、深色文字' },
+    ],
+  },
+  {
+    name: '复古海报色',
+    desc: '带有印刷感的红、蓝、米、棕组合，适合有故事感的界面。',
+    scene: '文化内容 / 博客 / 展览专题',
+    principle: '避免纯色过亮，使用带灰度的复古色维持统一质感。',
+    colors: [
+      { role: 'Poster Red', color: '#b91c1c', usage: '标题强调、重要标记' },
+      { role: 'Dusty Blue', color: '#3f6f8f', usage: '模块色、链接、图形' },
+      { role: 'Aged Paper', color: '#f4ead5', usage: '背景、内容底色' },
+      { role: 'Sepia', color: '#4a2f1b', usage: '文字、线条、边框' },
+    ],
+  },
+  {
+    name: '北欧冷淡风',
+    desc: '冷灰、浅木、雾蓝组合，理性、干净、有空间感。',
+    scene: '家居 / 作品集 / 高级工具',
+    principle: '低饱和色做氛围，减少边框和装饰，靠空间建立品质。',
+    colors: [
+      { role: 'Fog', color: '#eef2f3', usage: '页面背景、浅色区块' },
+      { role: 'Nordic Blue', color: '#6b8fa3', usage: '主色、链接、选中态' },
+      { role: 'Wood', color: '#c7a17a', usage: '暖色点缀、提示' },
+      { role: 'Graphite', color: '#2f3a3d', usage: '文字、深色图标' },
+    ],
+  },
+  {
+    name: '企业稳重蓝灰',
+    desc: '蓝灰体系降低风险感，适合需要稳定、正式和可信的产品。',
+    scene: 'B2B / 企业服务 / 协同办公',
+    principle: '主色不要过艳，交互层级靠深浅和面积区分。',
+    colors: [
+      { role: 'Corporate', color: '#1e40af', usage: '品牌主色、核心操作' },
+      { role: 'Steel', color: '#64748b', usage: '次级导航、辅助信息' },
+      { role: 'Cloud', color: '#f1f5f9', usage: '背景、表格区块' },
+      { role: 'Navy', color: '#0f172a', usage: '标题、正文、强信息' },
+    ],
+  },
+  {
+    name: '开发者终端绿',
+    desc: '黑底绿字来自终端语境，适合代码、日志和技术状态表达。',
+    scene: '终端 / 监控 / 开发者工具',
+    principle: '绿色表达运行和通过，错误色要克制，否则会破坏终端氛围。',
+    colors: [
+      { role: 'Terminal', color: '#020617', usage: '主背景、代码区' },
+      { role: 'Matrix', color: '#22c55e', usage: '成功、运行中、命令提示' },
+      { role: 'Cyan', color: '#38bdf8', usage: '链接、变量、可点击对象' },
+      { role: 'Line', color: '#334155', usage: '边框、分隔线、弱文本' },
+    ],
+  },
+];
 
 export default function ColorResearchPage() {
   const [brandColor, setBrandColor] = useState('#2563eb');
   const [secondColor, setSecondColor] = useState('#e11d48');
-  const [harmonyType, setHarmonyType] = useState<Harmony>('complementary');
-  const [tabIndex, setTabIndex] = useState(0);
+  const [activeSchemeIndex, setActiveSchemeIndex] = useState(0);
 
   const palette = useMemo(() => {
     const bg = '#ffffff';
@@ -119,7 +295,8 @@ export default function ColorResearchPage() {
     return { shades, lightBg: blend(brandColor, bg, 0.94) };
   }, [brandColor]);
 
-  const harmonyColors = useMemo(() => generateHarmony(brandColor, harmonyType), [brandColor, harmonyType]);
+  const activeScheme = classicSchemes[activeSchemeIndex];
+  const schemeColors = activeScheme.colors.map((item) => item.color);
 
   const comboColors = useMemo(() => {
     // 基于双色生成渐变条
@@ -137,7 +314,7 @@ export default function ColorResearchPage() {
   return (
     <Box w="100%">
       {/* 主色选择 */}
-      <Box bg="white" borderRadius="md" p={4} mb={1.5}>
+      <Box bg="white" borderRadius="sm" p={4} mb={1.5}>
         <Heading size="xs" mb={1.5}>主色调</Heading>
         <Flex gap={2} wrap="wrap" mb={2}>
           {Object.entries(presets).map(([key, p]) => (
@@ -157,7 +334,7 @@ export default function ColorResearchPage() {
       </Box>
 
       {/* 色板预览 */}
-      <Box bg="white" borderRadius="md" p={4} mb={1.5}>
+      <Box bg="white" borderRadius="sm" p={4} mb={1.5}>
         <Heading size="xs" mb={1.5}>同色系色板</Heading>
         <Flex gap={0} borderRadius="md" overflow="hidden" h="48px">
           {palette.shades.map((c, i) => (
@@ -169,53 +346,84 @@ export default function ColorResearchPage() {
       </Box>
 
       {/* 拼色方案 */}
-      <Box bg="white" borderRadius="md" p={4} mb={1.5}>
-        <Heading size="xs" mb={1.5}>拼色方案</Heading>
-        <Flex gap={2} wrap="wrap" mb={2}>
-          {(Object.keys(harmonyLabels) as Harmony[]).map((h) => (
-            <Button key={h} size="xs" onClick={() => setHarmonyType(h)}
-              variant={harmonyType === h ? 'solid' : 'outline'}
+      <Box bg="white" borderRadius="sm" p={4} mb={1.5}>
+        <Heading size="xs" mb={1.5}>经典拼配色方案</Heading>
+        <Text fontSize="xs" color="gray.500" mb={2}>不是机械色相换算，而是设计中常用的配色套路：比例、角色、场景和使用边界。</Text>
+        <Flex gap={2} wrap="wrap" mb={3}>
+          {classicSchemes.map((scheme, index) => (
+            <Button
+              key={scheme.name}
+              size="xs"
+              onClick={() => setActiveSchemeIndex(index)}
+              variant={activeSchemeIndex === index ? 'solid' : 'outline'}
               colorScheme="blue"
             >
-              {harmonyLabels[h]}
+              {scheme.name}
             </Button>
           ))}
         </Flex>
-        <Flex gap={2} mb={2}>
-          {harmonyColors.map((c, i) => (
-            <Box key={i} flex={1} h="48px" borderRadius="md" bg={c} display="flex" alignItems="flex-end" justifyContent="center" pb={1}>
-              <Text fontSize="8px" fontFamily="mono" color={i === 0 ? 'white' : 'white'} fontWeight={i === 0 ? 800 : 400}>
-                {c} {i === 0 ? '(主)' : ''}
-              </Text>
-            </Box>
-          ))}
-        </Flex>
 
-        {/* 拼色应用预览 */}
-        <Heading size="xs" mb={1.5}>拼色应用示例</Heading>
-        <Box borderRadius="md" overflow="hidden">
-          <Flex h="28px" bg={harmonyColors[0]} align="center" px={2}>
-            <Text fontSize="10px" color="white" fontWeight={600}>导航栏</Text>
-          </Flex>
-          <Flex>
-            <Box w="60px" bg={harmonyColors[1] || harmonyColors[0]} minH="60px" display="flex" alignItems="center" justifyContent="center">
-              <Text fontSize="8px" color="white">侧栏</Text>
-            </Box>
-            <Box flex={1} bg="gray.50" p={2}>
-              <Flex gap={1} mb={1}>
-                <Box px={2} py={0.5} bg={harmonyColors[0]} borderRadius="sm"><Text fontSize="8px" color="white">主按钮</Text></Box>
-                <Box px={2} py={0.5} border="1px solid" borderColor={harmonyColors[2] || harmonyColors[0]} borderRadius="sm"><Text fontSize="8px" color={harmonyColors[2] || harmonyColors[0]}>次按钮</Text></Box>
-              </Flex>
-              <Box bg="white" p={1.5} borderRadius="sm" borderLeft="3px solid" borderLeftColor={harmonyColors[0]}>
-                <Text fontSize="8px" color="gray.600">卡片内容区域</Text>
+        <Box border="1px solid" borderColor="gray.100" borderRadius="sm" overflow="hidden">
+          <Flex h="54px">
+            {activeScheme.colors.map((item) => (
+              <Box key={item.role} flex={1} bg={item.color} display="flex" alignItems="flex-end" px={2} py={1}>
+                <Text fontSize="8px" fontFamily="mono" color="white" textShadow="0 1px 3px rgba(0,0,0,0.45)">{item.color}</Text>
               </Box>
-            </Box>
+            ))}
           </Flex>
+          <Box p={3}>
+            <Flex justify="space-between" gap={3} align="flex-start" mb={2}>
+              <Box>
+                <Heading size="xs" mb={1}>{activeScheme.name}</Heading>
+                <Text fontSize="xs" color="gray.600">{activeScheme.desc}</Text>
+              </Box>
+              <Badge colorScheme="purple" flexShrink={0}>{activeScheme.scene}</Badge>
+            </Flex>
+            <Text fontSize="xs" color="gray.500" mb={3}>{activeScheme.principle}</Text>
+            <SimpleGrid columns={2} gap={2} mb={3}>
+              {activeScheme.colors.map((item) => (
+                <Flex key={item.role} gap={2} align="center" bg="gray.50" borderRadius="sm" p={2}>
+                  <Box w="18px" h="18px" borderRadius="full" bg={item.color} border="1px solid" borderColor="blackAlpha.100" flexShrink={0} />
+                  <Box minW={0}>
+                    <Text fontSize="10px" fontWeight={700}>{item.role}</Text>
+                    <Text fontSize="9px" color="gray.500" noOfLines={1}>{item.usage}</Text>
+                  </Box>
+                </Flex>
+              ))}
+            </SimpleGrid>
+
+            {/* 拼色应用预览 */}
+            <Heading size="xs" mb={1.5}>应用预览</Heading>
+            <Box borderRadius="sm" overflow="hidden" border="1px solid" borderColor="gray.100">
+              <Flex h="28px" bg={schemeColors[3] || schemeColors[0]} align="center" justify="space-between" px={2}>
+                <Text fontSize="10px" color="white" fontWeight={700}>Product</Text>
+                <Flex gap={1}>
+                  <Box w="24px" h="6px" borderRadius="full" bg={schemeColors[0]} />
+                  <Box w="24px" h="6px" borderRadius="full" bg={schemeColors[1]} />
+                </Flex>
+              </Flex>
+              <Flex bg={schemeColors[2] || 'gray.50'}>
+                <Box w="70px" minH="72px" bg={schemeColors[0]} opacity={0.92} p={2}>
+                  <Text fontSize="8px" color="white" fontWeight={700}>侧栏</Text>
+                </Box>
+                <Box flex={1} p={2}>
+                  <Flex gap={1.5} mb={1.5}>
+                    <Box px={2} py={0.5} bg={schemeColors[1]} borderRadius="sm"><Text fontSize="8px" color="white">主行动</Text></Box>
+                    <Box px={2} py={0.5} bg="white" border="1px solid" borderColor={schemeColors[0]} borderRadius="sm"><Text fontSize="8px" color={schemeColors[0]}>次操作</Text></Box>
+                  </Flex>
+                  <Box bg="white" p={2} borderRadius="sm" borderLeft="3px solid" borderLeftColor={schemeColors[1]}>
+                    <Text fontSize="8px" color={schemeColors[3] || 'gray.700'} fontWeight={700}>内容卡片标题</Text>
+                    <Text fontSize="8px" color="gray.500">用主色组织结构，点缀色强调关键动作。</Text>
+                  </Box>
+                </Box>
+              </Flex>
+            </Box>
+          </Box>
         </Box>
       </Box>
 
       {/* 双色渐变 */}
-      <Box bg="white" borderRadius="md" p={4} mb={1.5}>
+      <Box bg="white" borderRadius="sm" p={4} mb={1.5}>
         <Heading size="xs" mb={1.5}>双色渐变</Heading>
         <Text fontSize="xs" color="gray.400" mb={2}>选择两个颜色，查看渐变过渡效果</Text>
         <Flex gap={3} align="center" mb={2}>
@@ -232,7 +440,7 @@ export default function ColorResearchPage() {
       </Box>
 
       {/* 推荐配色方案 */}
-      <Box bg="white" borderRadius="md" p={4} mb={1.5}>
+      <Box bg="white" borderRadius="sm" p={4} mb={1.5}>
         <Heading size="xs" mb={1.5}>推荐配色方案</Heading>
         <Text fontSize="xs" color="gray.400" mb={2}>知名产品配色参考，点击可应用</Text>
         <SimpleGrid columns={2} gap={2}>
@@ -263,29 +471,29 @@ export default function ColorResearchPage() {
       </Box>
 
       {/* 组件预览 */}
-      <Box bg="white" borderRadius="md" p={4} mb={1.5}>
+      <Box bg="white" borderRadius="sm" p={4} mb={1.5}>
         <Heading size="xs" mb={1.5}>组件预览</Heading>
         <Stack gap={2}>
           <Flex gap={2} wrap="wrap">
             <Button size="sm" bg={brandColor} color="white" _hover={{ bg: palette.shades[6] }}>主按钮</Button>
-            <Button size="sm" variant="outline" borderColor={harmonyColors[1]} color={harmonyColors[1]}>次按钮</Button>
+            <Button size="sm" variant="outline" borderColor={schemeColors[1]} color={schemeColors[1]}>次按钮</Button>
             <Button size="sm" variant="ghost">幽灵按钮</Button>
           </Flex>
           <Flex gap={2} wrap="wrap">
             <Badge bg={palette.lightBg} color={brandColor} variant="subtle">标签</Badge>
-            <Badge bg={blend(harmonyColors[1], '#fff', 0.85)} color={harmonyColors[1]} variant="subtle">拼色标签</Badge>
+            <Badge bg={blend(schemeColors[1], '#fff', 0.85)} color={schemeColors[1]} variant="subtle">拼色标签</Badge>
             <Badge colorScheme="green" variant="subtle">成功</Badge>
             <Badge colorScheme="red" variant="subtle">危险</Badge>
           </Flex>
           <Flex gap={2}>
             <Code fontSize="xs" bg={palette.lightBg} color={brandColor}>代码块</Code>
-            <Code fontSize="xs" bg={blend(harmonyColors[1], '#fff', 0.85)} color={harmonyColors[1]}>拼色代码</Code>
+            <Code fontSize="xs" bg={blend(schemeColors[1], '#fff', 0.85)} color={schemeColors[1]}>拼色代码</Code>
           </Flex>
         </Stack>
       </Box>
 
       {/* CSS 变量导出 */}
-      <Box bg="white" borderRadius="md" p={4}>
+      <Box bg="white" borderRadius="sm" p={4}>
         <Heading size="xs" mb={1.5}>CSS 变量导出</Heading>
         <Box as="pre" bg="gray.50" p={3} borderRadius="md" fontSize="xs" fontFamily="mono" whiteSpace="pre-wrap" overflow="auto" maxH={200}>
 {`:root {
@@ -297,7 +505,7 @@ export default function ColorResearchPage() {
   --brand-600: ${palette.shades[5]};
   --brand-700: ${palette.shades[6]};
   --brand-800: ${palette.shades[7]};
-  --accent:    ${harmonyColors[1]};
+  --accent:    ${schemeColors[1]};
 }`}
         </Box>
       </Box>

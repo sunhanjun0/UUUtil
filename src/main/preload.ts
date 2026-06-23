@@ -3,6 +3,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig } from '../shared/types';
 
 contextBridge.exposeInMainWorld('assistant', {
   // ===== 窗口控制 =====
@@ -19,6 +20,8 @@ contextBridge.exposeInMainWorld('assistant', {
   greet: (name: string) => ipcRenderer.invoke('plugin:hello-world:greet', name),
   calculate: (expression: string) => ipcRenderer.invoke('plugin:calculator:calculate', expression),
   devUtils: (action: string, ...args: any[]) => ipcRenderer.invoke('plugin:dev-utils:invoke', action, ...args),
+  getWhiteboardState: () => ipcRenderer.invoke('core:whiteboard:get-state'),
+  saveWhiteboardState: (state: string) => ipcRenderer.invoke('core:whiteboard:save-state', state),
 
   // 知识库 API
   getNotes: (categoryId?: string, tagId?: string) => ipcRenderer.invoke('plugin:knowledge-base:getNotes', categoryId, tagId),
@@ -32,6 +35,16 @@ contextBridge.exposeInMainWorld('assistant', {
   getTags: () => ipcRenderer.invoke('plugin:knowledge-base:getTags'),
   createTag: (name: string) => ipcRenderer.invoke('plugin:knowledge-base:createTag', name),
   deleteTag: (tagId: string) => ipcRenderer.invoke('plugin:knowledge-base:deleteTag', tagId),
+
+  // AI 核心 API
+  ai: {
+    listProviders: () => ipcRenderer.invoke('core:ai:list-providers'),
+    getRuntimeConfig: () => ipcRenderer.invoke('core:ai:get-runtime-config'),
+    upsertProvider: (provider: Omit<AiProviderConfig, 'createdAt' | 'updatedAt'>) => ipcRenderer.invoke('core:ai:upsert-provider', provider),
+    deleteProvider: (providerId: string) => ipcRenderer.invoke('core:ai:delete-provider', providerId),
+    updateRuntimeConfig: (config: AiRuntimeConfig) => ipcRenderer.invoke('core:ai:update-runtime-config', config),
+    chat: (request: AiChatRequest) => ipcRenderer.invoke('core:ai:chat', request),
+  },
 
   getVersion: () => '0.1.0',
 });

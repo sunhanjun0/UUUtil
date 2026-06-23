@@ -1,18 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box, Button, Flex, Textarea, Input, Text, Code, Tabs, TabList, Tab, TabPanels, TabPanel,
 } from '@chakra-ui/react';
 
-type Tool = 'json' | 'base64' | 'timestamp' | 'regex' | 'uuid';
+type Tool = 'json' | 'sql' | 'base64' | 'timestamp' | 'regex' | 'uuid';
 
 export default function DevUtils() {
   const [active, setActive] = useState<Tool>('json');
 
   return (
     <Box>
-      <Tabs index={['json','base64','timestamp','regex','uuid'].indexOf(active)} onChange={(i) => setActive(['json','base64','timestamp','regex','uuid'][i] as Tool)} size="sm" variant="soft-rounded" colorScheme="blue" mb={1.5}>
+      <Tabs index={['json','sql','base64','timestamp','regex','uuid'].indexOf(active)} onChange={(i) => setActive(['json','sql','base64','timestamp','regex','uuid'][i] as Tool)} size="sm" variant="soft-rounded" colorScheme="blue" mb={1.5}>
         <TabList gap={1}>
           <Tab>JSON</Tab>
+          <Tab>SQL</Tab>
           <Tab>Base64</Tab>
           <Tab>时间戳</Tab>
           <Tab>正则</Tab>
@@ -22,6 +23,7 @@ export default function DevUtils() {
 
       <Box>
         {active === 'json' && <JsonTool />}
+        {active === 'sql' && <SqlTool />}
         {active === 'base64' && <Base64Tool />}
         {active === 'timestamp' && <TimestampTool />}
         {active === 'regex' && <RegexTool />}
@@ -46,6 +48,38 @@ function JsonTool() {
     <Box>
       <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="粘贴 JSON 字符串..." size="sm" rows={4} mb={1} fontFamily="mono" />
       <Button size="sm" colorScheme="blue" onClick={format} mb={1}>格式化</Button>
+      {output && (
+        <Box as="pre" mt={2} p={2} bg={error ? 'red.50' : 'gray.50'} borderRadius="md" fontSize="sm" whiteSpace="pre-wrap" wordBreak="break-all" maxH={300} overflow="auto" color={error ? 'red.600' : undefined}>
+          {output}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function SqlTool() {
+  const [input, setInput] = useState('');
+  const [output, setOutput] = useState('');
+  const [error, setError] = useState(false);
+
+  async function handle(action: 'sqlFormat' | 'sqlCompress') {
+    try {
+      const res = await window.assistant.devUtils(action, input);
+      setOutput(res.output);
+      setError(!res.success);
+    } catch (err) {
+      setOutput(String(err));
+      setError(true);
+    }
+  }
+
+  return (
+    <Box>
+      <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="粘贴 SQL 语句..." size="sm" rows={5} mb={1} fontFamily="mono" />
+      <Flex gap={2} mb={1}>
+        <Button size="sm" colorScheme="blue" onClick={() => handle('sqlFormat')}>美化</Button>
+        <Button size="sm" variant="outline" onClick={() => handle('sqlCompress')}>压缩</Button>
+      </Flex>
       {output && (
         <Box as="pre" mt={2} p={2} bg={error ? 'red.50' : 'gray.50'} borderRadius="md" fontSize="sm" whiteSpace="pre-wrap" wordBreak="break-all" maxH={300} overflow="auto" color={error ? 'red.600' : undefined}>
           {output}
@@ -147,7 +181,22 @@ function TimestampTool() {
   const [output, setOutput] = useState('');
   const [error, setError] = useState(false);
   const [mode, setMode] = useState<'ts2date' | 'date2ts'>('ts2date');
-  const now = Date.now();
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentFormats = [
+    { label: '毫秒时间戳', value: String(now.getTime()) },
+    { label: '秒时间戳', value: String(Math.floor(now.getTime() / 1000)) },
+    { label: 'ISO 8601', value: now.toISOString() },
+    { label: 'UTC', value: now.toUTCString() },
+    { label: '本地时间', value: now.toLocaleString('zh-CN') },
+    { label: '日期', value: now.toLocaleDateString('zh-CN') },
+    { label: '时间', value: now.toLocaleTimeString('zh-CN') },
+  ];
 
   async function handle() {
     const action = mode === 'ts2date' ? 'timestampToDate' : 'dateToTimestamp';
@@ -157,11 +206,22 @@ function TimestampTool() {
   }
 
   function fillNow() {
-    setInput(String(mode === 'ts2date' ? now : new Date().toISOString()));
+    setInput(String(mode === 'ts2date' ? now.getTime() : now.toISOString()));
   }
 
   return (
     <Box>
+      <Box bg="gray.50" borderRadius="md" p={2} mb={2}>
+        <Text fontSize="xs" color="gray.500" mb={1}>当前时间</Text>
+        {currentFormats.map((item) => (
+          <Flex key={item.label} gap={2} align="center" py={0.5}>
+            <Text fontSize="xs" color="gray.500" w="72px" shrink={0}>{item.label}</Text>
+            <Code flex={1} fontSize="xs" whiteSpace="normal" wordBreak="break-all">{item.value}</Code>
+            <Button size="xs" variant="outline" onClick={() => setInput(item.value)}>填入</Button>
+          </Flex>
+        ))}
+      </Box>
+
       <Flex gap={2} mb={1}>
         <Button size="xs" colorScheme={mode === 'ts2date' ? 'blue' : 'gray'} variant={mode === 'ts2date' ? 'solid' : 'outline'} onClick={() => { setMode('ts2date'); setOutput(''); }}>时间戳 → 日期</Button>
         <Button size="xs" colorScheme={mode === 'date2ts' ? 'blue' : 'gray'} variant={mode === 'date2ts' ? 'solid' : 'outline'} onClick={() => { setMode('date2ts'); setOutput(''); }}>日期 → 时间戳</Button>

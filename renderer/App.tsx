@@ -4,8 +4,11 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Flex, Tabs, TabList, Tab, IconButton } from '@chakra-ui/react';
-import { routes, RouteRenderer } from './router';
+import { Box, Flex, Tabs, TabList, Tab, IconButton } from '@chakra-ui/react';
+import { Bug, Settings, X } from 'lucide-react';
+import { backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
+import type { RouteConfig } from './router';
+import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig } from '../src/shared/types';
 
 declare global {
   interface Window {
@@ -20,6 +23,8 @@ declare global {
       greet: (name: string) => Promise<{ success: boolean }>;
       calculate: (expression: string) => Promise<string>;
       devUtils: (action: string, ...args: any[]) => Promise<any>;
+      getWhiteboardState: () => Promise<string | null>;
+      saveWhiteboardState: (state: string) => Promise<{ success: boolean }>;
       getNotes: (categoryId?: string, tagId?: string) => Promise<any[]>;
       searchNotes: (keyword: string) => Promise<any>;
       createNote: (title: string, content: string, categoryId: string, tagIds: string[]) => Promise<any>;
@@ -31,6 +36,14 @@ declare global {
       getTags: () => Promise<any[]>;
       createTag: (name: string) => Promise<any>;
       deleteTag: (tagId: string) => Promise<any>;
+      ai: {
+        listProviders: () => Promise<AiProviderConfig[]>;
+        getRuntimeConfig: () => Promise<AiRuntimeConfig>;
+        upsertProvider: (provider: Omit<AiProviderConfig, 'createdAt' | 'updatedAt'>) => Promise<any>;
+        deleteProvider: (providerId: string) => Promise<any>;
+        updateRuntimeConfig: (config: AiRuntimeConfig) => Promise<any>;
+        chat: (request: AiChatRequest) => Promise<any>;
+      };
       getVersion: () => string;
       openDevTools: () => void;
     };
@@ -42,7 +55,17 @@ interface Props {
 }
 
 export default function App({ role }: Props) {
-  const [path, setPath] = useState(routes[0].path);
+  const [panelSide, setPanelSide] = useState<'front' | 'back'>('front');
+  const [frontPath, setFrontPath] = useState(foregroundRoutes[0].path);
+  const [frontDisplayPath, setFrontDisplayPath] = useState(foregroundRoutes[0].path);
+  const [frontPreviousPath, setFrontPreviousPath] = useState<string | null>(null);
+  const [frontSlideDirection, setFrontSlideDirection] = useState<1 | -1>(1);
+  const [backPath, setBackPath] = useState(backgroundRoutes[0]?.path || foregroundRoutes[0].path);
+  const [backDisplayPath, setBackDisplayPath] = useState(backgroundRoutes[0]?.path || foregroundRoutes[0].path);
+  const [backPreviousPath, setBackPreviousPath] = useState<string | null>(null);
+  const [backSlideDirection, setBackSlideDirection] = useState<1 | -1>(1);
+  const activeRoutes = panelSide === 'front' ? foregroundRoutes : backgroundRoutes;
+  const activePath = panelSide === 'front' ? frontPath : backPath;
   const [flipped, setFlipped] = useState(false);
   const [timeStr, setTimeStr] = useState('');
   const dragging = useRef(false);
@@ -63,11 +86,15 @@ export default function App({ role }: Props) {
     }
     // 首次延迟到下一个整分钟
     const msToNextMin = (60 - new Date().getSeconds()) * 1000;
+    let intervalTimer: ReturnType<typeof setInterval> | null = null;
     const firstTimer = setTimeout(() => {
       flip();
-      setInterval(flip, 60000);
+      intervalTimer = setInterval(flip, 60000);
     }, msToNextMin);
-    return () => clearTimeout(firstTimer);
+    return () => {
+      clearTimeout(firstTimer);
+      if (intervalTimer) clearInterval(intervalTimer);
+    };
   }, [role]);
 
   // 拖拽处理（球和面板共用）
@@ -117,6 +144,29 @@ export default function App({ role }: Props) {
     } catch { /* browser */ }
   }
 
+  function navigateTo(nextPath: string) {
+    if (nextPath === activePath) return;
+    const currentIndex = activeRoutes.findIndex((route) => route.path === activePath);
+    const nextIndex = activeRoutes.findIndex((route) => route.path === nextPath);
+    const direction = nextIndex >= currentIndex ? 1 : -1;
+
+    if (panelSide === 'front') {
+      setFrontSlideDirection(direction);
+      setFrontPreviousPath(frontDisplayPath);
+      setFrontDisplayPath(nextPath);
+      setFrontPath(nextPath);
+    } else {
+      setBackSlideDirection(direction);
+      setBackPreviousPath(backDisplayPath);
+      setBackDisplayPath(nextPath);
+      setBackPath(nextPath);
+    }
+  }
+
+  function flipPanelSide() {
+    setPanelSide((side) => side === 'front' ? 'back' : 'front');
+  }
+
   function handleBallContextMenu(e: React.MouseEvent) {
     e.preventDefault();
     try {
@@ -161,7 +211,10 @@ export default function App({ role }: Props) {
       w="100vw"
       h="100vh"
       bg="transparent"
+      borderRadius="4px"
       overflow="hidden"
+      position="relative"
+      sx={panelTransitionStyles}
     >
       {/* 导航栏 */}
       <Flex
@@ -169,61 +222,336 @@ export default function App({ role }: Props) {
         align="center"
         bg="transparent"
         backdropFilter="none"
+        gap={2}
+        mb={1}
         sx={{ WebkitAppRegion: 'drag' } as any}
         onMouseDown={handleMouseDown}
       >
-        <Tabs
-          index={routes.findIndex((r) => r.path === path)}
-          onChange={(i) => setPath(routes[i].path)}
-          variant="unstyled"
-          size="sm"
-          flex={1}
+        <Box flex={1} sx={{ WebkitAppRegion: 'no-drag' } as any} className="panel-nav-flip-scene">
+          <Box className="panel-nav-flip-card" transform={panelSide === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)'}>
+            <Box className="panel-nav-flip-face panel-nav-flip-front">
+              <RouteTabs routes={foregroundRoutes} activePath={frontPath} onNavigate={navigateTo} />
+            </Box>
+            <Box className="panel-nav-flip-face panel-nav-flip-back">
+              <RouteTabs routes={backgroundRoutes} activePath={backPath} onNavigate={navigateTo} />
+            </Box>
+          </Box>
+        </Box>
+
+        <Flex
+          gap={1}
+          px={1}
+          py={1}
+          bg="whiteAlpha.700"
+          borderRadius="sm"
           sx={{ WebkitAppRegion: 'no-drag' } as any}
         >
-          <TabList pl={3} py={1} border="none" gap={1}>
-            {routes.map((r) => (
-              <Tab key={r.path} fontSize={13} fontWeight={500} borderRadius="md" px={4} py={1.5}
-                border="none" outline="none" boxShadow="none"
-                _selected={{ bg: 'blue.500', color: 'white', border: 'none', boxShadow: 'none', outline: 'none' }}
-                _focus={{ boxShadow: 'none', outline: 'none', border: 'none' }}
-                _focusVisible={{ boxShadow: 'none', outline: 'none', border: 'none' }}
-                _active={{ border: 'none', boxShadow: 'none' }}
-                _hover={{ bg: 'whiteAlpha.900', color: 'gray.900', border: 'none' }}
-                bg="whiteAlpha.700" color="gray.800"
-                transition="all 0.15s"
-                sx={{ '&[data-selected]': { border: 'none', boxShadow: 'none' } }}
-              >
-                {r.icon} {r.label}
-              </Tab>
-            ))}
-          </TabList>
-        </Tabs>
-
-        <Flex gap={1} pr={2} sx={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
             size="xs"
             variant="ghost"
+            color={panelSide === 'back' ? 'blue.600' : 'gray.800'}
+            borderRadius="sm"
+            _hover={{ bg: 'whiteAlpha.500', color: panelSide === 'back' ? 'blue.700' : 'gray.900' }}
+            aria-label={panelSide === 'front' ? '切换到后台配置' : '切换到前台工具'}
+            title={panelSide === 'front' ? '切换到后台配置' : '切换到前台工具'}
+            icon={<Settings size={15} strokeWidth={1.8} />}
+            onClick={flipPanelSide}
+          />
+          <IconButton
+            size="xs"
+            variant="ghost"
+            color="gray.800"
+            borderRadius="sm"
+            _hover={{ bg: 'whiteAlpha.500', color: 'gray.900' }}
             aria-label="打开控制台"
-            icon={<span style={{ fontSize: 12 }}>🐛</span>}
+            icon={<Bug size={15} strokeWidth={1.8} />}
             onClick={() => { try { window.assistant.openDevTools(); } catch { /* browser */ } }}
           />
           <IconButton
             size="xs"
             variant="ghost"
+            color="gray.800"
+            borderRadius="sm"
+            _hover={{ bg: 'whiteAlpha.500', color: 'gray.900' }}
             aria-label="关闭面板"
-            icon={<span style={{ fontSize: 14, lineHeight: 1 }}>×</span>}
+            icon={<X size={15} strokeWidth={1.8} />}
             onClick={handleCollapse}
           />
         </Flex>
       </Flex>
 
-      {/* 内容区 —— 路由异步渲染 */}
-      <Flex flex={1} overflow="auto" px={3} py={2} minH={0}>
-        <RouteRenderer path={path} />
+      {/* 内容区 —— 前台 / 后台双面翻转 */}
+      <Flex flex={1} overflow="hidden" minH={0} sx={panelTransitionStyles}>
+        <Box className="panel-flip-scene">
+          <Box className="panel-flip-card" transform={panelSide === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)'}>
+            <Box className="panel-flip-face panel-flip-front">
+              <RouteStack
+                displayPath={frontDisplayPath}
+                previousPath={frontPreviousPath}
+                slideDirection={frontSlideDirection}
+                onRouteAnimationEnd={() => setFrontPreviousPath(null)}
+              />
+            </Box>
+            <Box className="panel-flip-face panel-flip-back">
+              <RouteStack
+                displayPath={backDisplayPath}
+                previousPath={backPreviousPath}
+                slideDirection={backSlideDirection}
+                onRouteAnimationEnd={() => setBackPreviousPath(null)}
+              />
+            </Box>
+          </Box>
+        </Box>
       </Flex>
+
+      <div style={panelStyles.bottomMarker} aria-hidden="true" />
     </Flex>
   );
 }
+
+function RouteTabs({
+  routes,
+  activePath,
+  onNavigate,
+}: {
+  routes: RouteConfig[];
+  activePath: string;
+  onNavigate: (path: string) => void;
+}) {
+  const activeTabIndex = routes.findIndex((route) => route.path === activePath);
+
+  return (
+    <Tabs
+      index={activeTabIndex >= 0 ? activeTabIndex : -1}
+      onChange={(i) => {
+        const route = routes[i];
+        if (route) onNavigate(route.path);
+      }}
+      variant="unstyled"
+      size="sm"
+      h="100%"
+    >
+      <TabList border="none" gap={1} h="100%" alignItems="center">
+        {routes.map((r) => {
+          const Icon = r.icon;
+          return (
+            <Tab key={r.path} fontSize={13} fontWeight={500} borderRadius="sm" px={4} py={1.5}
+              border="none" outline="none" boxShadow="none"
+              _selected={{ bg: 'blue.500', color: 'white', border: 'none', boxShadow: 'none', outline: 'none' }}
+              _focus={{ boxShadow: 'none', outline: 'none', border: 'none' }}
+              _focusVisible={{ boxShadow: 'none', outline: 'none', border: 'none' }}
+              _active={{ border: 'none', boxShadow: 'none' }}
+              _hover={{ bg: 'whiteAlpha.900', color: 'gray.900', border: 'none' }}
+              bg="whiteAlpha.700" color="gray.800"
+              transition="all 0.15s"
+              sx={{ '&[data-selected]': { border: 'none', boxShadow: 'none' } }}
+            >
+              <Flex align="center" gap={1.5}>
+                <Icon size={15} strokeWidth={1.8} />
+                {r.label}
+              </Flex>
+            </Tab>
+          );
+        })}
+      </TabList>
+    </Tabs>
+  );
+}
+
+function RouteStack({
+  displayPath,
+  previousPath,
+  slideDirection,
+  onRouteAnimationEnd,
+}: {
+  displayPath: string;
+  previousPath: string | null;
+  slideDirection: 1 | -1;
+  onRouteAnimationEnd: () => void;
+}) {
+  return (
+    <Box position="relative" w="100%" h="100%" minH={0}>
+      {previousPath && (
+        <Box
+          position="absolute"
+          inset={0}
+          overflow="auto"
+          className={slideDirection === 1 ? 'panel-route-out-left' : 'panel-route-out-right'}
+        >
+          <Box className="panel-route-content">
+            <RouteRenderer path={previousPath} />
+          </Box>
+        </Box>
+      )}
+      <Box
+        key={displayPath}
+        position="absolute"
+        inset={0}
+        overflow="auto"
+        className={previousPath ? (slideDirection === 1 ? 'panel-route-in-right' : 'panel-route-in-left') : undefined}
+        onAnimationEnd={(event) => {
+          if (event.currentTarget === event.target) onRouteAnimationEnd();
+        }}
+      >
+        <Box className="panel-route-content">
+          <RouteRenderer path={displayPath} />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+const panelTransitionStyles = {
+  '.panel-nav-flip-scene': {
+    height: '32px',
+    perspective: '1200px',
+    overflow: 'hidden',
+  },
+  '.panel-nav-flip-card': {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    transformStyle: 'preserve-3d',
+    transition: 'transform 720ms cubic-bezier(0.16, 1, 0.3, 1)',
+  },
+  '.panel-nav-flip-face': {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    backfaceVisibility: 'hidden',
+    WebkitBackfaceVisibility: 'hidden',
+  },
+  '.panel-nav-flip-front': {
+    transform: 'rotateY(0deg)',
+  },
+  '.panel-nav-flip-back': {
+    transform: 'rotateY(180deg)',
+  },
+  '.panel-flip-scene': {
+    width: '100%',
+    height: '100%',
+    minHeight: 0,
+    perspective: '1600px',
+    overflow: 'hidden',
+  },
+  '.panel-flip-card': {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    transformStyle: 'preserve-3d',
+    transition: 'transform 720ms cubic-bezier(0.16, 1, 0.3, 1)',
+  },
+  '.panel-flip-face': {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    minHeight: 0,
+    backfaceVisibility: 'hidden',
+    WebkitBackfaceVisibility: 'hidden',
+    overflow: 'hidden',
+  },
+  '.panel-flip-front': {
+    transform: 'rotateY(0deg)',
+  },
+  '.panel-flip-back': {
+    transform: 'rotateY(180deg)',
+  },
+  '.panel-route-content': {
+    height: '100%',
+  },
+  '.panel-route-content > div': {
+    height: '100%',
+  },
+  '.panel-route-in-right': {
+    animation: 'panelSlideInRight 560ms cubic-bezier(0.16, 1, 0.3, 1) both',
+  },
+  '.panel-route-in-left': {
+    animation: 'panelSlideInLeft 560ms cubic-bezier(0.16, 1, 0.3, 1) both',
+  },
+  '.panel-route-out-left': {
+    animation: 'panelSlideOutLeft 560ms cubic-bezier(0.45, 0, 0.55, 1) both',
+  },
+  '.panel-route-out-right': {
+    animation: 'panelSlideOutRight 560ms cubic-bezier(0.45, 0, 0.55, 1) both',
+  },
+  '.panel-route-in-right .panel-route-content > div > div, .panel-route-in-right .panel-route-content > div > div > div': {
+    animation: 'cardSlideInRight 460ms cubic-bezier(0.16, 1, 0.3, 1) both',
+  },
+  '.panel-route-in-left .panel-route-content > div > div, .panel-route-in-left .panel-route-content > div > div > div': {
+    animation: 'cardSlideInLeft 460ms cubic-bezier(0.16, 1, 0.3, 1) both',
+  },
+  '.panel-route-out-left .panel-route-content > div > div, .panel-route-out-left .panel-route-content > div > div > div': {
+    animation: 'cardSlideOutLeft 360ms cubic-bezier(0.45, 0, 0.55, 1) both',
+  },
+  '.panel-route-out-right .panel-route-content > div > div, .panel-route-out-right .panel-route-content > div > div > div': {
+    animation: 'cardSlideOutRight 360ms cubic-bezier(0.45, 0, 0.55, 1) both',
+  },
+  '.panel-route-content > div > div:nth-of-type(1), .panel-route-content > div > div > div:nth-of-type(1)': {
+    animationDelay: '70ms',
+  },
+  '.panel-route-content > div > div:nth-of-type(2), .panel-route-content > div > div > div:nth-of-type(2)': {
+    animationDelay: '140ms',
+  },
+  '.panel-route-content > div > div:nth-of-type(3), .panel-route-content > div > div > div:nth-of-type(3)': {
+    animationDelay: '210ms',
+  },
+  '.panel-route-content > div > div:nth-of-type(4), .panel-route-content > div > div > div:nth-of-type(4)': {
+    animationDelay: '280ms',
+  },
+  '.panel-route-content > div > div:nth-of-type(n + 5), .panel-route-content > div > div > div:nth-of-type(n + 5)': {
+    animationDelay: '350ms',
+  },
+  '@keyframes panelSlideInRight': {
+    from: { opacity: 0, transform: 'translateX(100%) scale(0.94)' },
+    to: { opacity: 1, transform: 'translateX(0) scale(1)' },
+  },
+  '@keyframes panelSlideInLeft': {
+    from: { opacity: 0, transform: 'translateX(-100%) scale(0.94)' },
+    to: { opacity: 1, transform: 'translateX(0) scale(1)' },
+  },
+  '@keyframes panelSlideOutLeft': {
+    from: { opacity: 1, transform: 'translateX(0) scale(1)' },
+    to: { opacity: 0, transform: 'translateX(-100%) scale(0.95)' },
+  },
+  '@keyframes panelSlideOutRight': {
+    from: { opacity: 1, transform: 'translateX(0) scale(1)' },
+    to: { opacity: 0, transform: 'translateX(100%) scale(0.95)' },
+  },
+  '@keyframes cardSlideInRight': {
+    from: { opacity: 0, transform: 'translateX(72vw) scale(0.92)' },
+    to: { opacity: 1, transform: 'translateX(0) scale(1)' },
+  },
+  '@keyframes cardSlideInLeft': {
+    from: { opacity: 0, transform: 'translateX(-72vw) scale(0.92)' },
+    to: { opacity: 1, transform: 'translateX(0) scale(1)' },
+  },
+  '@keyframes cardSlideOutLeft': {
+    from: { opacity: 1, transform: 'translateX(0) scale(1)' },
+    to: { opacity: 0, transform: 'translateX(-72vw) scale(0.94)' },
+  },
+  '@keyframes cardSlideOutRight': {
+    from: { opacity: 1, transform: 'translateX(0) scale(1)' },
+    to: { opacity: 0, transform: 'translateX(72vw) scale(0.94)' },
+  },
+};
+
+const panelStyles: Record<string, React.CSSProperties> = {
+  bottomMarker: {
+    position: 'absolute',
+    left: '50%',
+    bottom: 6,
+    width: 48,
+    height: 3,
+    borderRadius: 999,
+    transform: 'translateX(-50%)',
+    background: '#39ff14',
+    boxShadow: '0 0 5px rgba(57, 255, 20, 0.65)',
+    opacity: 0.65,
+    pointerEvents: 'none',
+  },
+};
 
 // ========== 悬浮球样式 ==========
 const ballStyles: Record<string, React.CSSProperties> = {

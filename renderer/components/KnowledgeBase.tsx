@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Button, Flex, Input, Select, Checkbox, Heading, Text, Badge, Stack,
 } from '@chakra-ui/react';
+import { StickyNote } from 'lucide-react';
 import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
@@ -200,7 +201,9 @@ export default function KnowledgeBase() {
       <Box flex={1} overflow="auto" p={6}>
         {notes.length === 0 ? (
           <Flex direction="column" align="center" justify="center" py={20}>
-            <Text fontSize="6xl" mb={2}>📝</Text>
+            <Box color="gray.300" mb={2}>
+              <StickyNote size={56} strokeWidth={1.6} />
+            </Box>
             <Heading size="md" mb={1}>暂无笔记</Heading>
             <Text fontSize="sm" color="gray.400">点击上方"新建笔记"开始记录你的想法</Text>
           </Flex>
@@ -214,7 +217,6 @@ export default function KnowledgeBase() {
               <Box
                 key={note.id}
                 p={3}
-                bg="white"
                 borderRadius="md"
                 bg="gray.50"
                 cursor="pointer"
