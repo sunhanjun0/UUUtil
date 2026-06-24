@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld('assistant', {
   devUtils: (action: string, ...args: any[]) => ipcRenderer.invoke('plugin:dev-utils:invoke', action, ...args),
   getWhiteboardState: () => ipcRenderer.invoke('core:whiteboard:get-state'),
   saveWhiteboardState: (state: string) => ipcRenderer.invoke('core:whiteboard:save-state', state),
+  saveWhiteboardAttachment: (input: { name: string; mime: string; dataUrl: string }) => ipcRenderer.invoke('core:whiteboard:save-attachment', input),
+  getWhiteboardAttachment: (filename: string, mime?: string) => ipcRenderer.invoke('core:whiteboard:get-attachment', filename, mime),
+  openWhiteboardAttachmentsDir: () => ipcRenderer.invoke('core:whiteboard:open-attachments-dir'),
+  openWhiteboardAttachment: (filename: string) => ipcRenderer.invoke('core:whiteboard:open-attachment', filename),
+  showWhiteboardAttachmentInFolder: (filename: string) => ipcRenderer.invoke('core:whiteboard:show-attachment-in-folder', filename),
 
   // 知识库 API
   getNotes: (categoryId?: string, tagId?: string) => ipcRenderer.invoke('plugin:knowledge-base:getNotes', categoryId, tagId),

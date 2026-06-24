@@ -143,6 +143,7 @@ http://localhost:11434/v1
 
 - `docs/CONVENTIONS.md`：编码与架构约定。
 - `docs/requirements.md`：当前产品需求与交互约定。
+- `docs/ai-architecture.md`：AI / Agent 旁路运行时与 Connector 架构原则。
 - `docs/changes/001-scaffold.md`：项目脚手架记录。
 - `docs/changes/002-first-packaging-issues.md`：首次打包问题记录。
 - `docs/changes/003-whiteboard-panel-tools.md`：面板交互、白板与工具能力迭代记录。

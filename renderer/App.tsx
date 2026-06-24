@@ -5,7 +5,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Flex, Tabs, TabList, Tab, IconButton } from '@chakra-ui/react';
-import { Bug, Settings, X } from 'lucide-react';
+import { Bug, Droplets, Settings, X } from 'lucide-react';
 import { backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
 import type { RouteConfig } from './router';
 import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig } from '../src/shared/types';
@@ -25,6 +25,11 @@ declare global {
       devUtils: (action: string, ...args: any[]) => Promise<any>;
       getWhiteboardState: () => Promise<string | null>;
       saveWhiteboardState: (state: string) => Promise<{ success: boolean }>;
+      saveWhiteboardAttachment: (input: { name: string; mime: string; dataUrl: string }) => Promise<{ success: true; id: string; name: string; mime: string; size: number; filename: string; thumbnailFilename?: string } | { success: false; error: string }>;
+      getWhiteboardAttachment: (filename: string, mime?: string) => Promise<string | null>;
+      openWhiteboardAttachmentsDir: () => Promise<{ success: boolean }>;
+      openWhiteboardAttachment: (filename: string) => Promise<{ success: true } | { success: false; error: string }>;
+      showWhiteboardAttachmentInFolder: (filename: string) => Promise<{ success: true } | { success: false; error: string }>;
       getNotes: (categoryId?: string, tagId?: string) => Promise<any[]>;
       searchNotes: (keyword: string) => Promise<any>;
       createNote: (title: string, content: string, categoryId: string, tagIds: string[]) => Promise<any>;
@@ -56,6 +61,7 @@ interface Props {
 
 export default function App({ role }: Props) {
   const [panelSide, setPanelSide] = useState<'front' | 'back'>('front');
+  const [frostedPanel, setFrostedPanel] = useState(() => localStorage.getItem('uuutil:frosted-panel') === '1');
   const [frontPath, setFrontPath] = useState(foregroundRoutes[0].path);
   const [frontDisplayPath, setFrontDisplayPath] = useState(foregroundRoutes[0].path);
   const [frontPreviousPath, setFrontPreviousPath] = useState<string | null>(null);
@@ -71,6 +77,10 @@ export default function App({ role }: Props) {
   const dragging = useRef(false);
   const didDrag = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    localStorage.setItem('uuutil:frosted-panel', frostedPanel ? '1' : '0');
+  }, [frostedPanel]);
 
   // 每隔 1 分钟翻转显示时间
   useEffect(() => {
@@ -210,10 +220,14 @@ export default function App({ role }: Props) {
       direction="column"
       w="100vw"
       h="100vh"
-      bg="transparent"
+      bg={frostedPanel ? 'rgba(248, 250, 252, 0.68)' : 'transparent'}
       borderRadius="4px"
       overflow="hidden"
       position="relative"
+      border={frostedPanel ? '1px solid rgba(255, 255, 255, 0.45)' : 'none'}
+      boxShadow={frostedPanel ? '0 18px 60px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255,255,255,0.38)' : 'none'}
+      backdropFilter={frostedPanel ? 'blur(22px) saturate(1.35)' : 'none'}
+      p={2}
       sx={panelTransitionStyles}
     >
       {/* 导航栏 */}
@@ -256,6 +270,17 @@ export default function App({ role }: Props) {
             title={panelSide === 'front' ? '切换到后台配置' : '切换到前台工具'}
             icon={<Settings size={15} strokeWidth={1.8} />}
             onClick={flipPanelSide}
+          />
+          <IconButton
+            size="xs"
+            variant="ghost"
+            color={frostedPanel ? 'blue.600' : 'gray.800'}
+            borderRadius="sm"
+            _hover={{ bg: 'whiteAlpha.500', color: frostedPanel ? 'blue.700' : 'gray.900' }}
+            aria-label={frostedPanel ? '关闭磨砂背景' : '开启磨砂背景'}
+            title={frostedPanel ? '关闭磨砂背景' : '开启磨砂背景'}
+            icon={<Droplets size={15} strokeWidth={1.8} />}
+            onClick={() => setFrostedPanel((enabled) => !enabled)}
           />
           <IconButton
             size="xs"

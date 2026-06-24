@@ -2,7 +2,8 @@
  * Electron 主进程入口 —— 悬浮球 + 面板双窗口模式
  */
 
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, nativeImage, Tray } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, nativeImage, shell, Tray } from 'electron';
+import fs from 'fs';
 import path from 'path';
 import {
   initDatabase,
@@ -32,9 +33,17 @@ interface PluginResultMessage<T = any> {
   result: T;
 }
 
+interface WhiteboardAttachmentInput {
+  name: string;
+  mime: string;
+  dataUrl: string;
+}
+
+const DATA_URL_PATTERN = /^data:([^;,]+)?(;base64)?,(.*)$/;
+
 function getPanelSize(): { width: number; height: number } {
   const { workAreaSize } = screen.getPrimaryDisplay();
-  const width = Math.round(workAreaSize.width * 0.4);
+  const width = Math.round(workAreaSize.width * 0.7);
   const height = Math.round(workAreaSize.height * 0.6);
   return { width, height };
 }
@@ -92,6 +101,45 @@ function loadWindow(win: BrowserWindow, hash: string): void {
   } else {
     win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { hash });
   }
+}
+
+function getAttachmentsDir(): string {
+  const dir = path.join(app.getPath('userData'), 'attachments', 'whiteboard');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function extensionFromMime(mime: string): string {
+  const map: Record<string, string> = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/svg+xml': '.svg',
+    'application/pdf': '.pdf',
+    'text/plain': '.txt',
+  };
+  return map[mime] || '';
+}
+
+function safeAttachmentName(name: string, mime: string): string {
+  const parsed = path.parse(name || 'attachment');
+  const base = parsed.name.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 80) || 'attachment';
+  const ext = (parsed.ext || extensionFromMime(mime)).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 16);
+  return `${base}${ext}`;
+}
+
+function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } {
+  const match = dataUrl.match(DATA_URL_PATTERN);
+  if (!match) throw new Error('无效的附件数据');
+
+  const mime = match[1] || 'application/octet-stream';
+  const isBase64 = Boolean(match[2]);
+  const data = match[3] || '';
+  return {
+    mime,
+    buffer: isBase64 ? Buffer.from(data, 'base64') : Buffer.from(decodeURIComponent(data), 'utf8'),
+  };
 }
 
 function waitForPluginEvent<T>(
@@ -450,6 +498,73 @@ ipcMain.handle('core:whiteboard:save-state', (_event, state: string) => {
     ['default', state],
   );
   autoSave();
+  return { success: true };
+});
+
+ipcMain.handle('core:whiteboard:save-attachment', (_event, input: WhiteboardAttachmentInput) => {
+  try {
+    const parsed = parseDataUrl(input.dataUrl);
+    const mime = input.mime && input.mime !== 'application/octet-stream' ? input.mime : parsed.mime;
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const filename = `${id}-${safeAttachmentName(input.name, mime)}`;
+    const filePath = path.join(getAttachmentsDir(), filename);
+    fs.writeFileSync(filePath, parsed.buffer);
+
+    let thumbnailFilename: string | undefined;
+    if (mime.startsWith('image/')) {
+      const image = nativeImage.createFromBuffer(parsed.buffer);
+      if (!image.isEmpty()) {
+        thumbnailFilename = `${id}-thumb.png`;
+        fs.writeFileSync(path.join(getAttachmentsDir(), thumbnailFilename), image.resize({ width: 75, height: 75 }).toPNG());
+      }
+    }
+
+    return {
+      success: true,
+      id,
+      name: input.name,
+      mime,
+      size: parsed.buffer.length,
+      filename,
+      thumbnailFilename,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '附件保存失败',
+    };
+  }
+});
+
+ipcMain.handle('core:whiteboard:get-attachment', (_event, filename: string, mime?: string) => {
+  const safeName = path.basename(filename);
+  const filePath = path.join(getAttachmentsDir(), safeName);
+  if (!fs.existsSync(filePath)) return null;
+
+  const buffer = fs.readFileSync(filePath);
+  return `data:${mime || 'application/octet-stream'};base64,${buffer.toString('base64')}`;
+});
+
+ipcMain.handle('core:whiteboard:open-attachments-dir', async () => {
+  await shell.openPath(getAttachmentsDir());
+  return { success: true };
+});
+
+ipcMain.handle('core:whiteboard:open-attachment', async (_event, filename: string) => {
+  const safeName = path.basename(filename);
+  const filePath = path.join(getAttachmentsDir(), safeName);
+  if (!fs.existsSync(filePath)) return { success: false, error: '附件文件不存在' };
+
+  const error = await shell.openPath(filePath);
+  return error ? { success: false, error } : { success: true };
+});
+
+ipcMain.handle('core:whiteboard:show-attachment-in-folder', (_event, filename: string) => {
+  const safeName = path.basename(filename);
+  const filePath = path.join(getAttachmentsDir(), safeName);
+  if (!fs.existsSync(filePath)) return { success: false, error: '附件文件不存在' };
+
+  shell.showItemInFolder(filePath);
   return { success: true };
 });
 
