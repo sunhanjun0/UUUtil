@@ -3,6 +3,8 @@
  *
  * 铁律：插件之间禁止直接 import，所有跨模块通信必须走这里
  */
+import { error as logError } from './logger';
+
 export type EventHandler = (...args: any[]) => void;
 
 class EventBus {
@@ -39,7 +41,8 @@ class EventBus {
       try {
         handler(...args);
       } catch (err) {
-        console.error(`[EventBus] 事件 "${event}" 处理器出错:`, err);
+        const message = err instanceof Error ? err.message : String(err);
+        logError('event-bus', '事件处理器出错', { event, error: message });
         // 不抛异常，一个插件挂了不影响其他插件
       }
     }

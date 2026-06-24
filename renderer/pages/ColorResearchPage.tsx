@@ -278,6 +278,168 @@ const classicSchemes: ClassicScheme[] = [
   },
 ];
 
+function getPreviewKind(scheme: ClassicScheme): string {
+  const text = `${scheme.name} ${scheme.scene}`;
+  if (/电商|营销|活动/.test(text)) return 'commerce';
+  if (/终端|监控|开发者/.test(text)) return 'terminal';
+  if (/数据|报表|仪表盘|分析/.test(text)) return 'dashboard';
+  if (/AI|金融科技/.test(text)) return 'ai';
+  if (/会员|高端|金融资产/.test(text)) return 'premium';
+  if (/教育|学习|儿童/.test(text)) return 'education';
+  if (/医疗|健康|保险|安全/.test(text)) return 'health';
+  if (/知识|笔记|日程|个人工具|内容|博客/.test(text)) return 'notes';
+  if (/创意|设计|品牌|作品集|展览/.test(text)) return 'creative';
+  if (/美妆|社区|情绪/.test(text)) return 'community';
+  if (/生活方式|个人空间|家居/.test(text)) return 'lifestyle';
+  if (/极简|效率工具|企业|B2B|协同|SaaS|管理后台/.test(text)) return 'workspace';
+  return 'workspace';
+}
+
+function getSchemePreviewCopy(kind: string): { title: string; subtitle: string } {
+  const copy: Record<string, { title: string; subtitle: string }> = {
+    commerce: { title: '活动转化页', subtitle: '高能色集中给价格、优惠和购买按钮' },
+    terminal: { title: '运行监控台', subtitle: '深色底承载日志，亮色表达状态' },
+    dashboard: { title: '运营仪表盘', subtitle: '色彩用于区分指标、状态和风险' },
+    ai: { title: 'AI 分析工作台', subtitle: '冷色建立专业感，暖色引导行动' },
+    premium: { title: '会员权益卡', subtitle: '深色空间配合高价值点缀' },
+    education: { title: '学习任务页', subtitle: '清晰结构配合奖励反馈' },
+    health: { title: '健康信息卡', subtitle: '可信、安全、干净的状态表达' },
+    notes: { title: '知识记录页', subtitle: '低干扰背景适合长时间阅读' },
+    creative: { title: '创意画布', subtitle: '高识别模块和视觉节奏' },
+    community: { title: '社区内容流', subtitle: '柔和色彩建立情绪和亲和力' },
+    lifestyle: { title: '生活空间页', subtitle: '自然色彩提供舒适和稳定感' },
+    workspace: { title: '效率工作台', subtitle: '结构、操作和信息层级清晰分离' },
+  };
+  return copy[kind] || copy.workspace;
+}
+
+function SchemePreview({ scheme, colors }: { scheme: ClassicScheme; colors: string[] }) {
+  const kind = getPreviewKind(scheme);
+  const copy = getSchemePreviewCopy(kind);
+  const [c0, c1, c2, c3] = colors;
+  const bg = c2 || '#f8fafc';
+  const primary = c0 || '#2563eb';
+  const accent = c1 || '#f59e0b';
+  const text = c3 || '#0f172a';
+  const surface = blend(bg, '#ffffff', 0.72);
+
+  if (kind === 'commerce') {
+    return (
+      <Box bg={bg} p={3} minH="132px">
+        <Flex justify="space-between" align="center" mb={2}>
+          <Text fontSize="10px" fontWeight={800} color={text}>{copy.title}</Text>
+          <Badge bg={accent} color="white" fontSize="8px">限时</Badge>
+        </Flex>
+        <Flex gap={2}>
+          <Box flex={1} bg={surface} borderRadius="sm" p={2} border="1px solid" borderColor="blackAlpha.100">
+            <Text fontSize="8px" color={text} opacity={0.65}>精选套装</Text>
+            <Text fontSize="18px" fontWeight={900} color={primary}>¥199</Text>
+            <Text fontSize="8px" color={text} opacity={0.55}>{copy.subtitle}</Text>
+          </Box>
+          <Flex w="72px" direction="column" justify="space-between">
+            <Box bg={accent} color="white" borderRadius="sm" px={2} py={1}><Text fontSize="8px" fontWeight={800}>立即购买</Text></Box>
+            <Box bg={blend(accent, '#ffffff', 0.78)} borderRadius="sm" px={2} py={1}><Text fontSize="8px" color={text}>优惠券</Text></Box>
+          </Flex>
+        </Flex>
+      </Box>
+    );
+  }
+
+  if (kind === 'terminal') {
+    return (
+      <Box bg={primary} p={3} minH="132px" fontFamily="mono">
+        <Flex gap={1} mb={2}><Box w="6px" h="6px" borderRadius="full" bg={accent} /><Box w="6px" h="6px" borderRadius="full" bg={c2} /><Box w="6px" h="6px" borderRadius="full" bg={c3} /></Flex>
+        <Text fontSize="9px" color={accent}>$ uuutil agent status</Text>
+        <Text fontSize="8px" color={c2}>✓ connector ready</Text>
+        <Text fontSize="8px" color={c2}>✓ whiteboard indexed</Text>
+        <Box mt={2} h="6px" w="74%" bg={accent} borderRadius="full" />
+        <Text mt={2} fontSize="8px" color={c2} opacity={0.78}>{copy.subtitle}</Text>
+      </Box>
+    );
+  }
+
+  if (kind === 'dashboard' || kind === 'ai') {
+    return (
+      <Box bg={bg} p={3} minH="132px">
+        <Flex justify="space-between" mb={2}><Text fontSize="10px" fontWeight={800} color={text}>{copy.title}</Text><Badge bg={accent} color="white" fontSize="8px">Live</Badge></Flex>
+        <SimpleGrid columns={3} gap={1.5} mb={2}>
+          {[primary, accent, text].map((color, index) => <Box key={index} bg={surface} borderRadius="sm" p={1.5}><Text fontSize="7px" color={text} opacity={0.55}>Metric</Text><Text fontSize="11px" fontWeight={800} color={color}>{[86, 42, 19][index]}%</Text></Box>)}
+        </SimpleGrid>
+        <Flex align="end" gap={1} h="36px" bg={surface} borderRadius="sm" p={1.5}>{[18, 28, 14, 34, 24, 40].map((h, i) => <Box key={i} flex={1} h={`${h}px`} bg={i % 2 ? accent : primary} borderRadius="1px" opacity={0.86} />)}</Flex>
+      </Box>
+    );
+  }
+
+  if (kind === 'premium') {
+    return (
+      <Box bg={primary} p={3} minH="132px">
+        <Box border="1px solid" borderColor={accent} borderRadius="md" p={3} bg={blend(primary, c3 || '#ffffff', 0.12)}>
+          <Text fontSize="9px" color={accent} fontWeight={800}>ELITE PASS</Text>
+          <Text fontSize="16px" color={c2 || '#fff'} fontWeight={900}>{copy.title}</Text>
+          <Text fontSize="8px" color={c2 || '#fff'} opacity={0.7}>{copy.subtitle}</Text>
+          <Flex mt={3} gap={1}>{[0, 1, 2].map((i) => <Box key={i} h="5px" flex={1} bg={i === 0 ? accent : c3} opacity={i === 0 ? 1 : 0.45} borderRadius="full" />)}</Flex>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (kind === 'education') {
+    return (
+      <Box bg={bg} p={3} minH="132px">
+        <Text fontSize="10px" fontWeight={800} color={text} mb={2}>{copy.title}</Text>
+        <Box bg={surface} borderRadius="sm" p={2} mb={2}><Text fontSize="8px" color={text}>今日课程</Text><Box mt={1} h="6px" bg={primary} borderRadius="full" w="68%" /></Box>
+        <Flex gap={1.5}><Badge bg={accent} color={text} fontSize="8px">+20 积分</Badge><Badge bg={blend(primary, '#ffffff', 0.78)} color={primary} fontSize="8px">已完成 3/5</Badge></Flex>
+      </Box>
+    );
+  }
+
+  if (kind === 'health' || kind === 'lifestyle') {
+    return (
+      <Box bg={bg} p={3} minH="132px">
+        <Text fontSize="10px" fontWeight={800} color={text} mb={2}>{copy.title}</Text>
+        <Flex gap={2} align="center"><Box w="44px" h="44px" borderRadius="full" bg={primary} display="flex" alignItems="center" justifyContent="center"><Text color="white" fontSize="11px" fontWeight={800}>OK</Text></Box><Box flex={1}><Text fontSize="8px" color={text}>{copy.subtitle}</Text><Box mt={2} h="7px" bg={blend(primary, '#ffffff', 0.7)} borderRadius="full"><Box h="7px" w="72%" bg={accent} borderRadius="full" /></Box></Box></Flex>
+      </Box>
+    );
+  }
+
+  if (kind === 'notes' || kind === 'community') {
+    return (
+      <Box bg={bg} p={3} minH="132px">
+        <Text fontSize="10px" fontWeight={800} color={text} mb={2}>{copy.title}</Text>
+        <SimpleGrid columns={2} gap={2}>
+          <Box bg={surface} p={2} borderRadius="sm" borderTop="3px solid" borderTopColor={primary}><Text fontSize="8px" color={text} fontWeight={700}>灵感记录</Text><Text fontSize="7px" color={text} opacity={0.55}>{copy.subtitle}</Text></Box>
+          <Box bg={blend(accent, '#ffffff', 0.74)} p={2} borderRadius="sm"><Text fontSize="8px" color={text} fontWeight={700}>待办提醒</Text><Text fontSize="7px" color={text} opacity={0.55}>标签、情绪、片段</Text></Box>
+        </SimpleGrid>
+      </Box>
+    );
+  }
+
+  if (kind === 'creative') {
+    return (
+      <Box bg={bg} p={3} minH="132px" position="relative" overflow="hidden">
+        <Text fontSize="10px" fontWeight={900} color={text}>{copy.title}</Text>
+        <Box position="absolute" right="18px" top="24px" w="42px" h="42px" borderRadius="full" bg={accent} />
+        <Box position="absolute" left="22px" bottom="18px" w="58px" h="30px" bg={primary} transform="rotate(-8deg)" />
+        <Box position="absolute" right="62px" bottom="20px" w="36px" h="36px" border="4px solid" borderColor={text} />
+        <Text position="absolute" left="12px" bottom="8px" fontSize="8px" color={text} opacity={0.7}>{copy.subtitle}</Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box bg={bg} p={3} minH="132px">
+      <Flex h="26px" bg={text} align="center" justify="space-between" px={2} borderRadius="sm" mb={2}>
+        <Text fontSize="9px" color="white" fontWeight={700}>{copy.title}</Text>
+        <Flex gap={1}><Box w="18px" h="5px" borderRadius="full" bg={primary} /><Box w="18px" h="5px" borderRadius="full" bg={accent} /></Flex>
+      </Flex>
+      <Flex gap={2}>
+        <Box w="56px" minH="58px" bg={primary} borderRadius="sm" p={2}><Text fontSize="8px" color="white" fontWeight={700}>导航</Text></Box>
+        <Box flex={1} bg={surface} p={2} borderRadius="sm" borderLeft="3px solid" borderLeftColor={accent}><Text fontSize="8px" color={text} fontWeight={700}>内容卡片标题</Text><Text fontSize="8px" color={text} opacity={0.55}>{copy.subtitle}</Text></Box>
+      </Flex>
+    </Box>
+  );
+}
+
 export default function ColorResearchPage() {
   const [brandColor, setBrandColor] = useState('#2563eb');
   const [secondColor, setSecondColor] = useState('#e11d48');
@@ -393,30 +555,9 @@ export default function ColorResearchPage() {
             </SimpleGrid>
 
             {/* 拼色应用预览 */}
-            <Heading size="xs" mb={1.5}>应用预览</Heading>
+            <Heading size="xs" mb={1.5}>应用预览 · {getSchemePreviewCopy(getPreviewKind(activeScheme)).title}</Heading>
             <Box borderRadius="sm" overflow="hidden" border="1px solid" borderColor="gray.100">
-              <Flex h="28px" bg={schemeColors[3] || schemeColors[0]} align="center" justify="space-between" px={2}>
-                <Text fontSize="10px" color="white" fontWeight={700}>Product</Text>
-                <Flex gap={1}>
-                  <Box w="24px" h="6px" borderRadius="full" bg={schemeColors[0]} />
-                  <Box w="24px" h="6px" borderRadius="full" bg={schemeColors[1]} />
-                </Flex>
-              </Flex>
-              <Flex bg={schemeColors[2] || 'gray.50'}>
-                <Box w="70px" minH="72px" bg={schemeColors[0]} opacity={0.92} p={2}>
-                  <Text fontSize="8px" color="white" fontWeight={700}>侧栏</Text>
-                </Box>
-                <Box flex={1} p={2}>
-                  <Flex gap={1.5} mb={1.5}>
-                    <Box px={2} py={0.5} bg={schemeColors[1]} borderRadius="sm"><Text fontSize="8px" color="white">主行动</Text></Box>
-                    <Box px={2} py={0.5} bg="white" border="1px solid" borderColor={schemeColors[0]} borderRadius="sm"><Text fontSize="8px" color={schemeColors[0]}>次操作</Text></Box>
-                  </Flex>
-                  <Box bg="white" p={2} borderRadius="sm" borderLeft="3px solid" borderLeftColor={schemeColors[1]}>
-                    <Text fontSize="8px" color={schemeColors[3] || 'gray.700'} fontWeight={700}>内容卡片标题</Text>
-                    <Text fontSize="8px" color="gray.500">用主色组织结构，点缀色强调关键动作。</Text>
-                  </Box>
-                </Box>
-              </Flex>
+              <SchemePreview scheme={activeScheme} colors={schemeColors} />
             </Box>
           </Box>
         </Box>

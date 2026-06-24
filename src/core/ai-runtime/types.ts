@@ -6,6 +6,11 @@ export interface ConnectorChatRequest {
   provider: AiProviderConfig;
   runtimeConfig: AiRuntimeConfig;
   request: AiChatRequest;
+  signal?: AbortSignal;
+}
+
+export interface AiStreamCallbacks {
+  onChunk: (chunk: string) => void;
 }
 
 export interface ModelConnector {
@@ -14,4 +19,5 @@ export interface ModelConnector {
   providerType: AiProviderConfig['type'];
   capabilities: ModelConnectorCapability[];
   chat(request: ConnectorChatRequest): Promise<AiChatResponse>;
+  streamChat?(request: ConnectorChatRequest, callbacks: AiStreamCallbacks): Promise<AiChatResponse>;
 }

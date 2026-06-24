@@ -4,6 +4,7 @@
 export { bus } from './event-bus';
 export { initDatabase, getDatabase, closeDatabase, autoSave } from './db';
 export { loadAllPlugins, listPlugins, getPluginCount } from './plugin-loader';
+export { initLogger, closeLogger, debug, info, warn, error, openLogsDir, getLogPath, readRecentLogs, clearLogs } from './logger';
 export {
   initAi,
   listAiProviders,
@@ -12,5 +13,6 @@ export {
   getAiRuntimeConfig,
   updateAiRuntimeConfig,
   chat,
+  streamChat,
 } from './ai';
 export type { Plugin, PluginManifest } from './plugin-loader';

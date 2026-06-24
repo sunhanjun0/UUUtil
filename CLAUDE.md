@@ -27,7 +27,9 @@ npm run dev:renderer # 仅启动 Vite 开发服务器
 
 ```
 src/
-├── core/           # 内核：EventBus、PluginLoader、DB
+├── core/           # 内核：EventBus、PluginLoader、DB、AI、Logger
+│   ├── ai.ts           # AI 统一入口兼容导出
+│   ├── logger.ts       # JSON Lines 结构化日志、轮转、读取、清理
 │   ├── event-bus.ts    # 全局单例 bus，插件间唯一通信通道
 │   ├── plugin-loader.ts # 扫描 src/plugins/ 目录，动态加载激活插件
 │   └── db.ts           # sql.js 内存数据库 + 手动 saveToDisk() 持久化
@@ -51,13 +53,16 @@ renderer/               # Vite + React 渲染进程
 2. **插件 API**：每个插件对外暴露的唯一接口在 `api.ts` 中定义，其他地方禁止 import 插件内部实现
 3. **数据库统一入口**：所有数据库操作通过 `core/db` 的 `getDatabase()` 获取连接，写操作后必须调用 `autoSave()` 持久化
 4. **事件命名**：`core:*` 为内核事件（插件不得发送），`plugin-id:*` 为插件命名空间
-5. **错误处理**：EventBus handler 不抛异常（会被静默捕获），插件自行处理内部异常
+5. **错误处理**：EventBus handler 不抛异常（会被静默捕获），插件自行处理内部异常并通过核心日志记录摘要
+6. **日志统一入口**：主进程/核心模块使用 `core/logger`，渲染进程使用 `window.assistant.log()`；禁止散落文件日志，禁止记录 API Key、Token、完整用户输入、附件原文和 base64
 
 ## 启动顺序
 
 ```
 app.whenReady()
+  → initLogger()          # 初始化 JSON Lines 日志和轮转
   → initDatabase()        # 加载 WASM，创建/打开 SQLite，建系统表
+  → initAi()              # 初始化 AI Provider 与运行配置表
   → loadAllPlugins()      # 扫描 src/plugins/，require 每个插件的 index.js
   → bus.emit('core:ready') # 通知所有插件核心就绪
   → createWindow()        # 开发模式加载 localhost:5173，生产模式加载 HTML 文件

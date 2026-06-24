@@ -2,11 +2,11 @@ import { getDatabase, autoSave } from '../db';
 import { registerModelConnector } from './connector-registry';
 import { openAiCompatibleConnector } from './connectors/openai-compatible';
 
-export { chat } from './chat-runtime';
+export { chat, streamChat } from './chat-runtime';
 export { listAiProviders, upsertAiProvider, deleteAiProvider } from './provider-store';
 export { getAiRuntimeConfig, updateAiRuntimeConfig } from './runtime-config';
 export { listModelConnectors, registerModelConnector } from './connector-registry';
-export type { ConnectorChatRequest, ModelConnector, ModelConnectorCapability } from './types';
+export type { AiStreamCallbacks, ConnectorChatRequest, ModelConnector, ModelConnectorCapability } from './types';
 
 export function initAi(): void {
   const db = getDatabase();

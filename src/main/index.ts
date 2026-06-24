@@ -18,6 +18,16 @@ import {
   getAiRuntimeConfig,
   updateAiRuntimeConfig,
   chat,
+  streamChat,
+  initLogger,
+  closeLogger,
+  info as logInfo,
+  warn as logWarn,
+  error as logError,
+  openLogsDir,
+  getLogPath,
+  readRecentLogs,
+  clearLogs,
 } from '../core';
 import { loadAllPlugins, listPlugins } from '../core/plugin-loader';
 import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig } from '../shared/types';
@@ -633,6 +643,8 @@ ipcMain.handle('plugin:knowledge-base:deleteTag', (_event, tagId: string) => {
 });
 
 // ---------- AI 核心 IPC ----------
+const aiStreamControllers = new Map<string, AbortController>();
+
 ipcMain.handle('core:ai:list-providers', () => listAiProviders());
 ipcMain.handle('core:ai:get-runtime-config', () => getAiRuntimeConfig());
 ipcMain.handle('core:ai:upsert-provider', (_event, provider: Omit<AiProviderConfig, 'createdAt' | 'updatedAt'>) => {
@@ -640,20 +652,84 @@ ipcMain.handle('core:ai:upsert-provider', (_event, provider: Omit<AiProviderConf
 });
 ipcMain.handle('core:ai:delete-provider', (_event, providerId: string) => deleteAiProvider(providerId));
 ipcMain.handle('core:ai:update-runtime-config', (_event, config: AiRuntimeConfig) => updateAiRuntimeConfig(config));
-ipcMain.handle('core:ai:chat', (_event, request: AiChatRequest) => chat(request));
+ipcMain.handle('core:ai:chat', async (_event, request: AiChatRequest) => {
+  logInfo('ai', 'chat_request_started', { messageCount: request.messages.length, model: request.model, maxTokens: request.maxTokens, timeoutMs: request.timeoutMs });
+  const response = await chat(request);
+  logInfo(response.success ? 'ai' : 'ai', response.success ? 'chat_request_completed' : 'chat_request_failed', {
+    success: response.success,
+    model: response.model,
+    finishReason: response.finishReason,
+    durationMs: response.durationMs,
+    usage: response.usage,
+    error: response.error,
+  });
+  return response;
+});
+ipcMain.handle('core:ai:chat-stream', async (event, streamId: string, request: AiChatRequest) => {
+  logInfo('ai', 'chat_stream_started', { streamId, messageCount: request.messages.length, model: request.model, maxTokens: request.maxTokens, timeoutMs: request.timeoutMs });
+  const controller = new AbortController();
+  aiStreamControllers.set(streamId, controller);
+  try {
+    const response = await streamChat(request, {
+      onChunk: (chunk: string) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('core:ai:chat-stream:chunk', streamId, chunk);
+        }
+      },
+    }, controller.signal);
+    logInfo(response.success ? 'ai' : 'ai', response.success ? 'chat_stream_completed' : 'chat_stream_failed', {
+      streamId,
+      success: response.success,
+      model: response.model,
+      finishReason: response.finishReason,
+      durationMs: response.durationMs,
+      usage: response.usage,
+      error: response.error,
+    });
+    return response;
+  } finally {
+    aiStreamControllers.delete(streamId);
+  }
+});
+
+ipcMain.handle('core:ai:cancel-chat-stream', (_event, streamId: string) => {
+  const controller = aiStreamControllers.get(streamId);
+  if (!controller) return { success: false, error: '未找到正在生成的请求' };
+  logWarn('ai', 'chat_stream_cancelled', { streamId });
+  controller.abort();
+  aiStreamControllers.delete(streamId);
+  return { success: true };
+});
+
+ipcMain.handle('core:logs:write', (_event, level: string, scope: string, message: string, meta?: Record<string, unknown>) => {
+  const safeScope = `renderer:${scope || 'unknown'}`;
+  if (level === 'error') logError(safeScope, message, meta);
+  else if (level === 'warn') logWarn(safeScope, message, meta);
+  else logInfo(safeScope, message, meta);
+  return { success: true };
+});
+
+ipcMain.handle('core:logs:open-dir', () => ({ success: openLogsDir() }));
+ipcMain.handle('core:logs:get-path', () => getLogPath());
+ipcMain.handle('core:logs:recent', (_event, lines?: number) => readRecentLogs(lines));
+ipcMain.handle('core:logs:clear', () => ({ success: clearLogs() }));
 
 // ---------- 启动 ----------
 async function bootstrap(): Promise<void> {
+  initLogger();
+  logInfo('app', '应用启动');
+
   await initDatabase(path.join(app.getPath('userData'), 'assistant.db'));
-  console.log('[Main] 数据库已初始化');
+  logInfo('app', '数据库已初始化');
 
   initAi();
-  console.log('[Main] AI 核心已初始化');
+  logInfo('app', 'AI 核心已初始化');
 
   await loadAllPlugins();
+  logInfo('app', '插件加载完成', { count: listPlugins().length });
 
   bus.emit('core:ready');
-  console.log('[Main] 核心已就绪');
+  logInfo('app', '核心已就绪');
 
   createBallWindow();
   createTray();
@@ -679,5 +755,7 @@ app.on('will-quit', () => {
 });
 
 app.on('before-quit', () => {
+  logInfo('app', '应用退出');
   closeDatabase();
+  closeLogger();
 });

@@ -23,6 +23,13 @@ bus.on('knowledge:results', handler);
 - 写操作后调用 `autoSave()` 持久化到磁盘
 - sql.js 是内存数据库 + 手动持久化模式
 
+### 4. 日志统一走 core/logger
+- 主进程和核心模块使用 `src/core/logger.ts` 的 `debug/info/warn/error`
+- 渲染进程通过 `window.assistant.log(level, scope, message, meta)` 上报日志
+- 禁止在插件、页面或组件中自行创建分散日志文件
+- 禁止记录 API Key、Token、完整请求头、完整用户隐私输入、附件原文和 base64 内容
+- 推荐记录：模块 scope、操作名称、耗时、Token 用量、finishReason、错误摘要、资源 ID 等可诊断但不敏感的信息
+
 ## 命名规范
 
 | 类型 | 规范 | 示例 |
@@ -32,6 +39,7 @@ bus.on('knowledge:results', handler);
 | React 组件 | PascalCase | `PluginCard` |
 | 数据库表名 | 蛇形命名 | `_plugins`, `plugin_todo_items` |
 | 事件名 | `domain:action` | `core:ready`, `todo:item-created` |
+| 日志 scope | 小写横线或冒号分层 | `app`, `ai`, `renderer:whiteboard` |
 
 ## 事件命名约定
 
@@ -47,5 +55,31 @@ autoSave(); // 写操作后必须调用
 ```
 
 ## 错误处理
-- event-bus 中的 handler 不抛异常（会被静默捕获）
+- event-bus 中的 handler 不抛异常（会被静默捕获），但必须通过核心日志记录错误摘要
 - 插件内部自行处理异常，不传播到核心层
+- IPC 边界返回明确的 `{ success, error }` 或业务响应结构，不把未处理异常直接暴露给 UI
+
+## 日志记录模式
+
+主进程和核心模块：
+
+```typescript
+import { info, warn, error } from './logger';
+
+info('ai', 'chat_stream_completed', { durationMs, finishReason, usage });
+warn('ai', 'chat_stream_cancelled', { streamId });
+error('event-bus', '事件处理器出错', { event, error: message });
+```
+
+渲染进程：
+
+```typescript
+window.assistant.log('warn', 'assistant', '发送消息失败', { reason });
+```
+
+日志内容要求：
+
+- `message` 使用稳定、可搜索的动作描述，不写整段用户输入。
+- `meta` 只放诊断字段，避免敏感信息和大对象。
+- 上传附件只记录文件名、mime、大小、类型，不记录文件内容或 dataUrl。
+- 需要展示给用户的错误仍使用 toast/UI；日志只用于诊断和追踪。

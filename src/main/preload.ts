@@ -49,7 +49,27 @@ contextBridge.exposeInMainWorld('assistant', {
     deleteProvider: (providerId: string) => ipcRenderer.invoke('core:ai:delete-provider', providerId),
     updateRuntimeConfig: (config: AiRuntimeConfig) => ipcRenderer.invoke('core:ai:update-runtime-config', config),
     chat: (request: AiChatRequest) => ipcRenderer.invoke('core:ai:chat', request),
+    chatStream: (request: AiChatRequest, onChunk: (chunk: string) => void) => {
+      const streamId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const listener = (_event: Electron.IpcRendererEvent, chunkStreamId: string, chunk: string) => {
+        if (chunkStreamId === streamId) onChunk(chunk);
+      };
+      ipcRenderer.on('core:ai:chat-stream:chunk', listener);
+      const promise = ipcRenderer.invoke('core:ai:chat-stream', streamId, request).finally(() => {
+        ipcRenderer.removeListener('core:ai:chat-stream:chunk', listener);
+      });
+      return {
+        streamId,
+        promise,
+        cancel: () => ipcRenderer.invoke('core:ai:cancel-chat-stream', streamId),
+      };
+    },
   },
 
   getVersion: () => '0.1.0',
+  log: (level: string, scope: string, message: string, meta?: Record<string, unknown>) => ipcRenderer.invoke('core:logs:write', level, scope, message, meta),
+  openLogsDir: () => ipcRenderer.invoke('core:logs:open-dir'),
+  getLogPath: () => ipcRenderer.invoke('core:logs:get-path'),
+  readRecentLogs: (lines?: number) => ipcRenderer.invoke('core:logs:recent', lines),
+  clearLogs: () => ipcRenderer.invoke('core:logs:clear'),
 });

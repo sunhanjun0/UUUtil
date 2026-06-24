@@ -48,8 +48,14 @@ declare global {
         deleteProvider: (providerId: string) => Promise<any>;
         updateRuntimeConfig: (config: AiRuntimeConfig) => Promise<any>;
         chat: (request: AiChatRequest) => Promise<any>;
+        chatStream: (request: AiChatRequest, onChunk: (chunk: string) => void) => { streamId: string; promise: Promise<any>; cancel: () => Promise<any> };
       };
       getVersion: () => string;
+      log: (level: string, scope: string, message: string, meta?: Record<string, unknown>) => Promise<any>;
+      openLogsDir: () => Promise<{ success: boolean }>;
+      getLogPath: () => Promise<string | null>;
+      readRecentLogs: (lines?: number) => Promise<string[]>;
+      clearLogs: () => Promise<{ success: boolean }>;
       openDevTools: () => void;
     };
   }

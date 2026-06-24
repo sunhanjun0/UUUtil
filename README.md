@@ -17,7 +17,9 @@
 - 计算器：支持鼠标与键盘输入、连续计算和最多 10 条历史记录。
 - 开发工具：支持 JSON、SQL、Base64、时间戳、正则测试、UUID 生成。
 - 配色研究页：用于沉淀 UI 色彩方案实验。
-- AI 核心框架：提供可配置 Provider、默认模型参数和统一 Chat 调用接口，便于后续接入翻译、助理等插件。
+- AI 核心框架：提供可配置 Provider、默认模型参数、统一 Chat/Streaming 调用接口和独立助手页，便于后续接入翻译、白板 Agent、知识库问答等能力。
+- AI 助手：支持流式输出、Markdown 渲染、停止生成、耗时/Token 页脚、会话历史、新对话侧边栏和图片/音频等多模态附件输入。
+- 日志框架：主进程提供 JSON Lines 结构化日志、日志轮转、渲染进程日志上报 IPC，并内置日志管理页用于查看、过滤、打开目录和清空日志。
 
 ## 技术栈
 
@@ -56,10 +58,11 @@ npm run pack         # 使用 electron-builder 打包目录版 macOS 应用
 
 ```text
 src/
-├── core/                 # 内核能力：事件总线、插件加载、数据库
+├── core/                 # 内核能力：事件总线、插件加载、数据库、AI、日志
 │   ├── ai.ts
 │   ├── db.ts
 │   ├── event-bus.ts
+│   ├── logger.ts
 │   └── plugin-loader.ts
 ├── main/                 # Electron 主进程与 preload
 │   ├── index.ts
@@ -89,6 +92,7 @@ renderer/
 3. 数据库统一通过 `core/db` 的 `getDatabase()` 获取连接。
 4. 数据写入后必须调用 `autoSave()` 持久化。
 5. `core:*` 为内核事件，插件使用 `plugin-id:*` 命名空间。
+6. 日志统一走 `src/core/logger.ts` 与主进程 IPC，禁止新增散落的文件日志实现；错误日志应避免写入 API Key、完整用户输入和大体积附件内容。
 
 ## 插件开发
 
@@ -129,8 +133,10 @@ AI 能力集中在 `src/core/ai.ts`，目前提供：
 
 - Provider 配置：支持保存多个 `openai-compatible` Provider，例如 OpenAI、DeepSeek、通义千问兼容接口或本地兼容服务。
 - 运行配置：支持默认 Provider、默认模型、`temperature`、`maxTokens`、`timeoutMs`。
-- 统一调用：通过 `chat(request)` 发起文本生成请求，后续翻译、助理、摘要等插件可复用同一入口。
-- IPC 暴露：渲染进程可通过 `window.assistant.ai` 管理配置和调用模型。
+- 统一调用：通过 `chat(request)` 发起文本生成，通过 `streamChat(request, callbacks, signal?)` 发起流式生成；后续翻译、助理、摘要等插件可复用同一入口。
+- 流式通信：渲染进程回调 `onChunk` 接收逐字增量，支持 `AbortSignal` 取消生成和空闲超时（流式超时重置机制）。
+- 多模态消息结构：`AiMessage.content` 支持 `string | AiMessageContentPart[]`，含 `text`、`image_url`、`input_audio` 类型。
+- IPC 暴露：渲染进程可通过 `window.assistant.ai` 管理配置、调用模型和发起流式对话。
 
 Provider 的 `baseUrl` 应填写兼容接口根路径，例如：
 
@@ -141,6 +147,23 @@ http://localhost:11434/v1
 ```
 
 实际请求会发送到 `{baseUrl}/chat/completions`。
+
+## 日志框架
+
+日志能力集中在 `src/core/logger.ts`，目前提供：
+
+- 结构化日志：按 JSON Lines 写入，字段包含 `time`、`level`、`scope`、`message`、`meta`。
+- 文件位置：默认写入 Electron `userData/logs/uuutil.log`。
+- 日志轮转：单文件超过 5 MB 后自动轮转，最多保留 5 个历史文件。
+- 主进程 API：`debug/info/warn/error`、`readRecentLogs()`、`openLogsDir()`、`clearLogs()`。
+- 渲染进程上报：通过 `window.assistant.log(level, scope, message, meta)` 进入主进程统一写入。
+- 日志管理页：后台入口“日志”支持查看最近日志、按级别/模块过滤、刷新、打开目录和清空日志。
+
+日志约束：
+
+- 禁止记录 API Key、Token、完整请求头、完整用户隐私输入和附件原文/base64。
+- 可记录 Provider ID、模型名、耗时、Token 用量、finishReason、错误摘要等诊断信息。
+- 插件和页面不要自行创建日志文件，统一复用核心日志与 IPC 能力。
 
 ## 数据与构建产物
 
@@ -158,6 +181,8 @@ http://localhost:11434/v1
 - `docs/CONVENTIONS.md`：编码与架构约定。
 - `docs/requirements.md`：当前产品需求与交互约定。
 - `docs/ai-architecture.md`：AI / Agent 旁路运行时与 Connector 架构原则。
+- `docs/assistant-ui-integration.md`：assistant-ui 接入边界、阶段计划和开发约束。
 - `docs/changes/001-scaffold.md`：项目脚手架记录。
 - `docs/changes/002-first-packaging-issues.md`：首次打包问题记录。
 - `docs/changes/003-whiteboard-panel-tools.md`：面板交互、白板与工具能力迭代记录。
+- `docs/changes/004-ai-assistant-logging.md`：AI 助手、流式输出、多模态附件与日志框架迭代记录。

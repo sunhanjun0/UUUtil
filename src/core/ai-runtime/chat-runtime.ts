@@ -1,4 +1,5 @@
 import type { AiChatRequest, AiChatResponse, AiProviderConfig } from '../../shared/types';
+import type { AiStreamCallbacks } from './types';
 import { getModelConnector } from './connector-registry';
 import { getAiRuntimeConfig } from './runtime-config';
 import { listAiProviders } from './provider-store';
@@ -26,4 +27,32 @@ export async function chat(request: AiChatRequest): Promise<AiChatResponse> {
     runtimeConfig: getAiRuntimeConfig(),
     request,
   });
+}
+
+export async function streamChat(request: AiChatRequest, callbacks: AiStreamCallbacks, signal?: AbortSignal): Promise<AiChatResponse> {
+  const provider = resolveProvider(request.providerId);
+  if (!provider) {
+    return { success: false, error: '未配置可用的 AI Provider' };
+  }
+
+  const connector = getModelConnector(provider);
+  if (!connector) {
+    return { success: false, providerId: provider.id, error: `暂不支持的 AI Provider 类型: ${provider.type}` };
+  }
+
+  if (!connector.streamChat) {
+    return connector.chat({
+      provider,
+      runtimeConfig: getAiRuntimeConfig(),
+      request,
+      signal,
+    });
+  }
+
+  return connector.streamChat({
+    provider,
+    runtimeConfig: getAiRuntimeConfig(),
+    request,
+    signal,
+  }, callbacks);
 }

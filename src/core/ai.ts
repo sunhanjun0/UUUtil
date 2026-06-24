@@ -11,9 +11,11 @@ export {
   getAiRuntimeConfig,
   updateAiRuntimeConfig,
   chat,
+  streamChat,
 } from './ai-runtime';
 
 export type {
+  AiStreamCallbacks,
   ConnectorChatRequest,
   ModelConnector,
   ModelConnectorCapability,

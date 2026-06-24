@@ -20,10 +20,15 @@ export interface EventLogEntry {
 /** AI 消息角色 */
 export type AiMessageRole = 'system' | 'user' | 'assistant';
 
+export type AiMessageContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format?: string } };
+
 /** AI 对话消息 */
 export interface AiMessage {
   role: AiMessageRole;
-  content: string;
+  content: string | AiMessageContentPart[];
 }
 
 /** AI Provider 类型 */
@@ -66,7 +71,10 @@ export interface AiChatResponse {
   content?: string;
   providerId?: string;
   model?: string;
+  finishReason?: string;
   error?: string;
+  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number };
+  durationMs?: number;
 }
 
 /** AI 配置保存结果 */
