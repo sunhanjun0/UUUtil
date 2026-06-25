@@ -7,7 +7,6 @@
 
 import * as os from 'os';
 import * as pty from 'node-pty';
-import { ipcMain } from 'electron';
 import type { WebContents } from 'electron';
 import { info as logInfo, warn as logWarn } from '../core';
 
@@ -16,7 +15,7 @@ interface TerminalSession {
   webContents: WebContents;
 }
 
-interface CreateTerminalOptions {
+export interface CreateTerminalOptions {
   cols?: number;
   rows?: number;
 }
@@ -41,59 +40,57 @@ function buildEnv(): Record<string, string> {
   return env;
 }
 
-export function registerTerminalIpc(): void {
-  ipcMain.handle('core:terminal:create', (event, options?: CreateTerminalOptions) => {
-    const shell = resolveShell();
-    const cwd = os.homedir();
-    const ptyProcess = pty.spawn(shell, [], {
-      name: 'xterm-256color',
-      cols: options?.cols ?? 80,
-      rows: options?.rows ?? 24,
-      cwd,
-      env: buildEnv(),
-    });
-
-    const id = makeTerminalId();
-    const sender = event.sender;
-    sessions.set(id, { pty: ptyProcess, webContents: sender });
-    logInfo('terminal', 'session_created', { id, shell, cwd, pid: ptyProcess.pid });
-
-    ptyProcess.onData((data) => {
-      if (!sender.isDestroyed()) sender.send('core:terminal:data', id, data);
-    });
-
-    ptyProcess.onExit(({ exitCode, signal }) => {
-      if (!sender.isDestroyed()) sender.send('core:terminal:exit', id, exitCode, signal);
-      sessions.delete(id);
-      logInfo('terminal', 'session_exited', { id, exitCode, signal });
-    });
-
-    return id;
+/** 创建一个 PTY 会话，输出通过 sender 推送到对应渲染进程，返回会话 id。 */
+export function createTerminalSession(sender: WebContents, options?: CreateTerminalOptions): string {
+  const shell = resolveShell();
+  const cwd = os.homedir();
+  const ptyProcess = pty.spawn(shell, [], {
+    name: 'xterm-256color',
+    cols: options?.cols ?? 80,
+    rows: options?.rows ?? 24,
+    cwd,
+    env: buildEnv(),
   });
 
-  ipcMain.on('core:terminal:input', (_event, id: string, data: string) => {
-    sessions.get(id)?.pty.write(data);
+  const id = makeTerminalId();
+  sessions.set(id, { pty: ptyProcess, webContents: sender });
+  logInfo('terminal', 'session_created', { id, shell, cwd, pid: ptyProcess.pid });
+
+  ptyProcess.onData((data) => {
+    if (!sender.isDestroyed()) sender.send('core:terminal:data', id, data);
   });
 
-  ipcMain.on('core:terminal:resize', (_event, id: string, cols: number, rows: number) => {
-    const session = sessions.get(id);
-    if (!session) return;
-    try {
-      session.pty.resize(Math.max(1, cols), Math.max(1, rows));
-    } catch (error) {
-      logWarn('terminal', 'resize_failed', { id, error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  ipcMain.on('core:terminal:dispose', (_event, id: string) => {
-    const session = sessions.get(id);
-    if (!session) return;
-    try {
-      session.pty.kill();
-    } catch { /* 进程可能已退出 */ }
+  ptyProcess.onExit(({ exitCode, signal }) => {
+    if (!sender.isDestroyed()) sender.send('core:terminal:exit', id, exitCode, signal);
     sessions.delete(id);
-    logInfo('terminal', 'session_disposed', { id });
+    logInfo('terminal', 'session_exited', { id, exitCode, signal });
   });
+
+  return id;
+}
+
+export function writeTerminal(id: string, data: string): void {
+  sessions.get(id)?.pty.write(data);
+}
+
+export function resizeTerminal(id: string, cols: number, rows: number): void {
+  const session = sessions.get(id);
+  if (!session) return;
+  try {
+    session.pty.resize(Math.max(1, cols), Math.max(1, rows));
+  } catch (error) {
+    logWarn('terminal', 'resize_failed', { id, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+export function disposeTerminal(id: string): void {
+  const session = sessions.get(id);
+  if (!session) return;
+  try {
+    session.pty.kill();
+  } catch { /* 进程可能已退出 */ }
+  sessions.delete(id);
+  logInfo('terminal', 'session_disposed', { id });
 }
 
 export function disposeAllTerminals(): void {
