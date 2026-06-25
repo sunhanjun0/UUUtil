@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, Flex, Heading, IconButton, Text, Textarea, useToast } from '@chakra-ui/react';
+import { Box, Button, Collapse, Flex, Heading, IconButton, Text, Textarea, useDisclosure, useToast } from '@chakra-ui/react';
 import MarkdownPreview from '@uiw/react-markdown-preview';
 import '@uiw/react-markdown-preview/markdown.css';
-import { Bot, FileAudio, FileText, Image as ImageIcon, Paperclip, Plus, Send, Square, Trash2, User, X } from 'lucide-react';
-import type { AiChatResponse, AiMessage, AiMessageContentPart } from '../../src/shared/types';
+import { Bot, Brain, ChevronDown, ChevronRight, FileAudio, FileText, Image as ImageIcon, Paperclip, Plus, Send, Square, Trash2, User, X } from 'lucide-react';
+import type { AiChatResponse, AiMessage, AiMessageContentPart, CliCommandResult } from '../../src/shared/types';
 
 interface ChatAttachment {
   id: string;
@@ -14,11 +14,23 @@ interface ChatAttachment {
   kind: 'image' | 'audio' | 'file';
 }
 
+interface PendingCliCall {
+  id: string;
+  command: string;
+  cwd?: string;
+  reason?: string;
+  status: 'pending' | 'running' | 'completed' | 'rejected' | 'failed';
+  result?: CliCommandResult;
+}
+
 interface ChatMessage extends AiMessage {
   id: string;
   content: string;
+  reasoning?: string;
   meta?: string;
   attachments?: ChatAttachment[];
+  hidden?: boolean;
+  cliCall?: PendingCliCall;
 }
 
 interface ChatSession {
@@ -31,6 +43,25 @@ interface ChatSession {
 const SESSIONS_KEY = 'uuutil:assistant:sessions';
 const ACTIVE_SESSION_KEY = 'uuutil:assistant:active-session';
 const MAX_ATTACHMENT_SIZE = 8 * 1024 * 1024;
+const CLI_TOOL_BLOCK_PATTERN = /```uuutil-cli\s*([\s\S]*?)```/i;
+const ASSISTANT_SYSTEM_PROMPT = `你是 UUUtil 的桌面助手。请直接回答用户问题。若用户提供图片，请结合图片内容回答；若用户提供音频或文件，而当前模型不支持直接解析，请说明可处理的信息边界。
+
+你可以请求调用本地 CLI 工具，但必须遵守：
+1. 只有在确实需要读取项目状态、运行构建、执行查询或调用本地工具时才请求 CLI。
+2. 不要请求破坏性命令、权限提升命令、后台常驻命令或联网下载安装脚本。
+3. 请求 CLI 时只输出一个 JSON 工具块，格式如下：
+\`\`\`uuutil-cli
+{"command":"ls ~/Desktop","cwd":".","reason":"查看桌面文件"}
+\`\`\`
+4. 工具块会先展示给用户确认，执行结果会作为下一条消息返回给你，然后你再基于结果继续回答。
+5. 默认工作目录是用户主目录；cwd 必须位于用户主目录内，可用 "~" 或相对路径（例如 "Desktop"、"~/Desktop"）。
+
+当前系统是 macOS，命令需遵循 BSD/macOS 约定，注意与 Linux 的差异：
+- 解压 gzip 文件用 \`gzcat\` 或 \`gunzip -c\`，不要用 \`zcat\`（macOS 的 zcat 只处理 .Z 文件且会自动追加 .Z 后缀，对 gzip 文件会报错）。
+- 文件扩展名可能与实际格式不符，必要时先用 \`file <路径>\` 判断真实类型再选择命令。
+- 查看或解包 .tar.gz / .tgz 用 \`tar -tzf\`（列内容）或 \`tar -xzf\`（解包）。
+- date、sed、stat、find 等命令的参数风格与 GNU 版本不同，遇到报错时优先使用 BSD 语法。`;
+
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -48,6 +79,18 @@ function inferAttachmentKind(mime: string): ChatAttachment['kind'] {
   if (mime.startsWith('image/')) return 'image';
   if (mime.startsWith('audio/')) return 'audio';
   return 'file';
+}
+
+function defaultAttachmentName(mime: string): string {
+  if (mime.includes('png')) return '粘贴图片.png';
+  if (mime.includes('jpeg') || mime.includes('jpg')) return '粘贴图片.jpg';
+  if (mime.includes('webp')) return '粘贴图片.webp';
+  if (mime.includes('gif')) return '粘贴图片.gif';
+  if (mime.includes('wav')) return '粘贴音频.wav';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return '粘贴音频.mp3';
+  if (mime.includes('webm')) return '粘贴音频.webm';
+  if (mime.includes('ogg')) return '粘贴音频.ogg';
+  return '剪贴板附件';
 }
 
 function audioFormat(mime: string): string | undefined {
@@ -91,7 +134,79 @@ function createFooterMeta(response: AiChatResponse): string | undefined {
   return [stats || undefined, warning].filter(Boolean).join('\n');
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function parsePendingCliCall(content: string): { displayContent: string; cliCall?: PendingCliCall } {
+  const match = content.match(CLI_TOOL_BLOCK_PATTERN);
+  if (!match) return { displayContent: content };
+
+  try {
+    const parsed = JSON.parse(match[1].trim()) as { command?: string; cwd?: string; reason?: string };
+    if (!parsed.command || typeof parsed.command !== 'string') return { displayContent: content };
+    return {
+      displayContent: content.replace(match[0], '').trim() || '需要调用本地 CLI 工具，请确认后执行。',
+      cliCall: {
+        id: makeId(),
+        command: parsed.command,
+        cwd: parsed.cwd,
+        reason: parsed.reason,
+        status: 'pending',
+      },
+    };
+  } catch {
+    return { displayContent: content };
+  }
+}
+
+function formatCliResultForModel(result: CliCommandResult): string {
+  return [
+    '[CLI 执行结果]',
+    `command: ${result.command}`,
+    `cwd: ${result.cwd}`,
+    `success: ${result.success}`,
+    `exitCode: ${result.exitCode ?? 'unknown'}`,
+    `durationMs: ${result.durationMs}`,
+    result.timedOut ? 'timedOut: true' : undefined,
+    result.error ? `error: ${result.error}` : undefined,
+    result.stdout ? `stdout:\n${result.stdout}` : 'stdout: <empty>',
+    result.stderr ? `stderr:\n${result.stderr}` : 'stderr: <empty>',
+  ].filter(Boolean).join('\n');
+}
+
+function ReasoningBlock({ reasoning }: { reasoning: string }) {
+  const { isOpen, onToggle } = useDisclosure({ defaultIsOpen: false });
+  return (
+    <Box mb={2} border="1px solid" borderColor="gray.200" borderRadius="md" bg="gray.50" overflow="hidden">
+      <Flex
+        as="button"
+        type="button"
+        onClick={onToggle}
+        align="center"
+        gap={1}
+        w="100%"
+        px={2}
+        py={1.5}
+        color="gray.500"
+        fontSize="xs"
+        fontWeight="medium"
+        _hover={{ color: 'gray.700', bg: 'gray.100' }}
+      >
+        <Brain size={13} />
+        <Text>思考过程</Text>
+        <Box ml="auto">
+          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </Box>
+      </Flex>
+      <Collapse in={isOpen} animateOpacity>
+        <Box px={2} pb={2} pt={1} borderTop="1px solid" borderColor="gray.200">
+          <Text whiteSpace="pre-wrap" fontSize="xs" color="gray.500" lineHeight="1.6">
+            {reasoning}
+          </Text>
+        </Box>
+      </Collapse>
+    </Box>
+  );
+}
+
+function MessageBubble({ message, onConfirmCliCall, onRejectCliCall }: { message: ChatMessage; onConfirmCliCall?: (messageId: string) => void; onRejectCliCall?: (messageId: string) => void }) {
   const isUser = message.role === 'user';
   return (
     <Flex justify={isUser ? 'flex-end' : 'flex-start'} mb={3} gap={2}>
@@ -183,7 +298,35 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         {isUser ? (
           <Text whiteSpace="pre-wrap">{message.content}</Text>
         ) : (
-          <MarkdownPreview source={message.content} skipHtml wrapperElement={{ 'data-color-mode': 'light' }} />
+          <>
+            {message.reasoning && <ReasoningBlock reasoning={message.reasoning} />}
+            <MarkdownPreview source={message.content} skipHtml wrapperElement={{ 'data-color-mode': 'light' }} />
+          </>
+        )}
+        {message.cliCall && (
+          <Box mt={3} p={3} border="1px solid" borderColor="orange.200" borderRadius="md" bg="orange.50">
+            <Text fontSize="xs" fontWeight="bold" color="orange.700" mb={1}>待确认 CLI 工具调用</Text>
+            {message.cliCall.reason && <Text fontSize="xs" color="gray.600" mb={2}>{message.cliCall.reason}</Text>}
+            <Box as="pre" p={2} bg="gray.900" color="gray.50" borderRadius="md" overflowX="auto" fontSize="xs" whiteSpace="pre-wrap">
+              {message.cliCall.command}
+            </Box>
+            {message.cliCall.cwd && <Text fontSize="xs" color="gray.500" mt={1}>cwd: {message.cliCall.cwd}</Text>}
+            {message.cliCall.result && (
+              <Box as="pre" mt={2} p={2} bg="white" border="1px solid" borderColor="gray.200" borderRadius="md" overflowX="auto" fontSize="xs" whiteSpace="pre-wrap" color="gray.700">
+                {formatCliResultForModel(message.cliCall.result)}
+              </Box>
+            )}
+            {message.cliCall.status === 'pending' && (
+              <Flex gap={2} mt={2}>
+                <Button size="xs" colorScheme="orange" onClick={() => onConfirmCliCall?.(message.id)}>确认执行</Button>
+                <Button size="xs" variant="outline" onClick={() => onRejectCliCall?.(message.id)}>拒绝</Button>
+              </Flex>
+            )}
+            {message.cliCall.status === 'running' && <Text fontSize="xs" color="orange.700" mt={2}>命令执行中...</Text>}
+            {message.cliCall.status === 'rejected' && <Text fontSize="xs" color="gray.500" mt={2}>已拒绝执行。</Text>}
+            {message.cliCall.status === 'failed' && <Text fontSize="xs" color="red.600" mt={2}>执行失败。</Text>}
+            {message.cliCall.status === 'completed' && <Text fontSize="xs" color="green.600" mt={2}>执行完成，已将结果回传给助手。</Text>}
+          </Box>
         )}
         {message.meta && (
           <Text mt={2} pt={2} borderTop="1px solid" borderColor={isUser ? 'whiteAlpha.300' : 'gray.100'} fontSize="xs" color={isUser ? 'whiteAlpha.800' : 'gray.500'} whiteSpace="pre-wrap">
@@ -283,7 +426,7 @@ export default function AssistantPage() {
       const reader = new FileReader();
       reader.onload = () => resolve({
         id: makeId(),
-        name: file.name,
+        name: file.name || defaultAttachmentName(file.type || 'application/octet-stream'),
         mime: file.type || 'application/octet-stream',
         size: file.size,
         dataUrl: String(reader.result || ''),
@@ -294,14 +437,12 @@ export default function AssistantPage() {
     });
   }
 
-  async function handleFilesSelected(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files || []);
-    event.target.value = '';
+  async function addFiles(files: File[]) {
     if (files.length === 0) return;
 
     const oversized = files.find((file) => file.size > MAX_ATTACHMENT_SIZE);
     if (oversized) {
-      toast({ title: '附件过大', description: `${oversized.name} 超过 8MB`, status: 'warning', duration: 2500 });
+      toast({ title: '附件过大', description: `${oversized.name || defaultAttachmentName(oversized.type)} 超过 8MB`, status: 'warning', duration: 2500 });
       return;
     }
 
@@ -312,6 +453,12 @@ export default function AssistantPage() {
       const description = error instanceof Error ? error.message : '附件读取失败';
       toast({ title: '附件读取失败', description, status: 'error', duration: 2500 });
     }
+  }
+
+  async function handleFilesSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    await addFiles(files);
   }
 
   function removeAttachment(attachmentId: string) {
@@ -348,40 +495,41 @@ export default function AssistantPage() {
     setIsSending(false);
   }
 
-  async function sendMessage() {
-    const content = input.trim();
-    if ((!content && attachments.length === 0) || isSending || !activeSession) return;
+  function createAiMessages(nextMessages: ChatMessage[]): AiMessage[] {
+    return [
+      { role: 'system', content: ASSISTANT_SYSTEM_PROMPT },
+      ...nextMessages.map((message) => ({
+        role: message.role,
+        content: message.role === 'user' ? createModelContent(message.content, message.attachments || []) : message.content,
+      })),
+    ];
+  }
 
-    const messageAttachments = attachments;
-    const userMessage: ChatMessage = { id: makeId(), role: 'user', content, attachments: messageAttachments };
-    const nextMessages = [...messages, userMessage];
-    updateActiveSessionMessages(() => nextMessages);
-    setInput('');
-    setAttachments([]);
+  async function generateAssistantResponse(nextMessages: ChatMessage[]) {
+    if (!activeSession) return;
+
     setIsSending(true);
     scrollToBottom();
 
     const assistantId = makeId();
     try {
-      updateActiveSessionMessages((prev) => [...prev, { id: assistantId, role: 'assistant', content: '正在生成...' }]);
+      updateActiveSessionMessages(() => [...nextMessages, { id: assistantId, role: 'assistant', content: '正在生成...' }]);
 
       const stream = window.assistant.ai.chatStream({
-        messages: [
-          {
-            role: 'system',
-            content: '你是 UUUtil 的桌面助手。请直接回答用户问题。若用户提供图片，请结合图片内容回答；若用户提供音频或文件，而当前模型不支持直接解析，请说明可处理的信息边界。',
-          },
-          ...nextMessages.map((message) => ({
-            role: message.role,
-            content: message.role === 'user' ? createModelContent(message.content, message.attachments || []) : message.content,
-          })),
-        ],
+        messages: createAiMessages(nextMessages),
         maxTokens: 4096,
         timeoutMs: 120000,
       }, (chunk: string) => {
         updateActiveSessionMessages((prev) => prev.map((message) => (
           message.id === assistantId
             ? { ...message, content: message.content === '正在生成...' ? chunk : message.content + chunk }
+            : message
+        )));
+        scrollToBottom();
+      }, (reasoningChunk: string) => {
+        updateActiveSessionMessages((prev) => prev.map((message) => (
+          message.id === assistantId
+            ? { ...message, reasoning: (message.reasoning || '') + reasoningChunk }
             : message
         )));
         scrollToBottom();
@@ -396,9 +544,12 @@ export default function AssistantPage() {
       updateActiveSessionMessages((prev) => prev.map((message) => {
         if (message.id !== assistantId) return message;
         const finalContent = response.content || (message.content === '正在生成...' ? '' : message.content);
+        const parsed = parsePendingCliCall(finalContent);
         return {
           ...message,
-          content: finalContent || '模型没有返回正文。',
+          content: parsed.displayContent || '模型没有返回正文。',
+          reasoning: response.reasoning || message.reasoning,
+          cliCall: parsed.cliCall,
           meta: createFooterMeta(response),
         };
       }));
@@ -419,11 +570,71 @@ export default function AssistantPage() {
     }
   }
 
+  async function sendMessage() {
+    const content = input.trim();
+    if ((!content && attachments.length === 0) || isSending || !activeSession) return;
+
+    const messageAttachments = attachments;
+    const userMessage: ChatMessage = { id: makeId(), role: 'user', content, attachments: messageAttachments };
+    const nextMessages = [...messages, userMessage];
+    updateActiveSessionMessages(() => nextMessages);
+    setInput('');
+    setAttachments([]);
+    await generateAssistantResponse(nextMessages);
+  }
+
+  async function confirmCliCall(messageId: string) {
+    if (isSending || !activeSession) return;
+    const target = messages.find((message) => message.id === messageId);
+    if (!target?.cliCall || target.cliCall.status !== 'pending') return;
+
+    updateActiveSessionMessages((prev) => prev.map((message) => (
+      message.id === messageId && message.cliCall ? { ...message, cliCall: { ...message.cliCall, status: 'running' } } : message
+    )));
+
+    const result = await window.assistant.cli.execute({ command: target.cliCall.command, cwd: target.cliCall.cwd });
+    const resultMessage: ChatMessage = {
+      id: makeId(),
+      role: 'user',
+      content: formatCliResultForModel(result),
+      hidden: true,
+    };
+    const nextMessages = [...messages.map((message) => (
+      message.id === messageId && message.cliCall ? { ...message, cliCall: { ...message.cliCall, status: result.success ? 'completed' : 'failed', result } } : message
+    )), resultMessage];
+    updateActiveSessionMessages(() => nextMessages);
+
+    if (result.success) {
+      await generateAssistantResponse(nextMessages);
+    } else {
+      toast({ title: 'CLI 执行失败', description: result.error || result.stderr || '命令返回非 0 状态码', status: 'error', duration: 3000 });
+    }
+  }
+
+  function rejectCliCall(messageId: string) {
+    if (isSending) return;
+    updateActiveSessionMessages((prev) => prev.map((message) => (
+      message.id === messageId && message.cliCall ? { ...message, cliCall: { ...message.cliCall, status: 'rejected' } } : message
+    )));
+  }
+
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       sendMessage();
     }
+  }
+
+  async function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const itemFiles = Array.from(event.clipboardData.items || [])
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    const files = itemFiles.length > 0 ? itemFiles : Array.from(event.clipboardData.files || []);
+    if (files.length === 0) return;
+
+    event.preventDefault();
+    await addFiles(files);
   }
 
   return (
@@ -488,7 +699,7 @@ export default function AssistantPage() {
               <Text fontSize="xs" maxW="320px">可以先用于通用问答、改写、总结和方案讨论。后续会逐步接入 assistant-ui、白板与知识库上下文。</Text>
             </Flex>
           ) : (
-            messages.map((message) => <MessageBubble key={message.id} message={message} />)
+            messages.filter((message) => !message.hidden).map((message) => <MessageBubble key={message.id} message={message} onConfirmCliCall={confirmCliCall} onRejectCliCall={rejectCliCall} />)
           )}
         </Box>
 
@@ -524,7 +735,8 @@ export default function AssistantPage() {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入问题，Enter 发送，Shift + Enter 换行；可添加图片、音频或文件"
+              onPaste={handlePaste}
+              placeholder="输入问题，Enter 发送，Shift + Enter 换行；支持粘贴或上传图片、音频和文件"
               minH="44px"
               maxH="140px"
               resize="none"

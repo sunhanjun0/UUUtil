@@ -10,15 +10,15 @@ type OpenAiCompatibleUsage = {
 };
 
 type OpenAiCompatibleResponse = {
-  choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+  choices?: Array<{ message?: { content?: string; reasoning_content?: string }; finish_reason?: string }>;
   usage?: OpenAiCompatibleUsage;
   error?: { message?: string };
 };
 
 type OpenAiCompatibleStreamChunk = {
   choices?: Array<{
-    delta?: { content?: string };
-    message?: { content?: string };
+    delta?: { content?: string; reasoning_content?: string };
+    message?: { content?: string; reasoning_content?: string };
     text?: string;
     finish_reason?: string;
   }>;
@@ -77,13 +77,14 @@ function timeoutError(timeoutMs: number): string {
   return `AI 请求超时，已超过 ${Math.round(timeoutMs / 1000)} 秒。可以降低 maxTokens 或稍后重试。`;
 }
 
-function parseStreamPayload(payload: string): { delta?: string; finishReason?: string; usage?: AiChatResponse['usage'] } {
+function parseStreamPayload(payload: string): { delta?: string; reasoningDelta?: string; finishReason?: string; usage?: AiChatResponse['usage'] } {
   const chunk = JSON.parse(payload) as OpenAiCompatibleStreamChunk;
   if (chunk.error?.message) throw new Error(chunk.error.message);
 
   const choice = chunk.choices?.[0];
   return {
     delta: choice?.delta?.content || choice?.message?.content || choice?.text,
+    reasoningDelta: choice?.delta?.reasoning_content || choice?.message?.reasoning_content,
     finishReason: choice?.finish_reason,
     usage: toUsage(chunk.usage),
   };
@@ -138,6 +139,7 @@ export const openAiCompatibleConnector: ModelConnector = {
         providerId: provider.id,
         model,
         content,
+        reasoning: choice?.message?.reasoning_content,
         finishReason: choice?.finish_reason,
         usage: toUsage(data.usage) || createEstimatedUsage(request, content),
         durationMs: Date.now() - startedAt,
@@ -175,6 +177,7 @@ export const openAiCompatibleConnector: ModelConnector = {
     };
     resetTimeout();
     let content = '';
+    let reasoning = '';
     let finishReason: string | undefined;
     let usage: AiChatResponse['usage'];
 
@@ -222,6 +225,10 @@ export const openAiCompatibleConnector: ModelConnector = {
           if (!payload || payload === '[DONE]') continue;
 
           const parsed = parseStreamPayload(payload);
+          if (parsed.reasoningDelta) {
+            reasoning += parsed.reasoningDelta;
+            callbacks.onReasoning?.(parsed.reasoningDelta);
+          }
           if (parsed.delta) {
             content += parsed.delta;
             callbacks.onChunk(parsed.delta);
@@ -236,6 +243,10 @@ export const openAiCompatibleConnector: ModelConnector = {
         const payload = tail.slice(5).trim();
         if (payload && payload !== '[DONE]') {
           const parsed = parseStreamPayload(payload);
+          if (parsed.reasoningDelta) {
+            reasoning += parsed.reasoningDelta;
+            callbacks.onReasoning?.(parsed.reasoningDelta);
+          }
           if (parsed.delta) {
             content += parsed.delta;
             callbacks.onChunk(parsed.delta);
@@ -250,6 +261,7 @@ export const openAiCompatibleConnector: ModelConnector = {
         providerId: provider.id,
         model,
         content,
+        reasoning: reasoning || undefined,
         finishReason,
         usage: usage || createEstimatedUsage(request, content),
         durationMs: Date.now() - startedAt,
@@ -261,6 +273,7 @@ export const openAiCompatibleConnector: ModelConnector = {
         providerId: provider.id,
         model,
         content,
+        reasoning: reasoning || undefined,
         finishReason,
         usage: content ? usage || createEstimatedUsage(request, content) : usage,
         durationMs: Date.now() - startedAt,

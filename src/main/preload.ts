@@ -3,12 +3,13 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig } from '../shared/types';
+import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig, CliCommandRequest } from '../shared/types';
 
 contextBridge.exposeInMainWorld('assistant', {
   // ===== 窗口控制 =====
   expandBall: () => ipcRenderer.send('ball:expand'),
   collapseBall: () => ipcRenderer.send('ball:collapse'),
+  togglePanelMaximize: (): Promise<boolean> => ipcRenderer.invoke('panel:toggle-maximize'),
   showBallContextMenu: () => ipcRenderer.send('ball:context-menu'),
   quitBall: () => ipcRenderer.send('ball:quit'),
   moveWindow: (dx: number, dy: number) => ipcRenderer.send('window:move', dx, dy),
@@ -49,20 +50,53 @@ contextBridge.exposeInMainWorld('assistant', {
     deleteProvider: (providerId: string) => ipcRenderer.invoke('core:ai:delete-provider', providerId),
     updateRuntimeConfig: (config: AiRuntimeConfig) => ipcRenderer.invoke('core:ai:update-runtime-config', config),
     chat: (request: AiChatRequest) => ipcRenderer.invoke('core:ai:chat', request),
-    chatStream: (request: AiChatRequest, onChunk: (chunk: string) => void) => {
+    chatStream: (request: AiChatRequest, onChunk: (chunk: string) => void, onReasoning?: (chunk: string) => void) => {
       const streamId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const listener = (_event: Electron.IpcRendererEvent, chunkStreamId: string, chunk: string) => {
         if (chunkStreamId === streamId) onChunk(chunk);
       };
+      const reasoningListener = (_event: Electron.IpcRendererEvent, chunkStreamId: string, chunk: string) => {
+        if (chunkStreamId === streamId) onReasoning?.(chunk);
+      };
       ipcRenderer.on('core:ai:chat-stream:chunk', listener);
+      ipcRenderer.on('core:ai:chat-stream:reasoning', reasoningListener);
       const promise = ipcRenderer.invoke('core:ai:chat-stream', streamId, request).finally(() => {
         ipcRenderer.removeListener('core:ai:chat-stream:chunk', listener);
+        ipcRenderer.removeListener('core:ai:chat-stream:reasoning', reasoningListener);
       });
       return {
         streamId,
         promise,
         cancel: () => ipcRenderer.invoke('core:ai:cancel-chat-stream', streamId),
       };
+    },
+  },
+
+  // ===== CLI 工具 =====
+  cli: {
+    execute: (request: CliCommandRequest) => ipcRenderer.invoke('core:cli:execute', request),
+  },
+
+  // ===== 终端（PTY，仅供用户手动操作，禁止接入 AI）=====
+  terminal: {
+    create: (options?: { cols?: number; rows?: number }): Promise<string> =>
+      ipcRenderer.invoke('core:terminal:create', options),
+    write: (id: string, data: string) => ipcRenderer.send('core:terminal:input', id, data),
+    resize: (id: string, cols: number, rows: number) => ipcRenderer.send('core:terminal:resize', id, cols, rows),
+    dispose: (id: string) => ipcRenderer.send('core:terminal:dispose', id),
+    onData: (id: string, callback: (data: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, termId: string, data: string) => {
+        if (termId === id) callback(data);
+      };
+      ipcRenderer.on('core:terminal:data', listener);
+      return () => ipcRenderer.removeListener('core:terminal:data', listener);
+    },
+    onExit: (id: string, callback: (exitCode: number, signal?: number) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, termId: string, exitCode: number, signal?: number) => {
+        if (termId === id) callback(exitCode, signal);
+      };
+      ipcRenderer.on('core:terminal:exit', listener);
+      return () => ipcRenderer.removeListener('core:terminal:exit', listener);
     },
   },
 

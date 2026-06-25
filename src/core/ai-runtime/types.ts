@@ -11,6 +11,7 @@ export interface ConnectorChatRequest {
 
 export interface AiStreamCallbacks {
   onChunk: (chunk: string) => void;
+  onReasoning?: (chunk: string) => void;
 }
 
 export interface ModelConnector {

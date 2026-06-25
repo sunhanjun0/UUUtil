@@ -69,6 +69,7 @@ export interface AiChatRequest {
 export interface AiChatResponse {
   success: boolean;
   content?: string;
+  reasoning?: string;
   providerId?: string;
   model?: string;
   finishReason?: string;
@@ -80,6 +81,26 @@ export interface AiChatResponse {
 /** AI 配置保存结果 */
 export interface AiConfigResult {
   success: boolean;
+  error?: string;
+}
+
+/** CLI 命令执行请求 */
+export interface CliCommandRequest {
+  command: string;
+  cwd?: string;
+  timeoutMs?: number;
+}
+
+/** CLI 命令执行结果 */
+export interface CliCommandResult {
+  success: boolean;
+  command: string;
+  cwd: string;
+  exitCode?: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  timedOut?: boolean;
   error?: string;
 }
 

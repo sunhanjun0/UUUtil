@@ -5,16 +5,17 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Flex, Tabs, TabList, Tab, IconButton } from '@chakra-ui/react';
-import { Bug, Droplets, Settings, X } from 'lucide-react';
+import { Bug, Droplets, Maximize2, Minimize2, Settings, X } from 'lucide-react';
 import { backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
 import type { RouteConfig } from './router';
-import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig } from '../src/shared/types';
+import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig, CliCommandRequest, CliCommandResult } from '../src/shared/types';
 
 declare global {
   interface Window {
     assistant: {
       expandBall: () => void;
       collapseBall: () => void;
+      togglePanelMaximize: () => Promise<boolean>;
       showBallContextMenu: () => void;
       quitBall: () => void;
       moveWindow: (dx: number, dy: number) => void;
@@ -48,7 +49,18 @@ declare global {
         deleteProvider: (providerId: string) => Promise<any>;
         updateRuntimeConfig: (config: AiRuntimeConfig) => Promise<any>;
         chat: (request: AiChatRequest) => Promise<any>;
-        chatStream: (request: AiChatRequest, onChunk: (chunk: string) => void) => { streamId: string; promise: Promise<any>; cancel: () => Promise<any> };
+        chatStream: (request: AiChatRequest, onChunk: (chunk: string) => void, onReasoning?: (chunk: string) => void) => { streamId: string; promise: Promise<any>; cancel: () => Promise<any> };
+      };
+      cli: {
+        execute: (request: CliCommandRequest) => Promise<CliCommandResult>;
+      };
+      terminal: {
+        create: (options?: { cols?: number; rows?: number }) => Promise<string>;
+        write: (id: string, data: string) => void;
+        resize: (id: string, cols: number, rows: number) => void;
+        dispose: (id: string) => void;
+        onData: (id: string, callback: (data: string) => void) => () => void;
+        onExit: (id: string, callback: (exitCode: number, signal?: number) => void) => () => void;
       };
       getVersion: () => string;
       log: (level: string, scope: string, message: string, meta?: Record<string, unknown>) => Promise<any>;
@@ -67,6 +79,7 @@ interface Props {
 
 export default function App({ role }: Props) {
   const [panelSide, setPanelSide] = useState<'front' | 'back'>('front');
+  const [panelMaximized, setPanelMaximized] = useState(false);
   const [frostedPanel, setFrostedPanel] = useState(() => localStorage.getItem('uuutil:frosted-panel') === '1');
   const [frontPath, setFrontPath] = useState(foregroundRoutes[0].path);
   const [frontDisplayPath, setFrontDisplayPath] = useState(foregroundRoutes[0].path);
@@ -157,6 +170,13 @@ export default function App({ role }: Props) {
     if (didDrag.current) return;
     try {
       window.assistant.collapseBall();
+    } catch { /* browser */ }
+  }
+
+  async function handleToggleMaximize() {
+    try {
+      const maximized = await window.assistant.togglePanelMaximize();
+      setPanelMaximized(maximized);
     } catch { /* browser */ }
   }
 
@@ -297,6 +317,17 @@ export default function App({ role }: Props) {
             aria-label="打开控制台"
             icon={<Bug size={15} strokeWidth={1.8} />}
             onClick={() => { try { window.assistant.openDevTools(); } catch { /* browser */ } }}
+          />
+          <IconButton
+            size="xs"
+            variant="ghost"
+            color="gray.800"
+            borderRadius="sm"
+            _hover={{ bg: 'whiteAlpha.500', color: 'gray.900' }}
+            aria-label={panelMaximized ? '还原窗口' : '最大化窗口'}
+            title={panelMaximized ? '还原窗口' : '最大化窗口'}
+            icon={panelMaximized ? <Minimize2 size={15} strokeWidth={1.8} /> : <Maximize2 size={15} strokeWidth={1.8} />}
+            onClick={handleToggleMaximize}
           />
           <IconButton
             size="xs"
