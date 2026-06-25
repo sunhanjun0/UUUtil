@@ -373,32 +373,59 @@ export function showBallContextMenu(): void {
 }
 
 // ---------- 面板最大化 ----------
-/** 手动逐帧插值缩放窗口；圆角 shape 由 'resize' 事件逐帧跟随更新。 */
-function animatePanelBounds(win: BrowserWindow, from: PanelBounds, to: PanelBounds, duration = 260): void {
-  if (maximizeAnimTimer) {
-    clearTimeout(maximizeAnimTimer);
-    maximizeAnimTimer = null;
-  }
+function clearMaximizeAnimation(): void {
+  if (!maximizeAnimTimer) return;
+  clearTimeout(maximizeAnimTimer);
+  maximizeAnimTimer = null;
+}
+
+function easeOutCubic(progress: number): number {
+  return 1 - Math.pow(1 - progress, 3);
+}
+
+function animatePanelBoundsTimeline(
+  win: BrowserWindow,
+  from: PanelBounds,
+  to: PanelBounds,
+  timing: {
+    moveDelay: number;
+    moveDuration: number;
+    widthDelay: number;
+    widthDuration: number;
+    heightDelay: number;
+    heightDuration: number;
+  },
+): void {
+  clearMaximizeAnimation();
+  const totalDuration = Math.max(
+    timing.moveDelay + timing.moveDuration,
+    timing.widthDelay + timing.widthDuration,
+    timing.heightDelay + timing.heightDuration,
+  );
   const start = Date.now();
+  const valueAt = (elapsed: number, delay: number, duration: number, startValue: number, endValue: number) => {
+    if (elapsed <= delay) return startValue;
+    const progress = Math.min((elapsed - delay) / duration, 1);
+    return Math.round(startValue + (endValue - startValue) * easeOutCubic(progress));
+  };
   const step = () => {
     if (win.isDestroyed()) {
       maximizeAnimTimer = null;
       return;
     }
-    const progress = Math.min((Date.now() - start) / duration, 1);
-    const t = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    const elapsed = Date.now() - start;
     win.setBounds({
-      x: Math.round(from.x + (to.x - from.x) * t),
-      y: Math.round(from.y + (to.y - from.y) * t),
-      width: Math.round(from.width + (to.width - from.width) * t),
-      height: Math.round(from.height + (to.height - from.height) * t),
+      x: valueAt(elapsed, timing.moveDelay, timing.moveDuration, from.x, to.x),
+      y: valueAt(elapsed, timing.moveDelay, timing.moveDuration, from.y, to.y),
+      width: valueAt(elapsed, timing.widthDelay, timing.widthDuration, from.width, to.width),
+      height: valueAt(elapsed, timing.heightDelay, timing.heightDuration, from.height, to.height),
     });
-    if (progress < 1) {
+    if (elapsed < totalDuration) {
       maximizeAnimTimer = setTimeout(step, 16);
     } else {
-      maximizeAnimTimer = null;
       win.setBounds(to);
       updatePanelShape();
+      maximizeAnimTimer = null;
     }
   };
   step();
@@ -411,7 +438,16 @@ export function togglePanelMaximize(): boolean {
   const [width, height] = panelWindow.getSize();
   const from: PanelBounds = { x, y, width, height };
   if (panelMaximized) {
-    if (preMaximizeBounds) animatePanelBounds(panelWindow, from, preMaximizeBounds);
+    if (preMaximizeBounds) {
+      animatePanelBoundsTimeline(panelWindow, from, preMaximizeBounds, {
+        moveDelay: 0,
+        moveDuration: 220,
+        widthDelay: 0,
+        widthDuration: 220,
+        heightDelay: 0,
+        heightDuration: 220,
+      });
+    }
     panelMaximized = false;
   } else {
     preMaximizeBounds = from;
@@ -419,7 +455,14 @@ export function togglePanelMaximize(): boolean {
     const maxHeight = Math.round(workArea.height * 0.96);
     const maxX = workArea.x + Math.round((workArea.width - maxWidth) / 2);
     const maxY = workArea.y + Math.round((workArea.height - maxHeight) / 2);
-    animatePanelBounds(panelWindow, from, { x: maxX, y: maxY, width: maxWidth, height: maxHeight });
+    animatePanelBoundsTimeline(panelWindow, from, { x: maxX, y: maxY, width: maxWidth, height: maxHeight }, {
+      moveDelay: 0,
+      moveDuration: 220,
+      widthDelay: 0,
+      widthDuration: 220,
+      heightDelay: 0,
+      heightDuration: 220,
+    });
     panelMaximized = true;
   }
   return panelMaximized;
