@@ -54,10 +54,20 @@ db.run('INSERT INTO ... VALUES (?, ?)', [val1, val2]);
 autoSave(); // 写操作后必须调用
 ```
 
+## IPC 与 preload API 管理
+
+- 主进程 IPC 只能通过 `src/main/ipc/*.ipc.ts` 声明，并在 `src/main/ipc/index.ts` 聚合注册；不要在 `src/main/index.ts` 里新增 `ipcMain.handle/on`。
+- 新 IPC 使用 `defineInvoke` / `defineSend`，由 `registerIpcModules()` 统一注册，避免通道重复和入口分散。
+- `src/main/index.ts` 只负责 bootstrap 调度；窗口、CLI、白板、终端、插件桥接等业务逻辑放在各自模块。
+- `window.assistant` 的类型合同统一维护在 `src/shared/assistant-api.ts`；preload 新增、删除或改签名时必须同步更新该文件。
+- `src/main/preload.ts` 只暴露经过 `contextBridge` 包装的最小 API，不直接暴露 `ipcRenderer`、Node API 或任意命令执行能力。
+- 终端 PTY API 仅供用户手动操作，禁止接入 AI 或远程内容驱动的调用链。
+
 ## 错误处理
-- event-bus 中的 handler 不抛异常（会被静默捕获），但必须通过核心日志记录错误摘要
-- 插件内部自行处理异常，不传播到核心层
-- IPC 边界返回明确的 `{ success, error }` 或业务响应结构，不把未处理异常直接暴露给 UI
+
+- event-bus 中的 handler 不抛异常（会被静默捕获），但必须通过核心日志记录错误摘要。
+- 插件内部自行处理异常，不传播到核心层。
+- IPC 边界返回明确的 `{ success, error }` 或业务响应结构，不把未处理异常直接暴露给 UI。
 
 ## 日志记录模式
 

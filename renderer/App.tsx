@@ -8,70 +8,7 @@ import { Box, Flex, Tabs, TabList, Tab, IconButton } from '@chakra-ui/react';
 import { Bug, Droplets, Maximize2, Minimize2, Settings, X } from 'lucide-react';
 import { backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
 import type { RouteConfig } from './router';
-import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig, CliCommandRequest, CliCommandResult } from '../src/shared/types';
-
-declare global {
-  interface Window {
-    assistant: {
-      expandBall: () => void;
-      collapseBall: () => void;
-      togglePanelMaximize: () => Promise<boolean>;
-      showBallContextMenu: () => void;
-      quitBall: () => void;
-      moveWindow: (dx: number, dy: number) => void;
-      panelReady: () => void;
-      listPlugins: () => Promise<any[]>;
-      greet: (name: string) => Promise<{ success: boolean }>;
-      calculate: (expression: string) => Promise<string>;
-      devUtils: (action: string, ...args: any[]) => Promise<any>;
-      getWhiteboardState: () => Promise<string | null>;
-      saveWhiteboardState: (state: string) => Promise<{ success: boolean }>;
-      saveWhiteboardAttachment: (input: { name: string; mime: string; dataUrl: string }) => Promise<{ success: true; id: string; name: string; mime: string; size: number; filename: string; thumbnailFilename?: string } | { success: false; error: string }>;
-      getWhiteboardAttachment: (filename: string, mime?: string) => Promise<string | null>;
-      openWhiteboardAttachmentsDir: () => Promise<{ success: boolean }>;
-      openWhiteboardAttachment: (filename: string) => Promise<{ success: true } | { success: false; error: string }>;
-      showWhiteboardAttachmentInFolder: (filename: string) => Promise<{ success: true } | { success: false; error: string }>;
-      getNotes: (categoryId?: string, tagId?: string) => Promise<any[]>;
-      searchNotes: (keyword: string) => Promise<any>;
-      createNote: (title: string, content: string, categoryId: string, tagIds: string[]) => Promise<any>;
-      updateNote: (noteId: string, title: string, content: string, categoryId: string, tagIds: string[]) => Promise<any>;
-      deleteNote: (noteId: string) => Promise<any>;
-      getCategories: () => Promise<any[]>;
-      createCategory: (name: string, color?: string) => Promise<any>;
-      deleteCategory: (categoryId: string) => Promise<any>;
-      getTags: () => Promise<any[]>;
-      createTag: (name: string) => Promise<any>;
-      deleteTag: (tagId: string) => Promise<any>;
-      ai: {
-        listProviders: () => Promise<AiProviderConfig[]>;
-        getRuntimeConfig: () => Promise<AiRuntimeConfig>;
-        upsertProvider: (provider: Omit<AiProviderConfig, 'createdAt' | 'updatedAt'>) => Promise<any>;
-        deleteProvider: (providerId: string) => Promise<any>;
-        updateRuntimeConfig: (config: AiRuntimeConfig) => Promise<any>;
-        chat: (request: AiChatRequest) => Promise<any>;
-        chatStream: (request: AiChatRequest, onChunk: (chunk: string) => void, onReasoning?: (chunk: string) => void) => { streamId: string; promise: Promise<any>; cancel: () => Promise<any> };
-      };
-      cli: {
-        execute: (request: CliCommandRequest) => Promise<CliCommandResult>;
-      };
-      terminal: {
-        create: (options?: { cols?: number; rows?: number }) => Promise<string>;
-        write: (id: string, data: string) => void;
-        resize: (id: string, cols: number, rows: number) => void;
-        dispose: (id: string) => void;
-        onData: (id: string, callback: (data: string) => void) => () => void;
-        onExit: (id: string, callback: (exitCode: number, signal?: number) => void) => () => void;
-      };
-      getVersion: () => string;
-      log: (level: string, scope: string, message: string, meta?: Record<string, unknown>) => Promise<any>;
-      openLogsDir: () => Promise<{ success: boolean }>;
-      getLogPath: () => Promise<string | null>;
-      readRecentLogs: (lines?: number) => Promise<string[]>;
-      clearLogs: () => Promise<{ success: boolean }>;
-      openDevTools: () => void;
-    };
-  }
-}
+import '../src/shared/assistant-api';
 
 interface Props {
   role: 'ball' | 'panel';

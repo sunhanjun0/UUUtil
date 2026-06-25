@@ -4,8 +4,9 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig, CliCommandRequest } from '../shared/types';
+import type { AssistantApi } from '../shared/assistant-api';
 
-contextBridge.exposeInMainWorld('assistant', {
+const assistantApi: AssistantApi = {
   // ===== 窗口控制 =====
   expandBall: () => ipcRenderer.send('ball:expand'),
   collapseBall: () => ipcRenderer.send('ball:collapse'),
@@ -106,4 +107,6 @@ contextBridge.exposeInMainWorld('assistant', {
   getLogPath: () => ipcRenderer.invoke('core:logs:get-path'),
   readRecentLogs: (lines?: number) => ipcRenderer.invoke('core:logs:recent', lines),
   clearLogs: () => ipcRenderer.invoke('core:logs:clear'),
-});
+};
+
+contextBridge.exposeInMainWorld('assistant', assistantApi);
