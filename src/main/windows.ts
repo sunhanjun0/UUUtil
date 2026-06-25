@@ -204,6 +204,26 @@ export function showPanelWindow(): void {
     },
   });
 
+  const panelWebContentsId = panelWindow.webContents.id;
+  let enterAnimationPlayed = false;
+  const playEnterAnimation = () => {
+    if (enterAnimationPlayed || !panelWindow || panelWindow.isDestroyed() || panelWindow.webContents.id !== panelWebContentsId) return;
+    enterAnimationPlayed = true;
+    slideWindow(panelWindow, startX, targetX, 0, 1, 400, 'ease-out', 0.3, 400, 'ease-out', () => {
+      savedPanelPos = { x: targetX, y: targetY };
+    });
+  };
+
+  const handlePanelReady = (event: Electron.IpcMainEvent) => {
+    if (event.sender.id !== panelWebContentsId) return;
+    ipcMain.off('panel:ready', handlePanelReady);
+    playEnterAnimation();
+  };
+
+  ipcMain.on('panel:ready', handlePanelReady);
+  panelWindow.webContents.once('did-finish-load', () => setTimeout(playEnterAnimation, 50));
+  panelWindow.once('closed', () => ipcMain.off('panel:ready', handlePanelReady));
+
   loadWindow(panelWindow, 'panel');
 
   panelWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -228,23 +248,6 @@ export function showPanelWindow(): void {
     panelMaximized = false;
     preMaximizeBounds = null;
   });
-
-  const panelWebContentsId = panelWindow.webContents.id;
-  const playEnterAnimation = () => {
-    if (!panelWindow || panelWindow.isDestroyed() || panelWindow.webContents.id !== panelWebContentsId) return;
-    slideWindow(panelWindow, startX, targetX, 0, 1, 400, 'ease-out', 0.3, 400, 'ease-out', () => {
-      savedPanelPos = { x: targetX, y: targetY };
-    });
-  };
-
-  const handlePanelReady = (event: Electron.IpcMainEvent) => {
-    if (event.sender.id !== panelWebContentsId) return;
-    ipcMain.off('panel:ready', handlePanelReady);
-    playEnterAnimation();
-  };
-
-  ipcMain.on('panel:ready', handlePanelReady);
-  panelWindow.once('closed', () => ipcMain.off('panel:ready', handlePanelReady));
 
   panelVisible = true;
   updateTrayMenu(true);
