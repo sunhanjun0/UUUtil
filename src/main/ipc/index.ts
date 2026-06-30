@@ -13,6 +13,8 @@ import { aiIpc } from './ai.ipc';
 import { cliIpc } from './cli.ipc';
 import { terminalIpc } from './terminal.ipc';
 import { logsIpc } from './logs.ipc';
+import { focusIpc } from './focus.ipc';
+import { screenshotIpc } from './screenshot.ipc';
 
 export function registerAllIpc(): void {
   registerIpcModules([
@@ -23,5 +25,7 @@ export function registerAllIpc(): void {
     cliIpc,
     terminalIpc,
     logsIpc,
+    focusIpc,
+    screenshotIpc,
   ]);
 }

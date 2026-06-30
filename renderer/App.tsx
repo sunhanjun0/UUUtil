@@ -4,8 +4,8 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Box, Flex, Tabs, TabList, Tab, IconButton } from '@chakra-ui/react';
-import { Bug, Droplets, Maximize2, Minimize2, Settings, X } from 'lucide-react';
+import { Box, Flex, Tabs, TabList, Tab, IconButton, Tooltip } from '@chakra-ui/react';
+import { Bug, Camera, Droplets, Maximize2, Minimize2, Settings, X } from 'lucide-react';
 import { backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
 import type { RouteConfig } from './router';
 import '../src/shared/assistant-api';
@@ -30,6 +30,7 @@ export default function App({ role }: Props) {
   const activePath = panelSide === 'front' ? frontPath : backPath;
   const [flipped, setFlipped] = useState(false);
   const [timeStr, setTimeStr] = useState('');
+  const [showToolbar, setShowToolbar] = useState(false);
   const dragging = useRef(false);
   const didDrag = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
@@ -147,13 +148,32 @@ export default function App({ role }: Props) {
     } catch { /* browser */ }
   }
 
+  async function handleScreenshot() {
+    try {
+      await window.assistant.takeScreenshot();
+    } catch { /* browser */ }
+  }
+
   // ========== 悬浮球视图 ==========
   if (role === 'ball') {
     return (
       <div
         style={ballStyles.wrapper}
         onContextMenu={handleBallContextMenu}
+        onMouseEnter={() => setShowToolbar(true)}
+        onMouseLeave={() => setShowToolbar(false)}
       >
+        {/* 工具栏 */}
+        <div style={{
+          ...ballStyles.toolbar,
+          opacity: showToolbar ? 1 : 0,
+          transform: showToolbar ? 'translateX(0)' : 'translateX(10px)',
+        }}>
+          <Tooltip label="截图" placement="left" hasArrow>
+            <IconButton aria-label="截图" icon={<Camera size={16} />} size="xs" variant="ghost" borderRadius="full" onClick={handleScreenshot} />
+          </Tooltip>
+        </div>
+
         <div
           style={ballStyles.glowRing}
           onMouseDown={handleMouseDown}
@@ -627,5 +647,21 @@ const ballStyles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     fontFamily: 'monospace',
     letterSpacing: '0.5px',
+  },
+  toolbar: {
+    position: 'absolute',
+    right: '100%',
+    marginRight: 12,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 12px',
+    background: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 20,
+    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.15)',
+    backdropFilter: 'blur(10px)',
+    transition: 'opacity 0.2s ease, transform 0.2s ease',
+    pointerEvents: 'auto',
+    WebkitAppRegion: 'no-drag' as any,
   },
 };

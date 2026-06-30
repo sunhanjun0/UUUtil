@@ -6,6 +6,53 @@ import './global.css';
 import { chakraThemeConfig } from './theme';
 
 const theme = extendTheme(chakraThemeConfig);
+const originalConsoleError = console.error.bind(console);
+let reportingGlobalError = false;
+
+// ===== 全局错误捕获：记录所有未捕获异常到日志系统 =====
+function logGlobalError(level: 'error' | 'warn', scope: string, message: string, error?: Error | null) {
+  if (reportingGlobalError) return;
+  reportingGlobalError = true;
+
+  try {
+    const result = window.assistant.log?.(level, scope, message, {
+      stack: error?.stack,
+      name: error?.name,
+      userAgent: navigator.userAgent,
+      url: window.location.href,
+    });
+    result?.catch((err) => originalConsoleError('日志上报失败:', err));
+  } catch (e) {
+    originalConsoleError('日志上报失败:', e);
+  } finally {
+    reportingGlobalError = false;
+  }
+}
+
+// JS 运行时错误
+window.onerror = function(message, source, lineno, colno, error) {
+  console.error('[Global Error]', message, source, lineno, colno);
+  logGlobalError('error', 'global', String(message), error || null);
+  return false; // 继续默认处理（显示在控制台）
+};
+
+// Promise 未捕获拒绝
+window.onunhandledrejection = function(event) {
+  console.error('[Unhandled Rejection]', event.reason);
+  const message = event.reason instanceof Error ? event.reason.message : String(event.reason);
+  logGlobalError('error', 'promise', `Unhandled Promise Rejection: ${message}`, event.reason instanceof Error ? event.reason : null);
+};
+
+// React 错误边界捕获（在控制台显示，但 UI 不崩溃）
+console.error = function(...args) {
+  originalConsoleError(...args);
+  try {
+    const message = args.map(a => String(a)).join(' ');
+    if (message.includes('React') || message.includes('Error') || message.includes('error')) {
+      logGlobalError('error', 'react', message);
+    }
+  } catch {}
+};
 
 // 根据 URL hash 判断角色：/#ball → 悬浮球，/#panel → 面板
 // 浏览器开发模式默认显示面板
@@ -129,6 +176,34 @@ if (!window.assistant) {
       return { success: true };
     },
     getVersion: () => '0.1.0 (browser)',
+    log: (level: string, scope: string, message: string, meta?: any) => {
+      console.log(`[${level}]`, scope, message, meta || '');
+    },
+    openLogsDir: () => console.log('[mock] openLogsDir'),
+    getLogPath: () => '/tmp/mock.log',
+    readRecentLogs: async (lines?: number) => [],
+    clearLogs: async () => {},
+    takeScreenshot: async () => {
+      console.log('[mock] takeScreenshot');
+      return { success: true, filePath: '/mock/screenshot.png' };
+    },
+    focus: {
+      createArea: async () => ({ success: true, areaId: '1' }),
+      updateArea: async () => ({ success: true }),
+      deleteArea: async () => ({ success: true }),
+      getAreas: async () => [],
+      getAreaById: async () => null,
+      migrateArea: async () => ({ success: true }),
+      changeAreaStatus: async () => ({ success: true }),
+      getMigrations: async () => [],
+      createTag: async () => ({ success: true }),
+      getTags: async () => [],
+      deleteTag: async () => ({ success: true }),
+      startSession: async () => ({ success: true, sessionId: '1' }),
+      endSession: async () => ({ success: true, durationMinutes: 0 }),
+      getSessions: async () => [],
+      getStats: async () => ({ totalAreas: 0, currentCore: 0, nearTerm: 0, longTerm: 0, watching: 0, completed: 0, totalFocusMinutes: 0, focusMinutesToday: 0 }),
+    },
   };
 }
 

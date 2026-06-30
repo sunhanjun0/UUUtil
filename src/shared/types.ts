@@ -173,3 +173,106 @@ export interface KnowledgeBaseApi {
   getTags(): KnowledgeTag[];
   deleteTag(tagId: string): { success: boolean; error?: string };
 }
+
+// ==================== 焦点管理类型 ====================
+// 核心概念：管理个人关注的领域，而非任务。焦点有时间层面，会迁移变化。
+
+/** 焦点时间层面 —— 近期核心 / 近期关注 / 远期关注 / 待观察 / 已归档 */
+export type FocusHorizon = 'current_core' | 'near_term' | 'long_term' | 'watching' | 'archived';
+
+/** 焦点状态 —— 活跃推进 / 观察中 / 暂停 / 已迁移 / 已完成/结束 */
+export type FocusStatus = 'active' | 'watching' | 'paused' | 'migrated' | 'completed';
+
+/** 焦点重要程度 */
+export type FocusImportance = 'critical' | 'high' | 'medium' | 'low';
+
+/** 焦点标签 */
+export interface FocusTag {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: string;
+}
+
+/** 焦点迁移记录 —— 记录焦点的状态/层面变化历史 */
+export interface FocusMigration {
+  id: string;
+  focusId: string;
+  fromHorizon?: FocusHorizon;
+  toHorizon?: FocusHorizon;
+  fromStatus?: FocusStatus;
+  toStatus?: FocusStatus;
+  reason?: string;
+  occurredAt: string;
+}
+
+/** 关注领域 —— 核心模型：代表一个需要持续关注的主题、项目或领域 */
+export interface FocusArea {
+  id: string;
+  name: string;                    // 焦点名称
+  description: string;             // 详细描述
+  whyImportant: string;            // 为什么重要
+  desiredOutcome?: string;         // 期望的结果/目标
+  horizon: FocusHorizon;           // 时间层面
+  status: FocusStatus;             // 状态
+  importance: FocusImportance;     // 重要程度
+  tagIds: string[];                // 标签
+  nextReviewAt?: string;           // 下次回顾时间
+  contextLinks?: string[];         // 相关链接
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+/** 专注会话记录 —— 作为附属功能：记录在某个焦点上投入的深度工作时间 */
+export interface FocusSession {
+  id: string;
+  focusId: string;
+  startTime: string;
+  endTime?: string;
+  durationMinutes?: number;
+  notes?: string;
+  createdAt: string;
+}
+
+/** 焦点统计 */
+export interface FocusStats {
+  totalAreas: number;
+  currentCore: number;
+  nearTerm: number;
+  longTerm: number;
+  watching: number;
+  completed: number;
+  totalFocusMinutes: number;
+  focusMinutesToday: number;
+}
+
+/** focus 插件对外暴露的 API */
+export interface FocusApi {
+  // 焦点管理
+  createArea(name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]): { success: boolean; areaId?: string; error?: string };
+  updateArea(areaId: string, name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]): { success: boolean; error?: string };
+  deleteArea(areaId: string): { success: boolean; error?: string };
+  getAreas(horizon?: FocusHorizon, status?: FocusStatus, tagId?: string, importance?: FocusImportance): FocusArea[];
+  getAreaById(areaId: string): FocusArea | null;
+
+  // 焦点迁移/状态变化（记录历史）
+  migrateArea(areaId: string, toHorizon: FocusHorizon, reason?: string): { success: boolean; error?: string };
+  changeAreaStatus(areaId: string, toStatus: FocusStatus, reason?: string): { success: boolean; error?: string };
+
+  // 迁移历史
+  getMigrations(areaId?: string): FocusMigration[];
+
+  // 标签
+  createTag(name: string, color?: string): { success: boolean; tagId?: string; error?: string };
+  getTags(): FocusTag[];
+  deleteTag(tagId: string): { success: boolean; error?: string };
+
+  // 专注计时（附属功能）
+  startSession(focusId: string): { success: boolean; sessionId?: string; error?: string };
+  endSession(sessionId: string, notes?: string): { success: boolean; durationMinutes?: number; error?: string };
+  getSessions(focusId?: string): FocusSession[];
+
+  // 统计
+  getStats(): FocusStats;
+}

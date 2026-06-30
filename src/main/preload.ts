@@ -3,7 +3,15 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AiChatRequest, AiProviderConfig, AiRuntimeConfig, CliCommandRequest } from '../shared/types';
+import type {
+  AiChatRequest,
+  AiProviderConfig,
+  AiRuntimeConfig,
+  CliCommandRequest,
+  FocusHorizon,
+  FocusImportance,
+  FocusStatus,
+} from '../shared/types';
 import type { AssistantApi } from '../shared/assistant-api';
 
 const assistantApi: AssistantApi = {
@@ -42,6 +50,27 @@ const assistantApi: AssistantApi = {
   getTags: () => ipcRenderer.invoke('plugin:knowledge-base:getTags'),
   createTag: (name: string) => ipcRenderer.invoke('plugin:knowledge-base:createTag', name),
   deleteTag: (tagId: string) => ipcRenderer.invoke('plugin:knowledge-base:deleteTag', tagId),
+
+  // ===== 专注管理 Focus API =====
+  focus: {
+    createArea: (name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) =>
+      ipcRenderer.invoke('focus:create-area', name, description, whyImportant, horizon, status, importance, tagIds, desiredOutcome, nextReviewAt, contextLinks),
+    updateArea: (areaId: string, name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) =>
+      ipcRenderer.invoke('focus:update-area', areaId, name, description, whyImportant, horizon, status, importance, tagIds, desiredOutcome, nextReviewAt, contextLinks),
+    deleteArea: (areaId: string) => ipcRenderer.invoke('focus:delete-area', areaId),
+    getAreas: (horizon?: FocusHorizon, status?: FocusStatus, tagId?: string, importance?: FocusImportance) => ipcRenderer.invoke('focus:get-areas', horizon, status, tagId, importance),
+    getAreaById: (areaId: string) => ipcRenderer.invoke('focus:get-area-by-id', areaId),
+    migrateArea: (areaId: string, toHorizon: FocusHorizon, reason?: string) => ipcRenderer.invoke('focus:migrate-area', areaId, toHorizon, reason),
+    changeAreaStatus: (areaId: string, toStatus: FocusStatus, reason?: string) => ipcRenderer.invoke('focus:change-area-status', areaId, toStatus, reason),
+    getMigrations: (areaId?: string) => ipcRenderer.invoke('focus:get-migrations', areaId),
+    createTag: (name: string, color?: string) => ipcRenderer.invoke('focus:create-tag', name, color),
+    getTags: () => ipcRenderer.invoke('focus:get-tags'),
+    deleteTag: (tagId: string) => ipcRenderer.invoke('focus:delete-tag', tagId),
+    startSession: (focusId: string) => ipcRenderer.invoke('focus:start-session', focusId),
+    endSession: (sessionId: string, notes?: string) => ipcRenderer.invoke('focus:end-session', sessionId, notes),
+    getSessions: (focusId?: string) => ipcRenderer.invoke('focus:get-sessions', focusId),
+    getStats: () => ipcRenderer.invoke('focus:get-stats'),
+  },
 
   // AI 核心 API
   ai: {
@@ -107,6 +136,7 @@ const assistantApi: AssistantApi = {
   getLogPath: () => ipcRenderer.invoke('core:logs:get-path'),
   readRecentLogs: (lines?: number) => ipcRenderer.invoke('core:logs:recent', lines),
   clearLogs: () => ipcRenderer.invoke('core:logs:clear'),
+  takeScreenshot: () => ipcRenderer.invoke('screenshot:take'),
 };
 
 contextBridge.exposeInMainWorld('assistant', assistantApi);

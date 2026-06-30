@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, ComponentType } from 'react';
 import { Box, Spinner } from '@chakra-ui/react';
-import { Bot, Calculator, Code2, FileText, Home, Languages, MessageCircle, Palette, ScrollText, Terminal } from 'lucide-react';
+import { Bot, Calculator, Clock, Code2, FileText, Home, Languages, MessageCircle, Palette, ScrollText, Terminal } from 'lucide-react';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const KnowledgeBasePage = lazy(() => import('./pages/KnowledgeBasePage'));
@@ -12,6 +12,7 @@ const ColorResearchPage = lazy(() => import('./pages/ColorResearchPage'));
 const AiConfigPage = lazy(() => import('./pages/AiConfigPage'));
 const LogsPage = lazy(() => import('./pages/LogsPage'));
 const TerminalPage = lazy(() => import('./pages/TerminalPage'));
+const FocusPage = lazy(() => import('./pages/FocusPage'));
 
 export interface RouteConfig {
   path: string;
@@ -23,6 +24,7 @@ export interface RouteConfig {
 
 export const routes: RouteConfig[] = [
   { path: '/', label: '首页', icon: Home, component: HomePage, panel: 'front' },
+  { path: '/focus', label: '专注', icon: Clock, component: FocusPage, panel: 'front' },
   { path: '/knowledge-base', label: '知识库', icon: ScrollText, component: KnowledgeBasePage, panel: 'front' },
   { path: '/assistant', label: '助手', icon: MessageCircle, component: AssistantPage, panel: 'front' },
   { path: '/translation', label: '翻译', icon: Languages, component: TranslationPage, panel: 'front' },

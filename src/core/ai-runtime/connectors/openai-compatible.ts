@@ -26,8 +26,21 @@ type OpenAiCompatibleStreamChunk = {
   error?: { message?: string };
 };
 
+type ErrorWithCause = Error & { cause?: unknown };
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
+}
+
+function createChatCompletionsUrl(baseUrl: string): string {
+  const normalized = normalizeBaseUrl(baseUrl.trim());
+  if (!normalized) throw new Error('未配置 Provider Base URL');
+
+  try {
+    return `${new URL(normalized).toString().replace(/\/+$/, '')}/chat/completions`;
+  } catch {
+    throw new Error(`Provider Base URL 格式不正确: ${baseUrl}`);
+  }
 }
 
 function createRequestBody({ runtimeConfig, request }: ConnectorChatRequest, model: string, stream = false): string {
@@ -77,6 +90,46 @@ function timeoutError(timeoutMs: number): string {
   return `AI 请求超时，已超过 ${Math.round(timeoutMs / 1000)} 秒。可以降低 maxTokens 或稍后重试。`;
 }
 
+function formatFetchError(err: unknown, url: string, timeoutMs: number): string {
+  if (err instanceof Error && err.name === 'AbortError') return timeoutError(timeoutMs);
+
+  if (err instanceof Error) {
+    const cause = (err as ErrorWithCause).cause;
+    const causeMessage = cause instanceof Error ? cause.message : undefined;
+    const detail = causeMessage && causeMessage !== err.message ? `（${causeMessage}）` : '';
+
+    if (err.message === 'fetch failed' || err instanceof TypeError) {
+      return `无法连接到 AI 服务：${url}${detail}。请检查 Base URL、网络/代理、服务是否运行，以及 API 域名是否可访问。`;
+    }
+
+    return err.message;
+  }
+
+  return String(err);
+}
+
+function formatProviderRequestError(err: unknown, baseUrl: string, timeoutMs: number): string {
+  const url = (() => {
+    try {
+      return createChatCompletionsUrl(baseUrl);
+    } catch {
+      return baseUrl || '未配置 Base URL';
+    }
+  })();
+
+  return formatFetchError(err, url, timeoutMs);
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  const fallback = `AI 请求失败: ${response.status} ${response.statusText}`.trim();
+  const data = await response.clone().json().catch(() => null) as OpenAiCompatibleResponse | null;
+
+  if (data?.error?.message) return data.error.message;
+
+  const text = await response.text().catch(() => '');
+  return text.trim() || fallback;
+}
+
 function parseStreamPayload(payload: string): { delta?: string; reasoningDelta?: string; finishReason?: string; usage?: AiChatResponse['usage'] } {
   const chunk = JSON.parse(payload) as OpenAiCompatibleStreamChunk;
   if (chunk.error?.message) throw new Error(chunk.error.message);
@@ -108,7 +161,8 @@ export const openAiCompatibleConnector: ModelConnector = {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(`${normalizeBaseUrl(provider.baseUrl)}/chat/completions`, {
+      const url = createChatCompletionsUrl(provider.baseUrl);
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -118,15 +172,16 @@ export const openAiCompatibleConnector: ModelConnector = {
         signal: controller.signal,
       });
 
-      const data = await response.json() as OpenAiCompatibleResponse;
       if (!response.ok) {
         return {
           success: false,
           providerId: provider.id,
           model,
-          error: data.error?.message || `AI 请求失败: ${response.status}`,
+          error: await readErrorMessage(response),
         };
       }
+
+      const data = await response.json() as OpenAiCompatibleResponse;
 
       const choice = data.choices?.[0];
       const content = choice?.message?.content;
@@ -145,14 +200,11 @@ export const openAiCompatibleConnector: ModelConnector = {
         durationMs: Date.now() - startedAt,
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       return {
         success: false,
         providerId: provider.id,
         model,
-        error: err instanceof Error && err.name === 'AbortError'
-          ? timeoutError(timeoutMs)
-          : message,
+        error: formatProviderRequestError(err, provider.baseUrl, timeoutMs),
       };
     } finally {
       clearTimeout(timeout);
@@ -182,7 +234,8 @@ export const openAiCompatibleConnector: ModelConnector = {
     let usage: AiChatResponse['usage'];
 
     try {
-      const response = await fetch(`${normalizeBaseUrl(provider.baseUrl)}/chat/completions`, {
+      const url = createChatCompletionsUrl(provider.baseUrl);
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -193,12 +246,11 @@ export const openAiCompatibleConnector: ModelConnector = {
       });
 
       if (!response.ok) {
-        const data = await response.json().catch(() => null) as OpenAiCompatibleResponse | null;
         return {
           success: false,
           providerId: provider.id,
           model,
-          error: data?.error?.message || `AI 请求失败: ${response.status}`,
+          error: await readErrorMessage(response),
         };
       }
 
@@ -267,7 +319,6 @@ export const openAiCompatibleConnector: ModelConnector = {
         durationMs: Date.now() - startedAt,
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       return {
         success: false,
         providerId: provider.id,
@@ -277,9 +328,7 @@ export const openAiCompatibleConnector: ModelConnector = {
         finishReason,
         usage: content ? usage || createEstimatedUsage(request, content) : usage,
         durationMs: Date.now() - startedAt,
-        error: err instanceof Error && err.name === 'AbortError'
-          ? timeoutError(timeoutMs)
-          : message,
+        error: formatProviderRequestError(err, provider.baseUrl, timeoutMs),
       };
     } finally {
       if (timeout) clearTimeout(timeout);

@@ -12,6 +12,14 @@ import type {
   AiRuntimeConfig,
   CliCommandRequest,
   CliCommandResult,
+  FocusArea,
+  FocusHorizon,
+  FocusImportance,
+  FocusMigration,
+  FocusSession,
+  FocusStats,
+  FocusStatus,
+  FocusTag,
   KnowledgeCategory,
   KnowledgeNote,
   KnowledgeSearchResult,
@@ -73,6 +81,24 @@ export interface AssistantApi {
   createTag: (name: string) => Promise<any>;
   deleteTag: (tagId: string) => Promise<any>;
 
+  focus: {
+    createArea: (name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) => Promise<{ success: boolean; areaId?: string; error?: string }>;
+    updateArea: (areaId: string, name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) => Promise<{ success: boolean; error?: string }>;
+    deleteArea: (areaId: string) => Promise<{ success: boolean; error?: string }>;
+    getAreas: (horizon?: FocusHorizon, status?: FocusStatus, tagId?: string, importance?: FocusImportance) => Promise<FocusArea[]>;
+    getAreaById: (areaId: string) => Promise<FocusArea | null>;
+    migrateArea: (areaId: string, toHorizon: FocusHorizon, reason?: string) => Promise<{ success: boolean; error?: string }>;
+    changeAreaStatus: (areaId: string, toStatus: FocusStatus, reason?: string) => Promise<{ success: boolean; error?: string }>;
+    getMigrations: (areaId?: string) => Promise<FocusMigration[]>;
+    createTag: (name: string, color?: string) => Promise<{ success: boolean; tagId?: string; error?: string }>;
+    getTags: () => Promise<FocusTag[]>;
+    deleteTag: (tagId: string) => Promise<{ success: boolean; error?: string }>;
+    startSession: (focusId: string) => Promise<{ success: boolean; sessionId?: string; error?: string }>;
+    endSession: (sessionId: string, notes?: string) => Promise<{ success: boolean; durationMinutes?: number; error?: string }>;
+    getSessions: (focusId?: string) => Promise<FocusSession[]>;
+    getStats: () => Promise<FocusStats>;
+  };
+
   ai: {
     listProviders: () => Promise<AiProviderConfig[]>;
     getRuntimeConfig: () => Promise<AiRuntimeConfig>;
@@ -95,6 +121,8 @@ export interface AssistantApi {
     onData: (id: string, callback: (data: string) => void) => () => void;
     onExit: (id: string, callback: (exitCode: number, signal?: number) => void) => () => void;
   };
+
+  takeScreenshot: () => Promise<{ success: boolean; filePath?: string; error?: string }>;
 
   getVersion: () => string;
   log: (level: string, scope: string, message: string, meta?: Record<string, unknown>) => Promise<SuccessResult>;

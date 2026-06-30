@@ -10,6 +10,9 @@ import fs from 'fs';
 
 let db: SqlJsDatabase | null = null;
 let dbPath: string = '';
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+const AUTO_SAVE_DEBOUNCE_MS = 500;
 
 export function getDbPath(): string {
   // Electron app.getPath 在初始化时可能不可用，用备用路径
@@ -79,6 +82,11 @@ export function getDatabase(): SqlJsDatabase {
 
 /** 将内存数据持久化到磁盘 */
 function saveToDisk(): void {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+
   if (!db || !dbPath) return;
   try {
     const data = db.export();
@@ -91,12 +99,21 @@ function saveToDisk(): void {
 
 /** 在每次写操作后自动保存 */
 export function autoSave(): void {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveToDisk();
+  }, AUTO_SAVE_DEBOUNCE_MS);
+}
+
+/** 立即保存待写入的数据，用于应用退出或关键同步点 */
+export function flushDatabase(): void {
   saveToDisk();
 }
 
 export function closeDatabase(): void {
   if (db) {
-    saveToDisk();
+    flushDatabase();
     db.close();
     db = null;
   }

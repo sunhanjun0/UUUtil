@@ -21,19 +21,19 @@ export function waitForPluginEvent<T>(
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      bus.off(event, handler);
+      bus.offDynamic(event, handler);
       reject(new Error(`插件事件超时: ${event}`));
     }, PLUGIN_RESPONSE_TIMEOUT);
 
     const handler = (data: T) => {
       if (match && !match(data)) return;
       clearTimeout(timeout);
-      bus.off(event, handler);
+      bus.offDynamic(event, handler);
       resolve(data);
     };
 
-    bus.on(event, handler);
-    bus.emit(emitEvent, ...args);
+    bus.onDynamic(event, handler);
+    bus.emitDynamic(emitEvent, ...args);
   });
 }
 
