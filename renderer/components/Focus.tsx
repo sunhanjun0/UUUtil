@@ -1,747 +1,541 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Box, Button, Flex, Input, Select, Heading, Text, Badge, Stack,
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter,
-  useDisclosure, VStack, HStack, Divider, Tooltip, Textarea,
-  Card, CardHeader, CardBody, CardFooter, Tag as ChakraTag, TagCloseButton, TagLabel, useToast,
+  Badge,
+  Box,
+  Card,
+  CardBody,
+  Flex,
+  Heading,
+  HStack,
+  Select,
+  SimpleGrid,
+  Spinner,
+  Stack,
+  Text,
+  Tooltip,
+  VStack,
 } from '@chakra-ui/react';
-import {
-  Clock, Plus, Trash2, Tag, Calendar, ChevronDown, ChevronUp,
-  Target, TrendingUp, AlertCircle, Eye, EyeOff, History, Play, Square,
-} from 'lucide-react';
-import type { FocusArea, FocusTag, FocusSession, FocusStats, FocusMigration, FocusHorizon, FocusStatus, FocusImportance } from '../../src/shared/types';
+import { Activity, AlertTriangle, CircleDot, Radio, ScanLine, Zap } from 'lucide-react';
+import type {
+  FocusAlert,
+  FocusAreaView,
+  FocusAttentionMode,
+  FocusHealth,
+  FocusStats,
+  FocusTag,
+} from '../../src/shared/types';
 
-const horizonLabels: Record<FocusHorizon, string> = {
-  current_core: '当前核心',
-  near_term: '近期关注',
-  long_term: '长期规划',
-  watching: '观察中',
-  archived: '已归档',
+const modeLabels: Record<FocusAttentionMode, string> = {
+  deep: '沉浸',
+  pulse: '脉冲',
+  scan: '扫视',
+  dormant: '休眠',
 };
 
-const horizonColors: Record<FocusHorizon, string> = {
-  current_core: 'red',
-  near_term: 'orange',
-  long_term: 'blue',
-  watching: 'gray',
-  archived: 'gray',
+const modeIcons = {
+  deep: Zap,
+  pulse: Activity,
+  scan: ScanLine,
+  dormant: Radio,
 };
 
-const statusLabels: Record<FocusStatus, string> = {
-  active: '活跃',
-  watching: '观察',
-  paused: '暂停',
-  migrated: '已迁移',
-  completed: '完成',
+const healthLabels: Record<FocusHealth, string> = {
+  aligned: '对齐',
+  drifting: '漂移',
+  neglected: '失焦',
+  cooling: '冷却',
 };
 
-const statusColors: Record<FocusStatus, string> = {
-  active: 'green',
-  watching: 'blue',
-  paused: 'yellow',
-  migrated: 'purple',
-  completed: 'gray',
+const healthColors: Record<FocusHealth, string> = {
+  aligned: '#16a34a',
+  drifting: '#d97706',
+  neglected: '#dc2626',
+  cooling: '#6b7280',
 };
 
-const importanceLabels: Record<FocusImportance, string> = {
-  critical: '至关重要',
-  high: '高',
-  medium: '中',
-  low: '低',
+const modeColors: Record<FocusAttentionMode, string> = {
+  deep: 'purple',
+  pulse: 'blue',
+  scan: 'teal',
+  dormant: 'gray',
 };
 
-const importanceColors: Record<FocusImportance, string> = {
-  critical: 'red',
-  high: 'orange',
-  medium: 'blue',
-  low: 'gray',
-};
+const CHART_SIZE = 560;
+const MAX_RECENCY_HOURS = 24 * 30;
+const EXPANSION_RADIUS_PERCENT = 12;
+const EXPANSION_HOT_ZONE_PADDING_PERCENT = 8;
+const COVERAGE_TRIGGER_RATIO = 0.4;
+const recencyRings = [1, 3, 6, 12, 24, 72, 168, 720];
 
-export default function Focus() {
-  const toast = useToast();
-  const [areas, setAreas] = useState<FocusArea[]>([]);
-  const [tags, setTags] = useState<FocusTag[]>([]);
-  const [sessions, setSessions] = useState<FocusSession[]>([]);
-  const [migrations, setMigrations] = useState<FocusMigration[]>([]);
-  const [stats, setStats] = useState<FocusStats | null>(null);
-  const [filterHorizon, setFilterHorizon] = useState<FocusHorizon | undefined>('current_core');
-  const [filterStatus, setFilterStatus] = useState<FocusStatus | undefined>(undefined);
-  const [filterTag, setFilterTag] = useState<string | undefined>(undefined);
-  const [filterImportance, setFilterImportance] = useState<FocusImportance | undefined>(undefined);
-  const [activeSession, setActiveSession] = useState<FocusSession | null>(null);
-  const [sessionTimer, setSessionTimer] = useState(0);
-  const [expandedAreaId, setExpandedAreaId] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
+interface ChartSize {
+  width: number;
+  height: number;
+}
 
-  const { isOpen: isAreaOpen, onOpen: onAreaOpen, onClose: onAreaClose } = useDisclosure();
-  const { isOpen: isTagOpen, onOpen: onTagOpen, onClose: onTagClose } = useDisclosure();
-  const { isOpen: isEndSessionOpen, onOpen: onEndSessionOpen, onClose: onEndSessionClose } = useDisclosure();
-  const { isOpen: isMigrateOpen, onOpen: onMigrateOpen, onClose: onMigrateClose } = useDisclosure();
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
 
-  const [editingArea, setEditingArea] = useState<FocusArea | null>(null);
-  const [migratingArea, setMigratingArea] = useState<FocusArea | null>(null);
-  const [endSessionNotes, setEndSessionNotes] = useState('');
-  const [migrateReason, setMigrateReason] = useState('');
-  const [migrateToHorizon, setMigrateToHorizon] = useState<FocusHorizon>('near_term');
+function getAngle(focus: FocusAreaView) {
+  const seed = `${focus.id}:${focus.name}`;
+  let hash = 0;
+  for (let index = 0; index < seed.length; index++) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+  return (hash / 0xffffffff) * Math.PI * 2;
+}
 
-  // 表单状态
-  const [areaName, setAreaName] = useState('');
-  const [areaDescription, setAreaDescription] = useState('');
-  const [areaWhyImportant, setAreaWhyImportant] = useState('');
-  const [areaDesiredOutcome, setAreaDesiredOutcome] = useState('');
-  const [areaHorizon, setAreaHorizon] = useState<FocusHorizon>('near_term');
-  const [areaStatus, setAreaStatus] = useState<FocusStatus>('active');
-  const [areaImportance, setAreaImportance] = useState<FocusImportance>('medium');
-  const [areaTagIds, setAreaTagIds] = useState<string[]>([]);
-  const [areaNextReviewAt, setAreaNextReviewAt] = useState('');
-  const [areaContextLinks, setAreaContextLinks] = useState<string[]>([]);
-  const [newTagName, setNewTagName] = useState('');
-  const [newTagColor, setNewTagColor] = useState('#3b82f6');
+function getHoursSinceFocusActivity(focus: FocusAreaView) {
+  const referenceTime = focus.lastCheckInAt || focus.updatedAt || focus.createdAt;
+  const timestamp = new Date(referenceTime).getTime();
+  if (!Number.isFinite(timestamp)) return MAX_RECENCY_HOURS;
+  return clamp((Date.now() - timestamp) / (1000 * 60 * 60), 0, MAX_RECENCY_HOURS);
+}
+
+function getRecencyRadius(focus: FocusAreaView) {
+  const hours = getHoursSinceFocusActivity(focus);
+  const normalized = Math.log1p(hours) / Math.log1p(MAX_RECENCY_HOURS);
+  return clamp(normalized * 42, 0, 42);
+}
+
+function getRingRadius(hour: number) {
+  return clamp((Math.log1p(hour) / Math.log1p(MAX_RECENCY_HOURS)) * 42, 0, 42);
+}
+
+function getX(focus: FocusAreaView) {
+  return clamp(50 + Math.cos(getAngle(focus)) * getRecencyRadius(focus), 6, 94);
+}
+
+function getY(focus: FocusAreaView) {
+  return clamp(50 + Math.sin(getAngle(focus)) * getRecencyRadius(focus), 8, 92);
+}
+
+function getSize(focus: FocusAreaView) {
+  return clamp(10 + focus.weight * 2, 12, 30);
+}
+
+function getBubblePosition(focus: FocusAreaView) {
+  return { x: getX(focus), y: getY(focus), size: getSize(focus) };
+}
+
+function getCircleOverlapArea(radiusA: number, radiusB: number, distance: number) {
+  if (distance >= radiusA + radiusB) return 0;
+  if (distance <= Math.abs(radiusA - radiusB)) return Math.PI * Math.min(radiusA, radiusB) ** 2;
+
+  const angleA = Math.acos((distance ** 2 + radiusA ** 2 - radiusB ** 2) / (2 * distance * radiusA));
+  const angleB = Math.acos((distance ** 2 + radiusB ** 2 - radiusA ** 2) / (2 * distance * radiusB));
+  const triangleArea = 0.5 * Math.sqrt(
+    Math.max(0, (-distance + radiusA + radiusB) * (distance + radiusA - radiusB) * (distance - radiusA + radiusB) * (distance + radiusA + radiusB)),
+  );
+  return radiusA ** 2 * angleA + radiusB ** 2 * angleB - triangleArea;
+}
+
+function getPixelCircle(focus: FocusAreaView, chartSize: ChartSize) {
+  const position = getBubblePosition(focus);
+  return {
+    x: (position.x / 100) * chartSize.width,
+    y: (position.y / 100) * chartSize.height,
+    radius: position.size / 2,
+  };
+}
+
+function isCoveredByHover(focus: FocusAreaView, hovered: FocusAreaView, chartSize: ChartSize) {
+  const position = getPixelCircle(focus, chartSize);
+  const hoveredPosition = getPixelCircle(hovered, chartSize);
+  const distance = Math.hypot(position.x - hoveredPosition.x, position.y - hoveredPosition.y);
+  const focusArea = Math.PI * position.radius ** 2;
+  return getCircleOverlapArea(position.radius, hoveredPosition.radius, distance) / focusArea >= COVERAGE_TRIGGER_RATIO;
+}
+
+function getStarExpandedPosition(focus: FocusAreaView, hovered: FocusAreaView, slotIndex: number) {
+  const position = getBubblePosition(focus);
+  const hoveredPosition = getBubblePosition(hovered);
+  const starAngles = [-Math.PI / 2, -Math.PI / 6, Math.PI / 6, Math.PI / 2, Math.PI * 5 / 6, -Math.PI * 5 / 6, 0, Math.PI];
+  const angle = starAngles[slotIndex % starAngles.length];
+  const ring = Math.floor(slotIndex / starAngles.length);
+  const radius = EXPANSION_RADIUS_PERCENT + ring * 5;
+
+
+  return {
+    ...position,
+    x: clamp(hoveredPosition.x + Math.cos(angle) * radius, 6, 94),
+    y: clamp(hoveredPosition.y + Math.sin(angle) * radius, 8, 92),
+  };
+}
+
+function formatDays(value: number | null) {
+  if (value === null) return '从未检视';
+  if (value === 0) return '今天检视';
+  return `${value} 天未检视`;
+}
+
+function formatRingLabel(hour: number) {
+  if (hour < 24) return `${hour}h`;
+  const days = hour / 24;
+  return `${days}d`;
+}
+
+function BubbleChart({ focuses, selectedId, onSelect }: {
+  focuses: FocusAreaView[];
+  selectedId?: string;
+  onSelect: (focus: FocusAreaView) => void;
+}) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const [chartSize, setChartSize] = useState<ChartSize>({ width: CHART_SIZE, height: CHART_SIZE });
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const hovered = focuses.find((focus) => focus.id === hoveredId) || null;
+  const coveredIds = new Map<string, number>();
+  if (hovered) {
+    focuses
+      .filter((focus) => focus.id !== hovered.id && isCoveredByHover(focus, hovered, chartSize))
+      .sort((left, right) => getAngle(left) - getAngle(right))
+      .forEach((focus, index) => coveredIds.set(focus.id, index));
+  }
+  const layout = focuses.map((focus) => ({
+    focus,
+    base: getBubblePosition(focus),
+    display: hovered && coveredIds.has(focus.id)
+      ? getStarExpandedPosition(focus, hovered, coveredIds.get(focus.id)!)
+      : getBubblePosition(focus),
+  }));
 
   useEffect(() => {
-    loadData();
-    checkActiveSession();
+    const element = chartRef.current;
+    if (!element) return;
+
+    function updateSize() {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) setChartSize({ width: rect.width, height: rect.height });
+    }
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    loadAreas();
-  }, [filterHorizon, filterStatus, filterTag, filterImportance]);
+  function handleChartMouseMove(event: React.MouseEvent<HTMLDivElement>) {
+    if (!hovered) return;
 
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (activeSession) {
-      interval = setInterval(() => {
-        setSessionTimer((prev) => prev + 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [activeSession]);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const mouseX = ((event.clientX - rect.left) / rect.width) * 100;
+    const mouseY = ((event.clientY - rect.top) / rect.height) * 100;
+    const hoveredPosition = getBubblePosition(hovered);
+    const deltaX = mouseX - hoveredPosition.x;
+    const deltaY = mouseY - hoveredPosition.y;
+    const aspectCorrectedDistance = Math.hypot(deltaX, deltaY * (rect.height / rect.width));
+    const activeRingCount = Math.max(1, Math.ceil(coveredIds.size / 8));
+    const hotZoneRadius = EXPANSION_RADIUS_PERCENT + (activeRingCount - 1) * 5 + EXPANSION_HOT_ZONE_PADDING_PERCENT;
 
-  async function loadData() {
-    try {
-      const [tagsData, statsData, sessionsData] = await Promise.all([
-        window.assistant.focus.getTags(),
-        window.assistant.focus.getStats(),
-        window.assistant.focus.getSessions(),
-      ]);
-      setTags(tagsData);
-      setStats(statsData);
-      setSessions(sessionsData);
-    } catch (err) {
-      console.error('加载数据失败:', err);
-    }
+    if (aspectCorrectedDistance > hotZoneRadius) setHoveredId(null);
   }
-
-  async function loadAreas() {
-    try {
-      const areasData = await window.assistant.focus.getAreas(
-        filterHorizon,
-        filterStatus,
-        filterTag,
-        filterImportance
-      );
-      setAreas(areasData);
-    } catch (err) {
-      console.error('加载焦点失败:', err);
-    }
-  }
-
-  async function checkActiveSession() {
-    try {
-      const allSessions = await window.assistant.focus.getSessions();
-      setSessions(allSessions);
-      const active = allSessions.find((s) => !s.endTime);
-      if (active) {
-        setActiveSession(active);
-        const start = new Date(active.startTime).getTime();
-        const now = Date.now();
-        setSessionTimer(Math.floor((now - start) / 1000));
-      }
-    } catch (err) {
-      console.error('检查专注会话失败:', err);
-    }
-  }
-
-  function openCreateArea() {
-    setEditingArea(null);
-    setAreaName('');
-    setAreaDescription('');
-    setAreaWhyImportant('');
-    setAreaDesiredOutcome('');
-    setAreaHorizon('near_term');
-    setAreaStatus('active');
-    setAreaImportance('medium');
-    setAreaTagIds([]);
-    setAreaNextReviewAt('');
-    setAreaContextLinks([]);
-    onAreaOpen();
-  }
-
-  function openEditArea(area: FocusArea) {
-    setEditingArea(area);
-    setAreaName(area.name);
-    setAreaDescription(area.description);
-    setAreaWhyImportant(area.whyImportant);
-    setAreaDesiredOutcome(area.desiredOutcome || '');
-    setAreaHorizon(area.horizon);
-    setAreaStatus(area.status);
-    setAreaImportance(area.importance);
-    setAreaTagIds(area.tagIds);
-    setAreaNextReviewAt(area.nextReviewAt ? area.nextReviewAt.split('T')[0] : '');
-    setAreaContextLinks(area.contextLinks || []);
-    onAreaOpen();
-  }
-
-  function openMigrate(area: FocusArea) {
-    setMigratingArea(area);
-    setMigrateToHorizon(area.horizon);
-    setMigrateReason('');
-    onMigrateOpen();
-  }
-
-  async function handleSaveArea() {
-    if (!areaName.trim()) return;
-
-    try {
-      const result = editingArea
-        ? await window.assistant.focus.updateArea(
-          editingArea.id,
-          areaName,
-          areaDescription,
-          areaWhyImportant,
-          areaHorizon,
-          areaStatus,
-          areaImportance,
-          areaTagIds,
-          areaDesiredOutcome || undefined,
-          areaNextReviewAt || undefined,
-          areaContextLinks.length > 0 ? areaContextLinks : undefined
-        )
-        : await window.assistant.focus.createArea(
-          areaName,
-          areaDescription,
-          areaWhyImportant,
-          areaHorizon,
-          areaStatus,
-          areaImportance,
-          areaTagIds,
-          areaDesiredOutcome || undefined,
-          areaNextReviewAt || undefined,
-          areaContextLinks.length > 0 ? areaContextLinks : undefined
-        );
-      if (!result.success) throw new Error(result.error || '保存焦点失败');
-      onAreaClose();
-      loadAreas();
-      loadData();
-    } catch (err) {
-      console.error('保存焦点失败:', err);
-      toast({ title: '保存焦点失败', description: err instanceof Error ? err.message : String(err), status: 'error' });
-    }
-  }
-
-  async function handleDeleteArea(areaId: string) {
-    try {
-      const result = await window.assistant.focus.deleteArea(areaId);
-      if (!result.success) throw new Error(result.error || '删除焦点失败');
-      loadAreas();
-      loadData();
-    } catch (err) {
-      console.error('删除焦点失败:', err);
-      toast({ title: '删除焦点失败', description: err instanceof Error ? err.message : String(err), status: 'error' });
-    }
-  }
-
-  async function handleMigrate() {
-    if (!migratingArea) return;
-    try {
-      const result = await window.assistant.focus.migrateArea(migratingArea.id, migrateToHorizon, migrateReason || undefined);
-      if (!result.success) throw new Error(result.error || '迁移失败');
-      onMigrateClose();
-      loadAreas();
-      loadData();
-    } catch (err) {
-      console.error('迁移失败:', err);
-      toast({ title: '迁移失败', description: err instanceof Error ? err.message : String(err), status: 'error' });
-    }
-  }
-
-  async function handleStartSession(areaId: string) {
-    try {
-      const result = await window.assistant.focus.startSession(areaId);
-      if (result.success && result.sessionId) {
-        await checkActiveSession();
-      } else {
-        throw new Error(result.error || '开始专注失败');
-      }
-    } catch (err) {
-      console.error('开始专注失败:', err);
-      toast({ title: '开始专注失败', description: err instanceof Error ? err.message : String(err), status: 'error' });
-    }
-  }
-
-  async function handleEndSession() {
-    if (!activeSession) return;
-    try {
-      const result = await window.assistant.focus.endSession(activeSession.id, endSessionNotes || undefined);
-      if (result.success) {
-        setActiveSession(null);
-        setSessionTimer(0);
-        await loadData();
-      } else {
-        throw new Error(result.error || '结束专注失败');
-      }
-    } catch (err) {
-      console.error('结束专注失败:', err);
-      toast({ title: '结束专注失败', description: err instanceof Error ? err.message : String(err), status: 'error' });
-    }
-    onEndSessionClose();
-  }
-
-  async function handleCreateTag() {
-    if (!newTagName.trim()) return;
-    try {
-      const result = await window.assistant.focus.createTag(newTagName, newTagColor);
-      if (!result.success) throw new Error(result.error || '创建标签失败');
-      setNewTagName('');
-      onTagClose();
-      loadData();
-    } catch (err) {
-      console.error('创建标签失败:', err);
-      toast({ title: '创建标签失败', description: err instanceof Error ? err.message : String(err), status: 'error' });
-    }
-  }
-
-  async function handleDeleteTag(tagId: string) {
-    try {
-      const result = await window.assistant.focus.deleteTag(tagId);
-      if (!result.success) throw new Error(result.error || '删除标签失败');
-      loadData();
-    } catch (err) {
-      console.error('删除标签失败:', err);
-      toast({ title: '删除标签失败', description: err instanceof Error ? err.message : String(err), status: 'error' });
-    }
-  }
-
-  async function loadMigrations(areaId: string) {
-    try {
-      const data = await window.assistant.focus.getMigrations(areaId);
-      setMigrations(data);
-    } catch (err) {
-      console.error('加载迁移历史失败:', err);
-    }
-  }
-
-  function formatMinutes(minutes: number) {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    if (h > 0) {
-      return `${h}小时${m}分钟`;
-    }
-    return `${m}分钟`;
-  }
-
-  function formatTimer(seconds: number) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-
-  function getAreaTotalDuration(areaId: string) {
-    return sessions
-      .filter((s) => s.focusId === areaId && s.durationMinutes)
-      .reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
-  }
-
-  function getAreaSessions(areaId: string) {
-    return sessions
-      .filter((s) => s.focusId === areaId)
-      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-  }
-
-  function toggleTag(tagId: string) {
-    if (areaTagIds.includes(tagId)) {
-      setAreaTagIds(areaTagIds.filter((id) => id !== tagId));
-    } else {
-      setAreaTagIds([...areaTagIds, tagId]);
-    }
-  }
-
-  const horizonOptions: FocusHorizon[] = ['current_core', 'near_term', 'long_term', 'watching', 'archived'];
-  const statusOptions: FocusStatus[] = ['active', 'watching', 'paused', 'migrated', 'completed'];
-  const importanceOptions: FocusImportance[] = ['critical', 'high', 'medium', 'low'];
 
   return (
-    <Box h="100%" display="flex" flexDirection="column">
-      {/* 顶部统计栏 */}
-      <Box bg="white" borderBottom="1px" borderColor="gray.200" px={4} py={3}>
-        <Flex justify="space-between" align="center" wrap="wrap" gap={2}>
-          <HStack spacing={4}>
-            <Heading size="md" display="flex" alignItems="center" gap={2}>
-              <Target size={20} />
-              焦点管理
-            </Heading>
-            {stats && (
-              <HStack spacing={2}>
-                <Badge colorScheme="red">当前核心 {stats.currentCore}</Badge>
-                <Badge colorScheme="orange">近期 {stats.nearTerm}</Badge>
-                <Badge colorScheme="blue">长期 {stats.longTerm}</Badge>
-                <Badge colorScheme="gray">观察中 {stats.watching}</Badge>
-              </HStack>
-            )}
-          </HStack>
+    <Box
+      ref={chartRef}
+      position="relative"
+      w="min(100%, 760px)"
+      aspectRatio="1 / 1"
+      minH={`${CHART_SIZE}px`}
+      mx="auto"
+      bg="linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)"
+      border="1px solid"
+      borderColor="gray.200"
+      borderRadius="xl"
+      overflow="hidden"
+      onMouseMove={handleChartMouseMove}
+      onMouseLeave={() => setHoveredId(null)}
+    >
+      <Box position="absolute" left="50%" top="50%" transform="translate(-50%, -50%)" color="gray.500" fontSize="xs">近期</Box>
+      <Box position="absolute" right={4} bottom={3} color="gray.500" fontSize="xs">外圈 = 更久未检视</Box>
+      <Box position="absolute" left="8%" right="8%" top="50%" h="1px" bg="whiteAlpha.900" />
+      <Box position="absolute" top="10%" bottom="10%" left="50%" w="1px" bg="whiteAlpha.900" />
 
-          <HStack spacing={2}>
-            {activeSession && (
-              <Button size="sm" colorScheme="green" leftIcon={<Clock size={14} />} onClick={onEndSessionOpen}>
-                专注中: {formatTimer(sessionTimer)}
-              </Button>
-            )}
-            <Button size="sm" colorScheme={showHistory ? 'purple' : 'gray'} leftIcon={<History size={14} />} onClick={() => setShowHistory(!showHistory)}>
-              迁移历史
-            </Button>
-            <Button size="sm" colorScheme="blue" leftIcon={<Plus size={14} />} onClick={openCreateArea}>
-              新建焦点
-            </Button>
-            <Button size="sm" variant="ghost" leftIcon={<Tag size={14} />} onClick={onTagOpen}>
-              标签
-            </Button>
-          </HStack>
-        </Flex>
-
-        {/* 过滤器 */}
-        <Flex mt={3} gap={2} wrap="wrap">
-          <Select size="sm" w="140px" value={filterHorizon || ''} onChange={(e) => setFilterHorizon((e.target.value as FocusHorizon) || undefined)}>
-            <option value="">全部时间层</option>
-            {horizonOptions.map((h) => (
-              <option key={h} value={h}>{horizonLabels[h]}</option>
-            ))}
-          </Select>
-
-          <Select size="sm" w="120px" value={filterStatus || ''} onChange={(e) => setFilterStatus((e.target.value as FocusStatus) || undefined)}>
-            <option value="">全部状态</option>
-            {statusOptions.map((s) => (
-              <option key={s} value={s}>{statusLabels[s]}</option>
-            ))}
-          </Select>
-
-          <Select size="sm" w="120px" value={filterImportance || ''} onChange={(e) => setFilterImportance((e.target.value as FocusImportance) || undefined)}>
-            <option value="">全部重要性</option>
-            {importanceOptions.map((i) => (
-              <option key={i} value={i}>{importanceLabels[i]}</option>
-            ))}
-          </Select>
-
-          <Select size="sm" w="120px" value={filterTag || ''} onChange={(e) => setFilterTag(e.target.value || undefined)}>
-            <option value="">全部标签</option>
-            {tags.map((tag) => (
-              <option key={tag.id} value={tag.id}>{tag.name}</option>
-            ))}
-          </Select>
-        </Flex>
+      <Box as="svg" position="absolute" inset={0} w="100%" h="100%" pointerEvents="none" overflow="visible">
+        {recencyRings.map((hour) => {
+          const radius = getRingRadius(hour);
+          return (
+            <g key={hour}>
+              <circle
+                cx="50%"
+                cy="50%"
+                r={`${radius}%`}
+                fill="none"
+                stroke="rgba(59, 130, 246, 0.13)"
+                strokeWidth="1"
+              />
+              <text
+                x={`${50 + radius / Math.SQRT2}%`}
+                y={`${50 - radius / Math.SQRT2}%`}
+                fill="rgba(100, 116, 139, 0.55)"
+                fontSize="10"
+                textAnchor="middle"
+              >{formatRingLabel(hour)}</text>
+            </g>
+          );
+        })}
       </Box>
 
-      {/* 内容区 */}
-      <Box flex={1} overflowY="auto" p={4} bg="gray.50">
-        <VStack spacing={4} align="stretch">
-          {areas.length === 0 ? (
-            <Box textAlign="center" py={10}>
-              <Text color="gray.500">暂无焦点，点击"新建焦点"开始</Text>
+      {hovered && (
+        <Box as="svg" position="absolute" inset={0} w="100%" h="100%" pointerEvents="none" overflow="visible">
+          {layout
+            .filter(({ base, display }) => Math.abs(base.x - display.x) > 0.2 || Math.abs(base.y - display.y) > 0.2)
+            .map(({ focus, display }) => {
+              const hoveredPosition = getBubblePosition(hovered);
+              return (
+              <line
+                key={focus.id}
+                x1={`${hoveredPosition.x}%`}
+                y1={`${hoveredPosition.y}%`}
+                x2={`${display.x}%`}
+                y2={`${display.y}%`}
+                stroke="rgba(37, 99, 235, 0.42)"
+                strokeWidth="1.5"
+                strokeDasharray="4 4"
+              />
+            );
+            })}
+        </Box>
+      )}
+
+      {focuses.length === 0 ? (
+        <Flex h="full" align="center" justify="center" direction="column" color="gray.500" gap={2}>
+          <CircleDot size={28} />
+          <Text>暂无焦点。请通过 MCP / 助手创建 focus_create。</Text>
+        </Flex>
+      ) : layout.map(({ focus, display }) => {
+        const size = display.size;
+        const selected = selectedId === focus.id;
+        const isHovered = hoveredId === focus.id;
+        const Icon = modeIcons[focus.attentionMode];
+        return (
+          <Tooltip
+            key={focus.id}
+            hasArrow
+            placement="top"
+            openDelay={180}
+            label={
+              <Box maxW="260px">
+                <Text fontWeight="bold" mb={1}>{focus.name}</Text>
+              <Text fontSize="xs">{healthLabels[focus.health]} · {modeLabels[focus.attentionMode]} · 比重 {focus.weight}</Text>
+                <Text fontSize="xs">{formatDays(focus.daysSinceLastCheckIn)} · 近 7 天 {focus.recentCheckInCount} 次检视</Text>
+                {focus.description && <Text fontSize="xs" mt={1} noOfLines={2}>{focus.description}</Text>}
+              </Box>
+            }
+          >
+          <Box
+            role="button"
+            aria-label={focus.name}
+            position="absolute"
+            left={`${display.x}%`}
+            top={`${display.y}%`}
+            w={`${size}px`}
+            h={`${size}px`}
+            borderRadius="full"
+            bg={healthColors[focus.health]}
+            color="white"
+            transform="translate(-50%, -50%)"
+            boxShadow={selected ? '0 0 0 4px rgba(37,99,235,0.22), 0 16px 36px rgba(15,23,42,0.28)' : '0 10px 28px rgba(15,23,42,0.18)'}
+            border="2px solid rgba(255,255,255,0.85)"
+            cursor="pointer"
+            opacity={hovered && !isHovered ? 0.82 : 1}
+            zIndex={isHovered ? 3 : selected ? 2 : 1}
+            transition="left 220ms ease, top 220ms ease, transform 160ms ease, opacity 160ms ease, box-shadow 160ms ease"
+            _hover={{ transform: 'translate(-50%, -50%) scale(1.1)', zIndex: 4 }}
+            onMouseEnter={() => setHoveredId((current) => current ?? focus.id)}
+            onClick={() => onSelect(focus)}
+          >
+            <Flex h="full" align="center" justify="center" direction="column" gap={1}>
+              <Icon size={Math.max(7, Math.min(16, size * 0.52))} strokeWidth={2.2} />
+            </Flex>
+          </Box>
+          </Tooltip>
+        );
+      })}
+    </Box>
+  );
+}
+
+function StatsCards({ stats }: { stats: FocusStats | null }) {
+  if (!stats) return null;
+  return (
+    <SimpleGrid columns={{ base: 2, md: 4 }} spacing={3}>
+      <Card><CardBody py={3}><Text fontSize="xs" color="gray.500">焦点总数</Text><Heading size="md">{stats.totalAreas}</Heading></CardBody></Card>
+      <Card><CardBody py={3}><Text fontSize="xs" color="gray.500">活跃焦点</Text><Heading size="md">{stats.activeAreas}</Heading></CardBody></Card>
+      <Card><CardBody py={3}><Text fontSize="xs" color="gray.500">近 7 天检视</Text><Heading size="md">{stats.checkInsLast7Days}</Heading></CardBody></Card>
+      <Card><CardBody py={3}><Text fontSize="xs" color="gray.500">异动</Text><Heading size="md">{stats.alertCount}</Heading></CardBody></Card>
+    </SimpleGrid>
+  );
+}
+
+function AlertList({ alerts }: { alerts: FocusAlert[] }) {
+  return (
+    <Card h="full">
+      <CardBody>
+        <HStack mb={3} spacing={2}>
+          <AlertTriangle size={17} />
+          <Heading size="sm">当前异动</Heading>
+        </HStack>
+        <VStack align="stretch" spacing={2} maxH="220px" overflow="auto">
+          {alerts.length === 0 ? <Text fontSize="sm" color="gray.500">暂无异动</Text> : alerts.map((alert) => (
+            <Box key={alert.id} p={2} bg={alert.severity === 'critical' ? 'red.50' : alert.severity === 'warning' ? 'orange.50' : 'gray.50'} borderRadius="md">
+              <Badge colorScheme={alert.severity === 'critical' ? 'red' : alert.severity === 'warning' ? 'orange' : 'gray'} mb={1}>{alert.type}</Badge>
+              <Text fontSize="sm">{alert.message}</Text>
             </Box>
-          ) : (
-            areas.map((area) => (
-              <Card key={area.id} variant="outline" bg="white">
-                <CardHeader pb={2}>
-                  <Flex justify="space-between" align="start">
-                    <Box>
-                      <Flex align="center" gap={2} mb={1}>
-                        <Heading size="sm">{area.name}</Heading>
-                        <Badge colorScheme={horizonColors[area.horizon]}>{horizonLabels[area.horizon]}</Badge>
-                        <Badge variant="outline" colorScheme={statusColors[area.status]}>{statusLabels[area.status]}</Badge>
-                        <Badge variant="subtle" colorScheme={importanceColors[area.importance]}>{importanceLabels[area.importance]}</Badge>
-                      </Flex>
-                      <Flex gap={1} wrap="wrap">
-                        {area.tagIds.map((tagId) => {
-                          const tag = tags.find((t) => t.id === tagId);
-                          return tag ? (
-                            <ChakraTag key={tag.id} size="sm" bg={tag.color} color="white">
-                              <TagLabel>{tag.name}</TagLabel>
-                            </ChakraTag>
-                          ) : null;
-                        })}
-                      </Flex>
-                    </Box>
-                    <HStack spacing={1}>
-                      {area.status !== 'completed' && (!activeSession || activeSession.focusId === area.id) && (
-                        <Tooltip label={activeSession ? '结束专注' : '开始专注'}>
-                          <Button size="xs" variant="ghost" colorScheme={activeSession ? 'red' : 'green'} onClick={() => activeSession ? onEndSessionOpen() : handleStartSession(area.id)}>
-                            {activeSession ? <Square size={14} /> : <Play size={14} />}
-                          </Button>
-                        </Tooltip>
-                      )}
-                      <Tooltip label="迁移时间层">
-                        <Button size="xs" variant="ghost" onClick={() => openMigrate(area)}>
-                          <TrendingUp size={14} />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip label="编辑">
-                        <Button size="xs" variant="ghost" onClick={() => openEditArea(area)}>
-                          <Eye size={14} />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip label="删除">
-                        <Button size="xs" variant="ghost" colorScheme="red" onClick={() => handleDeleteArea(area.id)}>
-                          <Trash2 size={14} />
-                        </Button>
-                      </Tooltip>
-                    </HStack>
-                  </Flex>
-                </CardHeader>
-
-                <CardBody py={2}>
-                  <Text fontSize="sm" color="gray.600" noOfLines={2}>{area.description || '无描述'}</Text>
-                  {area.whyImportant && (
-                    <Box mt={2}>
-                      <Flex align="center" gap={1} fontSize="xs" color="gray.500">
-                        <AlertCircle size={12} />
-                        <Text as="span" fontWeight="medium">为何重要：</Text>
-                        <Text as="span">{area.whyImportant}</Text>
-                      </Flex>
-                    </Box>
-                  )}
-                  {area.desiredOutcome && (
-                    <Box mt={1}>
-                      <Flex align="center" gap={1} fontSize="xs" color="gray.500">
-                        <Target size={12} />
-                        <Text as="span" fontWeight="medium">期望结果：</Text>
-                        <Text as="span">{area.desiredOutcome}</Text>
-                      </Flex>
-                    </Box>
-                  )}
-                </CardBody>
-
-                <CardFooter pt={0}>
-                  <Flex justify="space-between" align="center" w="full">
-                    <HStack spacing={3} fontSize="xs" color="gray.500">
-                      {getAreaTotalDuration(area.id) > 0 && (
-                        <Flex align="center" gap={1} color="blue.600" cursor="pointer" onClick={() => setExpandedAreaId(expandedAreaId === area.id ? null : area.id)}>
-                          <Clock size={12} />
-                          <Text>累计专注 {formatMinutes(getAreaTotalDuration(area.id))}</Text>
-                          {expandedAreaId === area.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                        </Flex>
-                      )}
-                      {area.nextReviewAt && (
-                        <Flex align="center" gap={1}>
-                          <Calendar size={12} />
-                          <Text>下次回顾: {new Date(area.nextReviewAt).toLocaleDateString()}</Text>
-                        </Flex>
-                      )}
-                    </HStack>
-                    <Text fontSize="xs" color="gray.400">
-                      创建于 {new Date(area.createdAt).toLocaleDateString()}
-                    </Text>
-                  </Flex>
-
-                  {expandedAreaId === area.id && (
-                    <Box mt={3} pt={3} borderTop="1px" borderColor="gray.100" w="full">
-                      <VStack gap={2} align="stretch">
-                        {getAreaSessions(area.id).filter((s) => s.endTime).length === 0 ? (
-                          <Text fontSize="xs" color="gray.500">暂无专注记录</Text>
-                        ) : (
-                          getAreaSessions(area.id)
-                            .filter((s) => s.endTime)
-                            .slice(0, 5)
-                            .map((session) => (
-                              <Flex key={session.id} justify="space-between" align="center" p={2} bg="gray.50" borderRadius="md">
-                                <Text fontSize="xs" color="gray.600">
-                                  {new Date(session.startTime).toLocaleString()}
-                                </Text>
-                                <Flex align="center" gap={2}>
-                                  <Badge colorScheme="blue" fontSize="xs">
-                                    {formatMinutes(session.durationMinutes || 0)}
-                                  </Badge>
-                                  {session.notes && (
-                                    <Tooltip label={session.notes}>
-                                      <Box as="span" cursor="help" color="gray.500">📝</Box>
-                                    </Tooltip>
-                                  )}
-                                </Flex>
-                              </Flex>
-                            ))
-                        )}
-                      </VStack>
-                    </Box>
-                  )}
-                </CardFooter>
-              </Card>
-            ))
-          )}
+          ))}
         </VStack>
-      </Box>
+      </CardBody>
+    </Card>
+  );
+}
 
-      {/* 新建/编辑焦点弹窗 */}
-      <Modal isOpen={isAreaOpen} onClose={onAreaClose} size="xl">
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>{editingArea ? '编辑焦点' : '新建焦点'}</ModalHeader>
-          <ModalBody>
-            <VStack spacing={4}>
-              <Box w="full">
-                <Text fontSize="sm" fontWeight="medium" mb={1}>名称 *</Text>
-                <Input placeholder="焦点名称" value={areaName} onChange={(e) => setAreaName(e.target.value)} />
-              </Box>
+function FocusDetail({ focus, tags }: { focus?: FocusAreaView; tags: FocusTag[] }) {
+  if (!focus) {
+    return <Card h="full"><CardBody><Text color="gray.500">选择一个气泡查看详情</Text></CardBody></Card>;
+  }
+  const Icon = modeIcons[focus.attentionMode];
+  const tagNames = focus.tags.map((tagId) => tags.find((tag) => tag.id === tagId || tag.name === tagId)?.name || tagId);
+  return (
+    <Card h="full">
+      <CardBody>
+        <VStack align="stretch" spacing={3}>
+          <HStack justify="space-between" align="start">
+            <Box>
+              <Heading size="sm">{focus.name}</Heading>
+              <Text fontSize="sm" color="gray.500" mt={1}>{focus.description || '暂无描述'}</Text>
+            </Box>
+            <Badge colorScheme={modeColors[focus.attentionMode]}>
+              <HStack spacing={1}><Icon size={12} /><Text>{modeLabels[focus.attentionMode]}</Text></HStack>
+            </Badge>
+          </HStack>
+          <HStack wrap="wrap">
+            <Badge bg={healthColors[focus.health]} color="white">{healthLabels[focus.health]}</Badge>
+            <Badge>weight {focus.weight}</Badge>
+            <Badge>{focus.reviewCadence}</Badge>
+            <Badge>{formatDays(focus.daysSinceLastCheckIn)}</Badge>
+            <Badge>近 7 天 {focus.recentCheckInCount} 次</Badge>
+          </HStack>
+          {focus.expectedExit && <Box><Text fontSize="xs" color="gray.500">自然退出条件</Text><Text fontSize="sm">{focus.expectedExit}</Text></Box>}
+          {tagNames.length > 0 && <HStack wrap="wrap">{tagNames.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}</HStack>}
+          <Box>
+            <Text fontSize="xs" color="gray.500">创建 / 更新</Text>
+            <Text fontSize="sm">{new Date(focus.createdAt).toLocaleString()} / {new Date(focus.updatedAt).toLocaleString()}</Text>
+          </Box>
+        </VStack>
+      </CardBody>
+    </Card>
+  );
+}
 
-              <Box w="full">
-                <Text fontSize="sm" fontWeight="medium" mb={1}>描述</Text>
-                <Textarea placeholder="描述这个焦点领域" value={areaDescription} onChange={(e) => setAreaDescription(e.target.value)} rows={2} />
-              </Box>
+export default function Focus() {
+  const [focuses, setFocuses] = useState<FocusAreaView[]>([]);
+  const [stats, setStats] = useState<FocusStats | null>(null);
+  const [alerts, setAlerts] = useState<FocusAlert[]>([]);
+  const [tags, setTags] = useState<FocusTag[]>([]);
+  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [healthFilter, setHealthFilter] = useState<FocusHealth | ''>('');
+  const [modeFilter, setModeFilter] = useState<FocusAttentionMode | ''>('');
+  const [loading, setLoading] = useState(true);
 
-              <Box w="full">
-                <Text fontSize="sm" fontWeight="medium" mb={1}>为什么重要？</Text>
-                <Textarea placeholder="为什么这个焦点对你很重要？" value={areaWhyImportant} onChange={(e) => setAreaWhyImportant(e.target.value)} rows={2} />
-              </Box>
+  async function refresh() {
+    const filters = {
+      ...(healthFilter ? { health: healthFilter } : {}),
+      ...(modeFilter ? { attentionMode: modeFilter } : {}),
+    };
+    const [focusData, statsData, alertData, tagData] = await Promise.all([
+      window.assistant.focus.list(filters),
+      window.assistant.focus.stats(),
+      window.assistant.focus.alerts(),
+      window.assistant.focus.listTags(),
+    ]);
+    setFocuses(focusData);
+    setStats(statsData);
+    setAlerts(alertData);
+    setTags(tagData);
+    setSelectedId((current) => current && focusData.some((focus) => focus.id === current) ? current : focusData[0]?.id);
+    setLoading(false);
+  }
 
-              <Box w="full">
-                <Text fontSize="sm" fontWeight="medium" mb={1}>期望结果</Text>
-                <Input placeholder="你希望达成什么结果？" value={areaDesiredOutcome} onChange={(e) => setAreaDesiredOutcome(e.target.value)} />
-              </Box>
+  useEffect(() => {
+    refresh().catch((err) => {
+      console.error('加载焦点失败:', err);
+      setLoading(false);
+    });
+    const timer = setInterval(() => refresh().catch(console.error), 5000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [healthFilter, modeFilter]);
 
-              <Flex w="full" gap={4}>
-                <Box flex={1}>
-                  <Text fontSize="sm" fontWeight="medium" mb={1}>时间层面</Text>
-                  <Select value={areaHorizon} onChange={(e) => setAreaHorizon(e.target.value as FocusHorizon)}>
-                    {horizonOptions.map((h) => (
-                      <option key={h} value={h}>{horizonLabels[h]}</option>
-                    ))}
-                  </Select>
-                </Box>
-                <Box flex={1}>
-                  <Text fontSize="sm" fontWeight="medium" mb={1}>状态</Text>
-                  <Select value={areaStatus} onChange={(e) => setAreaStatus(e.target.value as FocusStatus)}>
-                    {statusOptions.map((s) => (
-                      <option key={s} value={s}>{statusLabels[s]}</option>
-                    ))}
-                  </Select>
-                </Box>
-                <Box flex={1}>
-                  <Text fontSize="sm" fontWeight="medium" mb={1}>重要性</Text>
-                  <Select value={areaImportance} onChange={(e) => setAreaImportance(e.target.value as FocusImportance)}>
-                    {importanceOptions.map((i) => (
-                      <option key={i} value={i}>{importanceLabels[i]}</option>
-                    ))}
-                  </Select>
-                </Box>
-              </Flex>
+  const selected = useMemo(() => focuses.find((focus) => focus.id === selectedId), [focuses, selectedId]);
 
-              <Box w="full">
-                <Text fontSize="sm" fontWeight="medium" mb={1}>标签</Text>
-                <Flex gap={2} wrap="wrap">
-                  {tags.map((tag) => (
-                    <ChakraTag
-                      key={tag.id}
-                      size="md"
-                      bg={areaTagIds.includes(tag.id) ? tag.color : 'gray.100'}
-                      color={areaTagIds.includes(tag.id) ? 'white' : 'gray.700'}
-                      cursor="pointer"
-                      onClick={() => toggleTag(tag.id)}
-                    >
-                      <TagLabel>{tag.name}</TagLabel>
-                    </ChakraTag>
-                  ))}
+  return (
+    <Box h="100%" overflow="auto" bg="gray.50" p={4}>
+      <VStack align="stretch" spacing={4}>
+        <Flex justify="space-between" align="center" gap={3} wrap="wrap">
+          <Box>
+            <Heading size="md">焦点注意力观察</Heading>
+            <Text fontSize="sm" color="gray.500">只读气泡图：正方形分圈视图；越靠近中心代表越近期，浅色圈按小时到天的对数分布，泡泡直径随比重变大。</Text>
+          </Box>
+          <HStack>
+            <Select size="sm" value={healthFilter} onChange={(event) => setHealthFilter(event.target.value as FocusHealth | '')} w="130px">
+              <option value="">全部健康度</option>
+              <option value="neglected">失焦</option>
+              <option value="drifting">漂移</option>
+              <option value="cooling">冷却</option>
+              <option value="aligned">对齐</option>
+            </Select>
+            <Select size="sm" value={modeFilter} onChange={(event) => setModeFilter(event.target.value as FocusAttentionMode | '')} w="130px">
+              <option value="">全部模式</option>
+              <option value="deep">沉浸</option>
+              <option value="pulse">脉冲</option>
+              <option value="scan">扫视</option>
+              <option value="dormant">休眠</option>
+            </Select>
+          </HStack>
+        </Flex>
+
+        <StatsCards stats={stats} />
+
+        {loading ? (
+          <Flex h="360px" align="center" justify="center"><Spinner /></Flex>
+        ) : (
+          <SimpleGrid columns={{ base: 1, xl: 3 }} spacing={4} alignItems="stretch">
+            <Box gridColumn={{ base: 'auto', xl: 'span 2' }}>
+              <BubbleChart focuses={focuses} selectedId={selectedId} onSelect={(focus) => setSelectedId(focus.id)} />
+            </Box>
+            <Stack spacing={4}>
+              <FocusDetail focus={selected} tags={tags} />
+              <AlertList alerts={alerts} />
+            </Stack>
+          </SimpleGrid>
+        )}
+
+        <Card>
+          <CardBody>
+            <Heading size="sm" mb={3}>焦点列表</Heading>
+            <VStack align="stretch" spacing={2}>
+              {focuses.map((focus) => (
+                <Flex key={focus.id} justify="space-between" align="center" p={2} bg="white" border="1px solid" borderColor="gray.100" borderRadius="md" cursor="pointer" onClick={() => setSelectedId(focus.id)}>
+                  <HStack>
+                    <Box w="10px" h="10px" borderRadius="full" bg={healthColors[focus.health]} />
+                    <Text fontWeight="medium">{focus.name}</Text>
+                    <Badge colorScheme={modeColors[focus.attentionMode]}>{modeLabels[focus.attentionMode]}</Badge>
+                  </HStack>
+                  <HStack>
+                    <Badge>weight {focus.weight}</Badge>
+                    <Text fontSize="sm" color="gray.500">{formatDays(focus.daysSinceLastCheckIn)}</Text>
+                  </HStack>
                 </Flex>
-              </Box>
-
-              <Box w="full">
-                <Text fontSize="sm" fontWeight="medium" mb={1}>下次回顾日期</Text>
-                <Input type="date" value={areaNextReviewAt} onChange={(e) => setAreaNextReviewAt(e.target.value)} />
-              </Box>
+              ))}
             </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onAreaClose}>取消</Button>
-            <Button colorScheme="blue" onClick={handleSaveArea}>保存</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* 迁移焦点弹窗 */}
-      <Modal isOpen={isMigrateOpen} onClose={onMigrateClose} size="md">
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>迁移焦点: {migratingArea?.name}</ModalHeader>
-          <ModalBody>
-            <VStack spacing={4}>
-              <Box w="full">
-                <Text fontSize="sm" fontWeight="medium" mb={1}>迁移到</Text>
-                <Select value={migrateToHorizon} onChange={(e) => setMigrateToHorizon(e.target.value as FocusHorizon)}>
-                  {horizonOptions.map((h) => (
-                    <option key={h} value={h}>{horizonLabels[h]}</option>
-                  ))}
-                </Select>
-              </Box>
-              <Box w="full">
-                <Text fontSize="sm" fontWeight="medium" mb={1}>迁移原因（可选）</Text>
-                <Textarea placeholder="为什么迁移这个焦点？" value={migrateReason} onChange={(e) => setMigrateReason(e.target.value)} rows={3} />
-              </Box>
-            </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onMigrateClose}>取消</Button>
-            <Button colorScheme="blue" onClick={handleMigrate}>确认迁移</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* 结束专注弹窗 */}
-      <Modal isOpen={isEndSessionOpen} onClose={onEndSessionClose} size="md">
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>结束专注</ModalHeader>
-          <ModalBody>
-            <VStack spacing={4}>
-              <Text>本次专注时长: {formatTimer(sessionTimer)}</Text>
-              <Box w="full">
-                <Text fontSize="sm" fontWeight="medium" mb={1}>专注备注（可选）</Text>
-                <Textarea placeholder="记录这次专注的成果或感受..." value={endSessionNotes} onChange={(e) => setEndSessionNotes(e.target.value)} rows={3} />
-              </Box>
-            </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onEndSessionClose}>取消</Button>
-            <Button colorScheme="blue" onClick={handleEndSession}>确认结束</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* 标签管理弹窗 */}
-      <Modal isOpen={isTagOpen} onClose={onTagClose} size="md">
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>标签管理</ModalHeader>
-          <ModalBody>
-            <VStack spacing={4}>
-              <Flex gap={2} w="full">
-                <Input placeholder="新标签名称" value={newTagName} onChange={(e) => setNewTagName(e.target.value)} flex={1} />
-                <Input type="color" w="60px" value={newTagColor} onChange={(e) => setNewTagColor(e.target.value)} />
-                <Button colorScheme="blue" onClick={handleCreateTag}>添加</Button>
-              </Flex>
-              <Divider />
-              <Flex gap={2} wrap="wrap" w="full">
-                {tags.map((tag) => (
-                  <ChakraTag key={tag.id} size="lg" bg={tag.color} color="white">
-                    <TagLabel>{tag.name}</TagLabel>
-                    <TagCloseButton onClick={() => handleDeleteTag(tag.id)} />
-                  </ChakraTag>
-                ))}
-                {tags.length === 0 && <Text color="gray.500">暂无标签</Text>}
-              </Flex>
-            </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" onClick={onTagClose}>关闭</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+          </CardBody>
+        </Card>
+      </VStack>
     </Box>
   );
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "UUUtil Focus"
+  short_description: "Record assistant attention into UUUtil Focus"
+  default_prompt: "Use $uuutil-focus to record this meaningful work as a UUUtil Focus check-in."

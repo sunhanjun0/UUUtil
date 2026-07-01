@@ -16,6 +16,13 @@ import { app } from 'electron';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+export interface McpActivitySummary {
+  time: string;
+  message: string;
+  tool?: string;
+  level: LogLevel;
+}
+
 const LEVEL_ORDER: Record<LogLevel, number> = {
   debug: 0,
   info: 1,
@@ -43,17 +50,24 @@ let minLevel: LogLevel = 'debug';
 /** 初始化日志目录与文件流 */
 export function initLogger(level: LogLevel = 'debug'): void {
   try {
-    logDir = path.join(app.getPath('userData'), 'logs');
-    fs.mkdirSync(logDir, { recursive: true });
-    logPath = path.join(logDir, LOG_FILENAME);
-    minLevel = level;
-    tryRotate();
-    writeStream = fs.createWriteStream(logPath, { flags: 'a' });
+    initLoggerAt(path.join(app.getPath('userData'), 'logs'), level);
     info('logger', '日志系统已初始化', { path: logPath, level });
   } catch (err) {
     // 初始化失败时 fallback 到 console
     console.error('[Logger] 初始化失败:', err);
   }
+}
+
+/** 初始化指定日志目录，用于 Electron 外的独立进程（例如 MCP Server） */
+export function initLoggerAt(directory: string, level: LogLevel = 'debug'): void {
+  if (writeStream) closeLogger();
+
+  logDir = directory;
+  fs.mkdirSync(logDir, { recursive: true });
+  logPath = path.join(logDir, LOG_FILENAME);
+  minLevel = level;
+  tryRotate();
+  writeStream = fs.createWriteStream(logPath, { flags: 'a' });
 }
 
 /** 关闭日志流 */
@@ -151,6 +165,31 @@ export function readRecentLogs(linesCount = 200): string[] {
   } catch {
     return [];
   }
+}
+
+/** 读取最近一次 MCP 工具调用日志，用于悬浮球跨进程活动提示 */
+export function getLatestMcpActivity(): McpActivitySummary | null {
+  const recentLines = readRecentLogs(300);
+
+  for (let index = recentLines.length - 1; index >= 0; index--) {
+    try {
+      const entry = JSON.parse(recentLines[index]) as LogEntry;
+      if (entry.scope !== 'mcp') continue;
+      if (entry.message !== 'tool_call_started') continue;
+
+      const tool = typeof entry.meta?.tool === 'string' ? entry.meta.tool : undefined;
+      return {
+        time: entry.time,
+        message: entry.message,
+        tool,
+        level: entry.level,
+      };
+    } catch {
+      // 忽略损坏的日志行
+    }
+  }
+
+  return null;
 }
 
 /** 清空当前日志和轮转日志 */

@@ -12,13 +12,14 @@ import type {
   AiRuntimeConfig,
   CliCommandRequest,
   CliCommandResult,
-  FocusArea,
-  FocusHorizon,
-  FocusImportance,
-  FocusMigration,
-  FocusSession,
+  FocusAlert,
+  FocusAreaView,
+  FocusCheckIn,
+  FocusCheckInInput,
+  FocusCreateInput,
+  FocusListFilters,
+  FocusMetadataUpdateInput,
   FocusStats,
-  FocusStatus,
   FocusTag,
   KnowledgeCategory,
   KnowledgeNote,
@@ -26,6 +27,13 @@ import type {
   KnowledgeTag,
   PluginInfo,
 } from './types';
+
+export interface McpActivitySummary {
+  time: string;
+  message: string;
+  tool?: string;
+  level: 'debug' | 'info' | 'warn' | 'error';
+}
 
 export interface WhiteboardAttachmentInput {
   name: string;
@@ -82,21 +90,18 @@ export interface AssistantApi {
   deleteTag: (tagId: string) => Promise<any>;
 
   focus: {
-    createArea: (name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) => Promise<{ success: boolean; areaId?: string; error?: string }>;
-    updateArea: (areaId: string, name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) => Promise<{ success: boolean; error?: string }>;
-    deleteArea: (areaId: string) => Promise<{ success: boolean; error?: string }>;
-    getAreas: (horizon?: FocusHorizon, status?: FocusStatus, tagId?: string, importance?: FocusImportance) => Promise<FocusArea[]>;
-    getAreaById: (areaId: string) => Promise<FocusArea | null>;
-    migrateArea: (areaId: string, toHorizon: FocusHorizon, reason?: string) => Promise<{ success: boolean; error?: string }>;
-    changeAreaStatus: (areaId: string, toStatus: FocusStatus, reason?: string) => Promise<{ success: boolean; error?: string }>;
-    getMigrations: (areaId?: string) => Promise<FocusMigration[]>;
+    create: (input: FocusCreateInput) => Promise<{ success: boolean; focusId?: string; error?: string }>;
+    updateMetadata: (focusId: string, input: FocusMetadataUpdateInput) => Promise<{ success: boolean; error?: string }>;
+    checkIn: (input: FocusCheckInInput) => Promise<{ success: boolean; checkInId?: string; error?: string }>;
+    get: (focusId: string) => Promise<FocusAreaView | null>;
+    list: (filters?: FocusListFilters) => Promise<FocusAreaView[]>;
+    alerts: () => Promise<FocusAlert[]>;
+    checkins: (focusId: string) => Promise<FocusCheckIn[]>;
+    stats: () => Promise<FocusStats>;
     createTag: (name: string, color?: string) => Promise<{ success: boolean; tagId?: string; error?: string }>;
-    getTags: () => Promise<FocusTag[]>;
+    updateTag: (tagId: string, name: string, color?: string) => Promise<{ success: boolean; error?: string }>;
+    listTags: () => Promise<FocusTag[]>;
     deleteTag: (tagId: string) => Promise<{ success: boolean; error?: string }>;
-    startSession: (focusId: string) => Promise<{ success: boolean; sessionId?: string; error?: string }>;
-    endSession: (sessionId: string, notes?: string) => Promise<{ success: boolean; durationMinutes?: number; error?: string }>;
-    getSessions: (focusId?: string) => Promise<FocusSession[]>;
-    getStats: () => Promise<FocusStats>;
   };
 
   ai: {
@@ -129,6 +134,7 @@ export interface AssistantApi {
   openLogsDir: () => Promise<SuccessResult>;
   getLogPath: () => Promise<string | null>;
   readRecentLogs: (lines?: number) => Promise<string[]>;
+  getLatestMcpActivity: () => Promise<McpActivitySummary | null>;
   clearLogs: () => Promise<SuccessResult>;
 }
 

@@ -19,6 +19,7 @@ import {
 import { loadAllPlugins, listPlugins } from '../core/plugin-loader';
 import { disposeAllTerminals } from './terminal';
 import { registerAllIpc } from './ipc';
+import { startMcpHttpService, type McpHttpServiceHandle } from '../mcp/http-service';
 import {
   createBallWindow,
   createTray,
@@ -26,6 +27,8 @@ import {
   isBallWindowAlive,
   showPanelWindow,
 } from './windows';
+
+let mcpHttpService: McpHttpServiceHandle | null = null;
 
 async function bootstrap(): Promise<void> {
   initLogger();
@@ -44,6 +47,7 @@ async function bootstrap(): Promise<void> {
   logInfo('app', '核心已就绪');
 
   registerAllIpc();
+  mcpHttpService = await startMcpHttpService();
   createBallWindow();
   createTray();
   registerGlobalShortcuts();
@@ -69,6 +73,7 @@ app.on('will-quit', () => {
 
 app.on('before-quit', () => {
   logInfo('app', '应用退出');
+  void mcpHttpService?.close().catch((error) => logInfo('mcp:http', 'service_stop_failed', { error: error instanceof Error ? error.message : String(error) }));
   disposeAllTerminals();
   closeDatabase();
   closeLogger();

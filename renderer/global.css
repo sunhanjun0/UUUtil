@@ -76,3 +76,53 @@ button:active {
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* 悬浮球：MCP 活动提示光圈 */
+.ball-mcp-pulse::before,
+.ball-mcp-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  border: 2px solid rgba(56, 189, 248, 0.82);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.68), 0 0 26px rgba(34, 197, 94, 0.34);
+}
+
+.ball-mcp-pulse.is-active::before {
+  animation: uuutil-mcp-pulse-ring 1.05s ease-out 3;
+}
+
+.ball-mcp-pulse.is-active::after {
+  animation: uuutil-mcp-pulse-ring 1.05s ease-out 3;
+  animation-delay: 0.18s;
+}
+
+.ball-mcp-pulse.is-active {
+  animation: uuutil-mcp-pulse-core 0.7s ease-in-out 4;
+}
+
+@keyframes uuutil-mcp-pulse-ring {
+  0% {
+    opacity: 0.95;
+    transform: scale(0.86);
+  }
+  62% {
+    opacity: 0.26;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.48);
+  }
+}
+
+@keyframes uuutil-mcp-pulse-core {
+  0%, 100% {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.95), 0 0 30px rgba(34, 197, 94, 0.56);
+  }
+}

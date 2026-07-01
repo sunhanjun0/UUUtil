@@ -22,6 +22,8 @@ bus.on('knowledge:results', handler);
 - 通过 `getDatabase()` 获取已初始化的连接
 - 写操作后调用 `autoSave()` 持久化到磁盘
 - sql.js 是内存数据库 + 手动持久化模式
+- 外部系统不要绕过应用主进程直接长期写 `.data/assistant.db`；需要跨进程接入时优先调用应用内 MCP/IPC 入口
+- 如果存在外部写入，读取前应使用 `reloadDatabaseIfChanged()` 之类的受控刷新能力，避免内存数据库覆盖新文件
 
 ### 4. 日志统一走 core/logger
 - 主进程和核心模块使用 `src/core/logger.ts` 的 `debug/info/warn/error`
@@ -62,6 +64,24 @@ autoSave(); // 写操作后必须调用
 - `window.assistant` 的类型合同统一维护在 `src/shared/assistant-api.ts`；preload 新增、删除或改签名时必须同步更新该文件。
 - `src/main/preload.ts` 只暴露经过 `contextBridge` 包装的最小 API，不直接暴露 `ipcRenderer`、Node API 或任意命令执行能力。
 - 终端 PTY API 仅供用户手动操作，禁止接入 AI 或远程内容驱动的调用链。
+
+## MCP 接入约定
+
+- 应用内 Streamable HTTP MCP 服务是外部系统读写 UUUtil 数据的首选入口，默认地址为 `http://127.0.0.1:17878/mcp`。
+- stdio MCP 入口只作为兼容层，默认代理到应用内 HTTP MCP；除明确开发调试外，不要让多个 stdio direct-db 进程同时写同一个数据库。
+- MCP 工具实现应复用插件 API 和核心数据库入口，不复制业务规则。
+- MCP 写操作必须串行化，并在写入后触发持久化。
+- MCP 调用必须进入统一日志，scope 建议使用 `mcp` 或 `mcp:http`，记录工具名、耗时、成功/失败和错误摘要。
+- MCP 日志不得记录完整用户输入、Token、请求头、附件正文或 base64。
+
+## 焦点功能约定
+
+- 焦点是注意力观察对象，不是 TODO、任务完成状态或手动打卡系统。
+- 焦点数据主要由 MCP、Skill、内部助手或其他外部系统写入；渲染界面默认只读展示。
+- 新增焦点写入能力时优先扩展 `src/plugins/focus/api.ts` 的合同，再通过 IPC/MCP 暴露。
+- `focus_check_in` 是主要追加入口；不要为一次性小动作创建大量重复焦点。
+- 权重、健康度、告警和检视节奏应由系统计算，不在 UI 中要求用户手动维护。
+- 开发期清库只能通过脚本或明确的内部接口完成，不暴露为正式 MCP 工具。
 
 ## 错误处理
 

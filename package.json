@@ -12,13 +12,18 @@
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "start": "electron dist/main/index.js",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "mcp:build": "tsc -p tsconfig.main.json",
+    "mcp:stdio": "node dist/mcp/server.js",
+    "mcp:dev": "npm run mcp:build && node dist/mcp/server.js",
+    "focus:reset-all": "npm run build:main && node scripts/focus-reset-all.js"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.14.23",
     "@chakra-ui/react": "^2.10.10",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@tabler/icons-react": "^3.44.0",
     "@uiw/react-md-editor": "^4.1.1",
     "@xterm/addon-fit": "^0.11.0",
@@ -30,7 +35,8 @@
     "react-dom": "^18.3.0",
     "react-router-dom": "^7.17.0",
     "sql.js": "^1.12.0",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "zod": "^4.4.3"
   },
   "build": {
     "appId": "com.personal-assistant.app",

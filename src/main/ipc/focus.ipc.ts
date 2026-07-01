@@ -1,59 +1,69 @@
 /**
- * Focus 专注管理 IPC 模块
+ * Focus 注意力观察 IPC 模块
  */
 
 import { defineInvoke } from './types';
 import type { IpcModule } from './types';
 import { api as focusApi } from '../../plugins/focus/api';
-import type { FocusHorizon, FocusStatus, FocusImportance } from '../../shared/types';
+import { info as logInfo, reloadDatabaseIfChanged } from '../../core';
+import type { FocusCreateInput, FocusListFilters, FocusMetadataUpdateInput, FocusCheckInInput } from '../../shared/types';
+
+function syncExternalFocusChanges(): void {
+  if (reloadDatabaseIfChanged()) {
+    logInfo('focus', 'external_database_changes_reloaded');
+  }
+}
 
 export const focusIpc: IpcModule = {
   namespace: 'focus',
   defs: [
-    defineInvoke('focus:create-area', (_event, name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) =>
-      focusApi.createArea(name, description, whyImportant, horizon, status, importance, tagIds, desiredOutcome, nextReviewAt, contextLinks)
-    ),
-    defineInvoke('focus:update-area', (_event, areaId: string, name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) =>
-      focusApi.updateArea(areaId, name, description, whyImportant, horizon, status, importance, tagIds, desiredOutcome, nextReviewAt, contextLinks)
-    ),
-    defineInvoke('focus:delete-area', (_event, areaId: string) =>
-      focusApi.deleteArea(areaId)
-    ),
-    defineInvoke('focus:get-areas', (_event, horizon?: FocusHorizon, status?: FocusStatus, tagId?: string, importance?: FocusImportance) =>
-      focusApi.getAreas(horizon, status, tagId, importance)
-    ),
-    defineInvoke('focus:get-area-by-id', (_event, areaId: string) =>
-      focusApi.getAreaById(areaId)
-    ),
-    defineInvoke('focus:migrate-area', (_event, areaId: string, toHorizon: FocusHorizon, reason?: string) =>
-      focusApi.migrateArea(areaId, toHorizon, reason)
-    ),
-    defineInvoke('focus:change-area-status', (_event, areaId: string, toStatus: FocusStatus, reason?: string) =>
-      focusApi.changeAreaStatus(areaId, toStatus, reason)
-    ),
-    defineInvoke('focus:get-migrations', (_event, areaId?: string) =>
-      focusApi.getMigrations(areaId)
-    ),
-    defineInvoke('focus:create-tag', (_event, name: string, color?: string) =>
-      focusApi.createTag(name, color)
-    ),
-    defineInvoke('focus:get-tags', () =>
-      focusApi.getTags()
-    ),
-    defineInvoke('focus:delete-tag', (_event, tagId: string) =>
-      focusApi.deleteTag(tagId)
-    ),
-    defineInvoke('focus:start-session', (_event, focusId: string) =>
-      focusApi.startSession(focusId)
-    ),
-    defineInvoke('focus:end-session', (_event, sessionId: string, notes?: string) =>
-      focusApi.endSession(sessionId, notes)
-    ),
-    defineInvoke('focus:get-sessions', (_event, focusId?: string) =>
-      focusApi.getSessions(focusId)
-    ),
-    defineInvoke('focus:get-stats', () =>
-      focusApi.getStats()
-    ),
+    defineInvoke('focus:create', (_event, input: FocusCreateInput) => {
+      syncExternalFocusChanges();
+      return focusApi.create(input);
+    }),
+    defineInvoke('focus:update-metadata', (_event, focusId: string, input: FocusMetadataUpdateInput) => {
+      syncExternalFocusChanges();
+      return focusApi.updateMetadata(focusId, input);
+    }),
+    defineInvoke('focus:check-in', (_event, input: FocusCheckInInput) => {
+      syncExternalFocusChanges();
+      return focusApi.checkIn(input);
+    }),
+    defineInvoke('focus:get', (_event, focusId: string) => {
+      syncExternalFocusChanges();
+      return focusApi.get(focusId);
+    }),
+    defineInvoke('focus:list', (_event, filters?: FocusListFilters) => {
+      syncExternalFocusChanges();
+      return focusApi.list(filters);
+    }),
+    defineInvoke('focus:alerts', () => {
+      syncExternalFocusChanges();
+      return focusApi.alerts();
+    }),
+    defineInvoke('focus:checkins', (_event, focusId: string) => {
+      syncExternalFocusChanges();
+      return focusApi.checkins(focusId);
+    }),
+    defineInvoke('focus:stats', () => {
+      syncExternalFocusChanges();
+      return focusApi.stats();
+    }),
+    defineInvoke('focus:create-tag', (_event, name: string, color?: string) => {
+      syncExternalFocusChanges();
+      return focusApi.createTag(name, color);
+    }),
+    defineInvoke('focus:update-tag', (_event, tagId: string, name: string, color?: string) => {
+      syncExternalFocusChanges();
+      return focusApi.updateTag(tagId, name, color);
+    }),
+    defineInvoke('focus:list-tags', () => {
+      syncExternalFocusChanges();
+      return focusApi.listTags();
+    }),
+    defineInvoke('focus:delete-tag', (_event, tagId: string) => {
+      syncExternalFocusChanges();
+      return focusApi.deleteTag(tagId);
+    }),
   ],
 };

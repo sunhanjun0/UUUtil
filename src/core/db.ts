@@ -11,6 +11,9 @@ import fs from 'fs';
 let db: SqlJsDatabase | null = null;
 let dbPath: string = '';
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let SQLModule: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+let lastLoadedMtimeMs = 0;
+let hasPendingWrites = false;
 
 const AUTO_SAVE_DEBOUNCE_MS = 500;
 
@@ -28,14 +31,16 @@ export async function initDatabase(customPath?: string): Promise<SqlJsDatabase> 
 
   dbPath = customPath || getDbPath();
 
-  const SQL = await initSqlJs();
+  SQLModule = await initSqlJs();
 
   // 从已有文件加载，没有则创建
   if (fs.existsSync(dbPath)) {
     const buffer = fs.readFileSync(dbPath);
-    db = new SQL.Database(buffer);
+    db = new SQLModule.Database(buffer);
+    lastLoadedMtimeMs = fs.statSync(dbPath).mtimeMs;
   } else {
-    db = new SQL.Database();
+    db = new SQLModule.Database();
+    lastLoadedMtimeMs = 0;
   }
 
   db.run('PRAGMA foreign_keys = ON');
@@ -87,18 +92,47 @@ function saveToDisk(): void {
     saveTimer = null;
   }
 
-  if (!db || !dbPath) return;
+  if (!db || !dbPath || !hasPendingWrites) return;
   try {
+    if (fs.existsSync(dbPath)) {
+      const currentMtimeMs = fs.statSync(dbPath).mtimeMs;
+      if (currentMtimeMs > lastLoadedMtimeMs) {
+        console.warn('[DB] 检测到外部数据库更新，跳过本次保存以避免覆盖新数据');
+        hasPendingWrites = false;
+        return;
+      }
+    }
+
     const data = db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(dbPath, buffer);
+    lastLoadedMtimeMs = fs.statSync(dbPath).mtimeMs;
+    hasPendingWrites = false;
   } catch (err) {
     console.error('[DB] 写入磁盘失败:', err);
   }
 }
 
+/** 如果数据库文件被外部进程修改，重新加载内存数据库 */
+export function reloadDatabaseIfChanged(): boolean {
+  if (!db || !dbPath || !SQLModule || !fs.existsSync(dbPath)) return false;
+  if (saveTimer) return false;
+
+  const mtimeMs = fs.statSync(dbPath).mtimeMs;
+  if (mtimeMs <= lastLoadedMtimeMs) return false;
+
+  const buffer = fs.readFileSync(dbPath);
+  db.close();
+  db = new SQLModule.Database(buffer);
+  db.run('PRAGMA foreign_keys = ON');
+  lastLoadedMtimeMs = mtimeMs;
+  hasPendingWrites = false;
+  return true;
+}
+
 /** 在每次写操作后自动保存 */
 export function autoSave(): void {
+  hasPendingWrites = true;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;

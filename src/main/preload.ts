@@ -8,9 +8,6 @@ import type {
   AiProviderConfig,
   AiRuntimeConfig,
   CliCommandRequest,
-  FocusHorizon,
-  FocusImportance,
-  FocusStatus,
 } from '../shared/types';
 import type { AssistantApi } from '../shared/assistant-api';
 
@@ -51,25 +48,20 @@ const assistantApi: AssistantApi = {
   createTag: (name: string) => ipcRenderer.invoke('plugin:knowledge-base:createTag', name),
   deleteTag: (tagId: string) => ipcRenderer.invoke('plugin:knowledge-base:deleteTag', tagId),
 
-  // ===== 专注管理 Focus API =====
+  // ===== 焦点注意力观察 Focus API =====
   focus: {
-    createArea: (name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) =>
-      ipcRenderer.invoke('focus:create-area', name, description, whyImportant, horizon, status, importance, tagIds, desiredOutcome, nextReviewAt, contextLinks),
-    updateArea: (areaId: string, name: string, description: string, whyImportant: string, horizon: FocusHorizon, status: FocusStatus, importance: FocusImportance, tagIds: string[], desiredOutcome?: string, nextReviewAt?: string, contextLinks?: string[]) =>
-      ipcRenderer.invoke('focus:update-area', areaId, name, description, whyImportant, horizon, status, importance, tagIds, desiredOutcome, nextReviewAt, contextLinks),
-    deleteArea: (areaId: string) => ipcRenderer.invoke('focus:delete-area', areaId),
-    getAreas: (horizon?: FocusHorizon, status?: FocusStatus, tagId?: string, importance?: FocusImportance) => ipcRenderer.invoke('focus:get-areas', horizon, status, tagId, importance),
-    getAreaById: (areaId: string) => ipcRenderer.invoke('focus:get-area-by-id', areaId),
-    migrateArea: (areaId: string, toHorizon: FocusHorizon, reason?: string) => ipcRenderer.invoke('focus:migrate-area', areaId, toHorizon, reason),
-    changeAreaStatus: (areaId: string, toStatus: FocusStatus, reason?: string) => ipcRenderer.invoke('focus:change-area-status', areaId, toStatus, reason),
-    getMigrations: (areaId?: string) => ipcRenderer.invoke('focus:get-migrations', areaId),
-    createTag: (name: string, color?: string) => ipcRenderer.invoke('focus:create-tag', name, color),
-    getTags: () => ipcRenderer.invoke('focus:get-tags'),
-    deleteTag: (tagId: string) => ipcRenderer.invoke('focus:delete-tag', tagId),
-    startSession: (focusId: string) => ipcRenderer.invoke('focus:start-session', focusId),
-    endSession: (sessionId: string, notes?: string) => ipcRenderer.invoke('focus:end-session', sessionId, notes),
-    getSessions: (focusId?: string) => ipcRenderer.invoke('focus:get-sessions', focusId),
-    getStats: () => ipcRenderer.invoke('focus:get-stats'),
+    create: (input) => ipcRenderer.invoke('focus:create', input),
+    updateMetadata: (focusId, input) => ipcRenderer.invoke('focus:update-metadata', focusId, input),
+    checkIn: (input) => ipcRenderer.invoke('focus:check-in', input),
+    get: (focusId) => ipcRenderer.invoke('focus:get', focusId),
+    list: (filters) => ipcRenderer.invoke('focus:list', filters),
+    alerts: () => ipcRenderer.invoke('focus:alerts'),
+    checkins: (focusId) => ipcRenderer.invoke('focus:checkins', focusId),
+    stats: () => ipcRenderer.invoke('focus:stats'),
+    createTag: (name, color) => ipcRenderer.invoke('focus:create-tag', name, color),
+    updateTag: (tagId, name, color) => ipcRenderer.invoke('focus:update-tag', tagId, name, color),
+    listTags: () => ipcRenderer.invoke('focus:list-tags'),
+    deleteTag: (tagId) => ipcRenderer.invoke('focus:delete-tag', tagId),
   },
 
   // AI 核心 API
@@ -135,6 +127,7 @@ const assistantApi: AssistantApi = {
   openLogsDir: () => ipcRenderer.invoke('core:logs:open-dir'),
   getLogPath: () => ipcRenderer.invoke('core:logs:get-path'),
   readRecentLogs: (lines?: number) => ipcRenderer.invoke('core:logs:recent', lines),
+  getLatestMcpActivity: () => ipcRenderer.invoke('core:logs:latest-mcp-activity'),
   clearLogs: () => ipcRenderer.invoke('core:logs:clear'),
   takeScreenshot: () => ipcRenderer.invoke('screenshot:take'),
 };

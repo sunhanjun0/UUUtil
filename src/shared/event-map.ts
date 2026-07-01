@@ -1,12 +1,13 @@
 import type {
   DevUtilsApi,
-  FocusArea,
-  FocusHorizon,
-  FocusImportance,
-  FocusMigration,
-  FocusSession,
+  FocusAlert,
+  FocusAreaView,
+  FocusCheckIn,
+  FocusCheckInInput,
+  FocusCreateInput,
+  FocusListFilters,
+  FocusMetadataUpdateInput,
   FocusStats,
-  FocusStatus,
   FocusTag,
   KnowledgeBaseApi,
 } from './types';
@@ -34,30 +35,9 @@ export type DevUtilsResult = ReturnType<DevUtilsApi[DevUtilsAction]>;
 export type KnowledgeBaseAction = keyof KnowledgeBaseApi;
 export type KnowledgeBaseResult = ReturnType<KnowledgeBaseApi[KnowledgeBaseAction]>;
 
-export interface FocusAreaPayload {
-  name: string;
-  description: string;
-  whyImportant: string;
-  horizon: FocusHorizon;
-  status: FocusStatus;
-  importance: FocusImportance;
-  tagIds: string[];
-  desiredOutcome?: string;
-  nextReviewAt?: string;
-  contextLinks?: string[];
-}
-
-export type FocusAreaUpdatePayload = FocusAreaPayload & { areaId: string };
-export type FocusAreaFilterPayload = {
-  horizon?: FocusHorizon;
-  status?: FocusStatus;
-  tagId?: string;
-  importance?: FocusImportance;
-} | undefined;
-export type FocusMigratePayload = { areaId: string; toHorizon: FocusHorizon; reason?: string };
-export type FocusStatusPayload = { areaId: string; toStatus: FocusStatus; reason?: string };
+export type FocusMetadataUpdatePayload = { focusId: string; input: FocusMetadataUpdateInput };
 export type FocusTagPayload = { name: string; color?: string };
-export type FocusEndSessionPayload = { sessionId: string; notes?: string };
+export type FocusTagUpdatePayload = { tagId: string; name: string; color?: string };
 
 export interface AppEventMap {
   'core:ready': [];
@@ -92,36 +72,30 @@ export interface AppEventMap {
   'knowledge-base:deleteTag': [string];
   'knowledge-base:result': [ActionResultPayload<KnowledgeBaseResult>];
 
-  'focus:create-area': [FocusAreaPayload];
-  'focus:update-area': [FocusAreaUpdatePayload];
-  'focus:delete-area': [string];
-  'focus:get-areas': [FocusAreaFilterPayload];
-  'focus:get-area-by-id': [string];
-  'focus:migrate-area': [FocusMigratePayload];
-  'focus:change-area-status': [FocusStatusPayload];
-  'focus:get-migrations': [string?];
+  'focus:create': [FocusCreateInput];
+  'focus:update-metadata': [FocusMetadataUpdatePayload];
+  'focus:check-in': [FocusCheckInInput];
+  'focus:get': [string];
+  'focus:list': [FocusListFilters?];
+  'focus:alerts': [];
+  'focus:checkins': [string];
+  'focus:stats': [];
   'focus:create-tag': [FocusTagPayload];
-  'focus:get-tags': [];
+  'focus:update-tag': [FocusTagUpdatePayload];
+  'focus:list-tags': [];
   'focus:delete-tag': [string];
-  'focus:start-session': [string];
-  'focus:end-session': [FocusEndSessionPayload];
-  'focus:get-sessions': [string?];
-  'focus:get-stats': [];
-  'focus:area-created': [ReturnType<KnowledgeBaseApi['deleteNote']> & { areaId?: string }];
-  'focus:area-updated': [ReturnType<KnowledgeBaseApi['deleteNote']>];
-  'focus:area-deleted': [ReturnType<KnowledgeBaseApi['deleteNote']>];
-  'focus:areas-loaded': [FocusArea[]];
-  'focus:area-loaded': [FocusArea | null];
-  'focus:area-migrated': [ReturnType<KnowledgeBaseApi['deleteNote']>];
-  'focus:area-status-changed': [ReturnType<KnowledgeBaseApi['deleteNote']>];
-  'focus:migrations-loaded': [FocusMigration[]];
-  'focus:tag-created': [ReturnType<KnowledgeBaseApi['createTag']>];
-  'focus:tags-loaded': [FocusTag[]];
-  'focus:tag-deleted': [ReturnType<KnowledgeBaseApi['deleteNote']>];
-  'focus:session-started': [{ success: boolean; sessionId?: string; error?: string }];
-  'focus:session-ended': [{ success: boolean; durationMinutes?: number; error?: string }];
-  'focus:sessions-loaded': [FocusSession[]];
+  'focus:created': [{ success: boolean; focusId?: string; error?: string }];
+  'focus:metadata-updated': [{ success: boolean; error?: string }];
+  'focus:checked-in': [{ success: boolean; checkInId?: string; error?: string }];
+  'focus:loaded': [FocusAreaView | null];
+  'focus:list-loaded': [FocusAreaView[]];
+  'focus:alerts-loaded': [FocusAlert[]];
+  'focus:checkins-loaded': [FocusCheckIn[]];
   'focus:stats-loaded': [FocusStats];
+  'focus:tag-created': [{ success: boolean; tagId?: string; error?: string }];
+  'focus:tag-updated': [{ success: boolean; error?: string }];
+  'focus:tags-loaded': [FocusTag[]];
+  'focus:tag-deleted': [{ success: boolean; error?: string }];
   'focus:activated': [PluginLifecyclePayload];
   'focus:deactivated': [];
 }

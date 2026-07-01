@@ -31,9 +31,12 @@ export default function App({ role }: Props) {
   const [flipped, setFlipped] = useState(false);
   const [timeStr, setTimeStr] = useState('');
   const [showToolbar, setShowToolbar] = useState(false);
+  const [mcpPulseActive, setMcpPulseActive] = useState(false);
   const dragging = useRef(false);
   const didDrag = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
+  const lastMcpActivityTime = useRef<string | null>(null);
+  const mcpPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     localStorage.setItem('uuutil:frosted-panel', frostedPanel ? '1' : '0');
@@ -61,6 +64,45 @@ export default function App({ role }: Props) {
     return () => {
       clearTimeout(firstTimer);
       if (intervalTimer) clearInterval(intervalTimer);
+    };
+  }, [role]);
+
+  // MCP 独立进程写入日志后，悬浮球通过轻量轮询播放活动提示。
+  useEffect(() => {
+    if (role !== 'ball') return;
+
+    let disposed = false;
+
+    async function checkMcpActivity() {
+      try {
+        const activity = await window.assistant.getLatestMcpActivity();
+        if (!activity || disposed) return;
+
+        if (lastMcpActivityTime.current === null) {
+          lastMcpActivityTime.current = activity.time;
+          return;
+        }
+
+        if (activity.time !== lastMcpActivityTime.current) {
+          lastMcpActivityTime.current = activity.time;
+          setMcpPulseActive(false);
+          window.setTimeout(() => setMcpPulseActive(true), 20);
+
+          if (mcpPulseTimer.current) clearTimeout(mcpPulseTimer.current);
+          mcpPulseTimer.current = setTimeout(() => setMcpPulseActive(false), 2600);
+        }
+      } catch {
+        // 浏览器 mock 或日志暂不可读时忽略，不能影响悬浮球。
+      }
+    }
+
+    checkMcpActivity();
+    const intervalTimer = window.setInterval(checkMcpActivity, 1200);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalTimer);
+      if (mcpPulseTimer.current) clearTimeout(mcpPulseTimer.current);
     };
   }, [role]);
 
@@ -175,9 +217,11 @@ export default function App({ role }: Props) {
         </div>
 
         <div
+          className={mcpPulseActive ? 'ball-mcp-pulse is-active' : 'ball-mcp-pulse'}
           style={ballStyles.glowRing}
           onMouseDown={handleMouseDown}
           onClick={handleExpand}
+          title={mcpPulseActive ? 'MCP 刚刚被调用' : '展开面板'}
         >
           <div style={{
             ...ballStyles.flipContainer,
