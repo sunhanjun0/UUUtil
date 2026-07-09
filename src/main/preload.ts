@@ -101,11 +101,13 @@ const assistantApi: AssistantApi = {
 
   // ===== 终端（PTY，仅供用户手动操作，禁止接入 AI）=====
   terminal: {
-    create: (options?: { cols?: number; rows?: number }): Promise<string> =>
+    create: (options?: { cols?: number; rows?: number; restoreTmuxName?: string }) =>
       ipcRenderer.invoke('core:terminal:create', options),
     write: (id: string, data: string) => ipcRenderer.send('core:terminal:input', id, data),
     resize: (id: string, cols: number, rows: number) => ipcRenderer.send('core:terminal:resize', id, cols, rows),
     dispose: (id: string) => ipcRenderer.send('core:terminal:dispose', id),
+    list: () => ipcRenderer.invoke('core:terminal:list'),
+    save: (sessions) => ipcRenderer.invoke('core:terminal:save', sessions),
     onData: (id: string, callback: (data: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, termId: string, data: string) => {
         if (termId === id) callback(data);

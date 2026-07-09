@@ -54,6 +54,17 @@ export interface AiStreamHandle {
   cancel: () => Promise<SuccessResult>;
 }
 
+export interface TerminalCreateResult {
+  id: string;
+  tmuxName: string | null;
+}
+
+export interface TerminalPersistedSession {
+  tmuxName: string;
+  title: string;
+  sortOrder: number;
+}
+
 export interface AssistantApi {
   expandBall: () => void;
   collapseBall: () => void;
@@ -119,10 +130,12 @@ export interface AssistantApi {
   };
 
   terminal: {
-    create: (options?: { cols?: number; rows?: number }) => Promise<string>;
+    create: (options?: { cols?: number; rows?: number; restoreTmuxName?: string }) => Promise<TerminalCreateResult>;
     write: (id: string, data: string) => void;
     resize: (id: string, cols: number, rows: number) => void;
     dispose: (id: string) => void;
+    list: () => Promise<TerminalPersistedSession[]>;
+    save: (sessions: TerminalPersistedSession[]) => Promise<SuccessResult>;
     onData: (id: string, callback: (data: string) => void) => () => void;
     onExit: (id: string, callback: (exitCode: number, signal?: number) => void) => () => void;
   };

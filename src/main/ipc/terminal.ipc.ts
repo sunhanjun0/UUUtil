@@ -13,7 +13,10 @@ import {
   writeTerminal,
   resizeTerminal,
   disposeTerminal,
+  reconcileSessions,
+  savePersistedSessions,
   type CreateTerminalOptions,
+  type PersistedTerminalSession,
 } from '../terminal';
 
 export const terminalIpc: IpcModule = {
@@ -24,5 +27,7 @@ export const terminalIpc: IpcModule = {
     defineSend('core:terminal:input', (_event, id: string, data: string) => writeTerminal(id, data)),
     defineSend('core:terminal:resize', (_event, id: string, cols: number, rows: number) => resizeTerminal(id, cols, rows)),
     defineSend('core:terminal:dispose', (_event, id: string) => disposeTerminal(id)),
+    defineInvoke('core:terminal:list', () => reconcileSessions()),
+    defineInvoke('core:terminal:save', (_event, list: PersistedTerminalSession[]) => savePersistedSessions(list)),
   ],
 };

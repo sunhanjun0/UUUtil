@@ -3,7 +3,7 @@
  */
 
 import { app, BrowserWindow } from 'electron';
-import { closeDatabase } from '../../core';
+import { closeDatabase, info as logInfo } from '../../core';
 import { defineInvoke, defineSend } from './types';
 import type { IpcModule } from './types';
 import {
@@ -16,8 +16,8 @@ import {
 export const windowIpc: IpcModule = {
   namespace: 'window',
   defs: [
-    defineSend('ball:expand', () => togglePanelWindow()),
-    defineSend('ball:collapse', () => hidePanelWindow()),
+    defineSend('ball:expand', () => { logInfo('window', 'ball_expand_received'); togglePanelWindow(); }),
+    defineSend('ball:collapse', () => { logInfo('window', 'ball_collapse_received'); hidePanelWindow(); }),
     defineInvoke('panel:toggle-maximize', () => togglePanelMaximize()),
     defineSend('panel:open-devtools', (event) => {
       const win = BrowserWindow.fromWebContents(event.sender);

@@ -6,8 +6,9 @@
  */
 
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, nativeImage, Tray } from 'electron';
+import fs from 'fs';
 import path from 'path';
-import { closeDatabase } from '../core';
+import { closeDatabase, info as logInfo, warn as logWarn } from '../core';
 
 // ---------- 尺寸常量 ----------
 const BALL_SIZE = 96;
@@ -32,11 +33,30 @@ type PanelBounds = { x: number; y: number; width: number; height: number };
 // ---------- 加载页面（开发 / 生产） ----------
 function loadWindow(win: BrowserWindow, hash: string): void {
   if (process.env.NODE_ENV === 'development') {
-    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5273';
     win.loadURL(`${devServerUrl}/#${hash}`);
   } else {
     win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { hash });
   }
+}
+
+function resolveBallIconPath(): string {
+  if (process.env.NODE_ENV === 'development') {
+    return path.join(__dirname, '..', '..', 'renderer', 'assets', 'ball-icon.png');
+  }
+
+  const rendererAssetsDir = path.join(__dirname, '..', 'renderer', 'assets');
+  const stablePath = path.join(rendererAssetsDir, 'ball-icon.png');
+  if (fs.existsSync(stablePath)) return stablePath;
+
+  try {
+    const hashedIcon = fs.readdirSync(rendererAssetsDir).find((file) => /^ball-icon-.*\.png$/.test(file));
+    if (hashedIcon) return path.join(rendererAssetsDir, hashedIcon);
+  } catch {
+    // ignore and return stable path fallback
+  }
+
+  return stablePath;
 }
 
 function getPanelSize(): { width: number; height: number } {
@@ -132,10 +152,12 @@ export function isBallWindowAlive(): boolean {
 export function showPanelWindow(): void {
   if (panelWindow && !panelWindow.isDestroyed()) {
     if (panelVisible) {
+      logInfo('window', 'show_panel_focus_existing');
       panelWindow.focus();
       return;
     }
 
+    logInfo('window', 'show_panel_reuse');
     const { workAreaSize } = screen.getPrimaryDisplay();
     const currentPanelPos = panelWindow.getPosition();
     const targetX = savedPanelPos?.x ?? currentPanelPos[0];
@@ -181,6 +203,8 @@ export function showPanelWindow(): void {
   // 从屏幕右边缘外起始
   const startX = workAreaSize.width;
 
+  logInfo('window', 'show_panel_create', { targetX, targetY, width: PW, height: PH });
+
   panelWindow = new BrowserWindow({
     width: PW,
     height: PH,
@@ -209,6 +233,7 @@ export function showPanelWindow(): void {
   const playEnterAnimation = () => {
     if (enterAnimationPlayed || !panelWindow || panelWindow.isDestroyed() || panelWindow.webContents.id !== panelWebContentsId) return;
     enterAnimationPlayed = true;
+    logInfo('window', 'panel_enter_animation');
     slideWindow(panelWindow, startX, targetX, 0, 1, 400, 'ease-out', 0.3, 400, 'ease-out', () => {
       savedPanelPos = { x: targetX, y: targetY };
     });
@@ -216,14 +241,26 @@ export function showPanelWindow(): void {
 
   const handlePanelReady = (event: Electron.IpcMainEvent) => {
     if (event.sender.id !== panelWebContentsId) return;
+    logInfo('window', 'panel_ready_received');
     ipcMain.off('panel:ready', handlePanelReady);
     playEnterAnimation();
   };
 
   ipcMain.on('panel:ready', handlePanelReady);
-  panelWindow.webContents.once('did-finish-load', () => setTimeout(playEnterAnimation, 50));
+  panelWindow.webContents.once('did-finish-load', () => {
+    logInfo('window', 'panel_did_finish_load');
+    setTimeout(playEnterAnimation, 50);
+  });
   panelWindow.once('closed', () => ipcMain.off('panel:ready', handlePanelReady));
 
+  panelWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    logWarn('window', 'panel_did_fail_load', { errorCode, errorDescription, validatedURL });
+  });
+
+  const loadUrl = process.env.NODE_ENV === 'development'
+    ? (process.env.VITE_DEV_SERVER_URL || 'http://localhost:5273')
+    : 'file';
+  logInfo('window', 'panel_load', { loadUrl });
   loadWindow(panelWindow, 'panel');
 
   panelWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -271,6 +308,8 @@ export function hidePanelWindow(): void {
 }
 
 export function togglePanelWindow(): void {
+  const alive = Boolean(panelWindow && !panelWindow.isDestroyed());
+  logInfo('window', 'toggle_panel', { panelVisible, panelWindowAlive: alive });
   if (panelVisible && panelWindow && !panelWindow.isDestroyed()) {
     hidePanelWindow();
   } else {
@@ -338,9 +377,7 @@ function slideWindow(
 
 // ---------- 系统托盘 ----------
 export function createTray(): void {
-  const iconPath = process.env.NODE_ENV === 'development'
-    ? path.join(__dirname, '..', '..', 'renderer', 'assets', 'ball-icon.png')
-    : path.join(__dirname, '..', 'renderer', 'assets', 'ball-icon.png');
+  const iconPath = resolveBallIconPath();
   const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
   tray = new Tray(trayIcon);
   tray.setToolTip('个人辅助');

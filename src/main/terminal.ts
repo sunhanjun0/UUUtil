@@ -6,19 +6,38 @@
  */
 
 import * as os from 'os';
+import { spawnSync } from 'child_process';
 import * as pty from 'node-pty';
 import type { WebContents } from 'electron';
-import { info as logInfo, warn as logWarn } from '../core';
+import { info as logInfo, warn as logWarn, getDatabase, autoSave } from '../core';
 
 interface TerminalSession {
   pty: pty.IPty;
   webContents: WebContents;
+  tmuxName?: string;
 }
 
 export interface CreateTerminalOptions {
   cols?: number;
   rows?: number;
+  /** 恢复既有 tmux 会话时传入其 session 名；仅接受内部约定格式，非法值忽略。 */
+  restoreTmuxName?: string;
 }
+
+export interface CreateTerminalResult {
+  id: string;
+  /** tmux 后端时为 session 名；降级为普通 shell 时为 null（不可持久化）。 */
+  tmuxName: string | null;
+}
+
+export interface PersistedTerminalSession {
+  tmuxName: string;
+  title: string;
+  sortOrder: number;
+}
+
+/** tmux session 名的合法格式：仅内部生成，防止命令/选项注入。 */
+const TMUX_NAME_PATTERN = /^uuutil-[A-Za-z0-9-]+$/;
 
 const sessions = new Map<string, TerminalSession>();
 
@@ -31,6 +50,37 @@ function resolveShell(): string {
   return process.env.SHELL || '/bin/zsh';
 }
 
+/** 检测 tmux 是否可用（缓存结果）。tmux 只作为持久化后端，session 名由内部生成。 */
+let tmuxAvailable: boolean | null = null;
+function isTmuxAvailable(): boolean {
+  if (tmuxAvailable !== null) return tmuxAvailable;
+  try {
+    const result = spawnSync('tmux', ['-V'], { encoding: 'utf8' });
+    tmuxAvailable = result.status === 0;
+    if (tmuxAvailable) {
+      logInfo('terminal', 'tmux_detected', { version: (result.stdout || '').trim() });
+    } else {
+      logInfo('terminal', 'tmux_unavailable', { reason: 'nonzero_exit' });
+    }
+  } catch {
+    tmuxAvailable = false;
+    logInfo('terminal', 'tmux_unavailable', { reason: 'spawn_error' });
+  }
+  return tmuxAvailable;
+}
+
+/** 真正销毁一个 tmux session（用户主动关标签时调用）。session 名由内部生成，不接受外部注入。 */
+function killTmuxSession(tmuxName: string): void {
+  try {
+    const result = spawnSync('tmux', ['kill-session', '-t', tmuxName], { encoding: 'utf8' });
+    if (result.status !== 0) {
+      logWarn('terminal', 'tmux_kill_session_failed', { tmuxName, stderr: (result.stderr || '').trim() });
+    }
+  } catch (error) {
+    logWarn('terminal', 'tmux_kill_session_error', { tmuxName, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 function buildEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -40,21 +90,51 @@ function buildEnv(): Record<string, string> {
   return env;
 }
 
-/** 创建一个 PTY 会话，输出通过 sender 推送到对应渲染进程，返回会话 id。 */
-export function createTerminalSession(sender: WebContents, options?: CreateTerminalOptions): string {
-  const shell = resolveShell();
+/** 创建一个 PTY 会话，输出通过 sender 推送到对应渲染进程，返回会话 id 与 tmux 名。 */
+export function createTerminalSession(sender: WebContents, options?: CreateTerminalOptions): CreateTerminalResult {
   const cwd = os.homedir();
-  const ptyProcess = pty.spawn(shell, [], {
-    name: 'xterm-256color',
-    cols: options?.cols ?? 80,
-    rows: options?.rows ?? 24,
-    cwd,
-    env: buildEnv(),
-  });
-
+  const cols = options?.cols ?? 80;
+  const rows = options?.rows ?? 24;
+  const env = buildEnv();
   const id = makeTerminalId();
-  sessions.set(id, { pty: ptyProcess, webContents: sender });
-  logInfo('terminal', 'session_created', { id, shell, cwd, pid: ptyProcess.pid });
+
+  // 恢复模式：仅当传入的 tmux 名符合内部约定格式时才采用，否则忽略（视为新建）。
+  const restore = options?.restoreTmuxName && TMUX_NAME_PATTERN.test(options.restoreTmuxName)
+    ? options.restoreTmuxName
+    : undefined;
+
+  // tmux 可用时以 tmux 为持久化后端；session 名仅内部生成（禁止外部注入）。
+  // 否则降级回普通交互式 shell。
+  const useTmux = isTmuxAvailable();
+  let ptyProcess: pty.IPty;
+  let tmuxName: string | null = null;
+  let backend: string;
+  if (useTmux) {
+    // -A：session 存在则 attach（恢复），不存在则新建（幂等）。
+    // `; set status off`：隐藏 tmux 状态栏，回收一行高度并弱化 tmux 存在感（幂等）。
+    tmuxName = restore ?? `uuutil-${id}`;
+    ptyProcess = pty.spawn('tmux', ['new-session', '-A', '-s', tmuxName, ';', 'set', 'status', 'off'], {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      cwd,
+      env,
+    });
+    backend = 'tmux';
+  } else {
+    const shell = resolveShell();
+    ptyProcess = pty.spawn(shell, [], {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      cwd,
+      env,
+    });
+    backend = shell;
+  }
+
+  sessions.set(id, { pty: ptyProcess, webContents: sender, tmuxName: tmuxName ?? undefined });
+  logInfo('terminal', restore ? 'session_restored' : 'session_created', { id, backend, tmuxName, cwd, pid: ptyProcess.pid });
 
   ptyProcess.onData((data) => {
     if (!sender.isDestroyed()) sender.send('core:terminal:data', id, data);
@@ -66,7 +146,102 @@ export function createTerminalSession(sender: WebContents, options?: CreateTermi
     logInfo('terminal', 'session_exited', { id, exitCode, signal });
   });
 
-  return id;
+  return { id, tmuxName };
+}
+
+/** 读取持久化的终端会话元数据（供渲染进程启动时恢复标签）。 */
+export function listPersistedSessions(): PersistedTerminalSession[] {
+  const db = getDatabase();
+  const statement = db.prepare('SELECT tmux_name, title, sort_order FROM terminal_sessions ORDER BY sort_order ASC');
+  const result: PersistedTerminalSession[] = [];
+  try {
+    while (statement.step()) {
+      const row = statement.getAsObject();
+      result.push({
+        tmuxName: String(row.tmux_name),
+        title: String(row.title),
+        sortOrder: Number(row.sort_order),
+      });
+    }
+  } finally {
+    statement.free();
+  }
+  return result;
+}
+
+/**
+ * 全量替换持久化的终端会话元数据（渲染进程为唯一真源）。
+ * 只接受符合内部约定格式的 tmux 名，过滤非法项防止注入。
+ */
+export function savePersistedSessions(list: PersistedTerminalSession[]): { success: true } {
+  const db = getDatabase();
+  const valid = Array.isArray(list)
+    ? list.filter((item) => item && typeof item.tmuxName === 'string' && TMUX_NAME_PATTERN.test(item.tmuxName))
+    : [];
+  db.run('DELETE FROM terminal_sessions');
+  const now = Date.now();
+  valid.forEach((item, index) => {
+    const title = typeof item.title === 'string' && item.title.trim() ? item.title.trim().slice(0, 200) : `终端 ${index + 1}`;
+    const sortOrder = Number.isFinite(item.sortOrder) ? item.sortOrder : index;
+    db.run('INSERT INTO terminal_sessions (tmux_name, title, sort_order, created_at) VALUES (?, ?, ?, ?)', [item.tmuxName, title, sortOrder, now]);
+  });
+  autoSave();
+  logInfo('terminal', 'sessions_persisted', { count: valid.length });
+  return { success: true };
+}
+
+/** 列出当前 tmux server 上属于本应用命名空间（uuutil-*）的 live session 名。 */
+function listTmuxSessions(): Set<string> {
+  const live = new Set<string>();
+  try {
+    const result = spawnSync('tmux', ['list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' });
+    if (result.status === 0) {
+      for (const line of (result.stdout || '').split('\n')) {
+        const name = line.trim();
+        if (name && TMUX_NAME_PATTERN.test(name)) live.add(name);
+      }
+    }
+    // 非 0（如「no server running」）视为无 live session。
+  } catch { /* 忽略：tmux 不可用时返回空集 */ }
+  return live;
+}
+
+function deletePersistedSession(tmuxName: string): void {
+  getDatabase().run('DELETE FROM terminal_sessions WHERE tmux_name = ?', [tmuxName]);
+}
+
+/**
+ * 启动对账：对比 DB 元数据与实际 tmux live session，返回真正可恢复的会话。
+ * - DB 有记录但 tmux 无对应 session → 删除元数据（避免 `-A` 恢复出空白 session）。
+ * - tmux 有 uuutil-* 但 DB 无记录 → 清理该孤儿 session（防累积泄漏）。
+ * - tmux 不可用 → 跳过对账（保留 DB，等 tmux 恢复），返回空表让渲染进程新建。
+ */
+export function reconcileSessions(): PersistedTerminalSession[] {
+  if (!isTmuxAvailable()) {
+    logInfo('terminal', 'reconcile_skipped', { reason: 'tmux_unavailable' });
+    return [];
+  }
+
+  const persisted = listPersistedSessions();
+  const live = listTmuxSessions();
+
+  const alive = persisted.filter((p) => live.has(p.tmuxName));
+  const dbOrphans = persisted.filter((p) => !live.has(p.tmuxName));
+  if (dbOrphans.length > 0) {
+    for (const orphan of dbOrphans) deletePersistedSession(orphan.tmuxName);
+    autoSave();
+    logInfo('terminal', 'orphan_cleaned', { type: 'db_without_tmux', count: dbOrphans.length });
+  }
+
+  const dbNames = new Set(persisted.map((p) => p.tmuxName));
+  const tmuxOrphans = [...live].filter((name) => !dbNames.has(name));
+  for (const name of tmuxOrphans) killTmuxSession(name);
+  if (tmuxOrphans.length > 0) {
+    logInfo('terminal', 'orphan_cleaned', { type: 'tmux_without_db', count: tmuxOrphans.length });
+  }
+
+  logInfo('terminal', 'reconciled', { alive: alive.length, dbOrphans: dbOrphans.length, tmuxOrphans: tmuxOrphans.length });
+  return alive;
 }
 
 export function writeTerminal(id: string, data: string): void {
@@ -86,18 +261,26 @@ export function resizeTerminal(id: string, cols: number, rows: number): void {
 export function disposeTerminal(id: string): void {
   const session = sessions.get(id);
   if (!session) return;
+  // 用户主动关闭标签 = 明确销毁：先断开 pty 客户端，再真正 kill tmux session。
+  const { tmuxName } = session;
   try {
     session.pty.kill();
   } catch { /* 进程可能已退出 */ }
   sessions.delete(id);
-  logInfo('terminal', 'session_disposed', { id });
+  if (tmuxName) killTmuxSession(tmuxName);
+  logInfo('terminal', 'session_disposed', { id, tmuxName, killedSession: Boolean(tmuxName) });
 }
 
+/**
+ * 应用退出时调用：只断开 pty 客户端（相当于 detach），
+ * **不 kill tmux session**，让 tmux server 保留会话供下次恢复。
+ */
 export function disposeAllTerminals(): void {
-  for (const [, session] of sessions) {
+  for (const [id, session] of sessions) {
     try {
       session.pty.kill();
     } catch { /* 忽略 */ }
+    logInfo('terminal', 'session_detached', { id, tmuxName: session.tmuxName });
   }
   sessions.clear();
 }
