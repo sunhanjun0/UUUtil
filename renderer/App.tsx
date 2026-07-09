@@ -9,6 +9,7 @@ import { Bug, Camera, Droplets, Maximize2, Minimize2, Settings, X } from 'lucide
 import { backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
 import type { RouteConfig } from './router';
 import '../src/shared/assistant-api';
+import ballIconUrl from './assets/ball-icon.png';
 
 interface Props {
   role: 'ball' | 'panel';
@@ -229,7 +230,7 @@ export default function App({ role }: Props) {
           }}>
           {/* 正面：图标 */}
           <div style={ballStyles.ball}>
-            <img src="./assets/ball-icon.png" style={ballStyles.icon} alt="展开面板" />
+            <img src={ballIconUrl} style={ballStyles.icon} alt="展开面板" />
           </div>
           {/* 背面：时间 */}
           <div style={ballStyles.ballBack}>
