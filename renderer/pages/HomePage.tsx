@@ -513,6 +513,15 @@ export default function HomePage() {
         return;
       }
 
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') {
+        if (isInputTarget) return;
+        if (activeImageId) {
+          event.preventDefault();
+          void copyImageById(activeImageId);
+        }
+        return;
+      }
+
       if (event.key === 'Escape') {
         closeMenu();
         setActiveTextId(null);
@@ -1145,6 +1154,42 @@ export default function HomePage() {
     addText(text, contextMenu ? { x: contextMenu.x, y: contextMenu.y } : undefined);
   }
 
+  // 将画布中的图片复制到系统剪贴板。图片以磁盘文件存储，先取原图 dataURL，
+  // 再统一转成 PNG 写入剪贴板（Chromium 的异步剪贴板写入仅可靠支持 image/png）。
+  async function copyImageById(imageId: string | null): Promise<boolean> {
+    const image = items.find((it) => it.id === imageId && it.type === 'image') as
+      | Extract<BoardItem, { type: 'image' }>
+      | undefined;
+    if (!image) return false;
+    try {
+      let dataUrl = attachmentCache[image.filename] || image.dataUrl || '';
+      if (!dataUrl) {
+        dataUrl = (await window.assistant.getWhiteboardAttachment(image.filename, image.mime).catch(() => '')) || '';
+      }
+      if (!dataUrl) {
+        toast({ title: '图片数据不可用，复制失败', status: 'warning' });
+        return false;
+      }
+      const img = new Image();
+      img.src = dataUrl;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('no 2d context');
+      ctx.drawImage(img, 0, 0);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('toBlob failed');
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      toast({ title: '图片已复制到剪贴板', status: 'success' });
+      return true;
+    } catch {
+      toast({ title: '复制图片失败', status: 'error' });
+      return false;
+    }
+  }
+
   const editingTextItem = editingTextId ? items.find((item) => item.id === editingTextId && item.type === 'text') as Extract<BoardItem, { type: 'text' }> | undefined : undefined;
   const activeNoteItem = activeNoteId ? items.find((item) => item.id === activeNoteId && item.type === 'note') as Extract<BoardItem, { type: 'note' }> | undefined : undefined;
   const formatTarget = editingTextItem || activeNoteItem;
@@ -1463,6 +1508,12 @@ export default function HomePage() {
             onContextMenu={(event) => {
               event.preventDefault();
               event.stopPropagation();
+              if (item.type !== 'image') return;
+              const canvas = canvasRef.current;
+              if (!canvas) return;
+              const rect = canvas.getBoundingClientRect();
+              setActiveImageId(item.id);
+              setContextMenu({ x: event.clientX - rect.left, y: event.clientY - rect.top, itemId: item.id });
             }}
             onPointerDown={(event) => {
               if (item.type === 'text') {
@@ -1893,6 +1944,17 @@ export default function HomePage() {
             minW="150px"
             onClick={(event) => event.stopPropagation()}
           >
+            {contextMenu.itemId && items.some((it) => it.id === contextMenu.itemId && it.type === 'image') && (
+              <Button
+                size="sm"
+                variant="ghost"
+                justifyContent="flex-start"
+                w="100%"
+                onClick={() => { const id = contextMenu.itemId ?? null; setContextMenu(null); void copyImageById(id); }}
+              >
+                复制图片
+              </Button>
+            )}
             <Button size="sm" variant="ghost" justifyContent="flex-start" w="100%" onClick={() => addNote('', { x: contextMenu.x, y: contextMenu.y })}>添加便签</Button>
             <Button size="sm" variant="ghost" justifyContent="flex-start" w="100%" onClick={() => addText('', { x: contextMenu.x, y: contextMenu.y })}>添加文本框</Button>
             <Button size="sm" variant="ghost" justifyContent="flex-start" w="100%" onClick={pasteTextAsNote}>粘贴文本</Button>
