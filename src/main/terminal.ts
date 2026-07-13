@@ -81,13 +81,52 @@ function killTmuxSession(tmuxName: string): void {
   }
 }
 
+/**
+ * Claude Code 注入的会话标记（CLAUDECODE / CLAUDE_CODE_*）。
+ * 若原样透传给子终端，里面再运行的 claude 会误判「已在会话中」而拒绝启动，需剔除。
+ */
+const CLAUDE_SESSION_ENV = /^CLAUDECODE$|^CLAUDE_CODE_/;
+
 function buildEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value === 'string') env[key] = value;
+    if (typeof value !== 'string') continue;
+    if (CLAUDE_SESSION_ENV.test(key)) continue;
+    env[key] = value;
   }
   env.TERM = 'xterm-256color';
   return env;
+}
+
+/**
+ * 解析写入系统剪贴板的命令（作为 tmux copy-pipe 的目标）。缓存结果。
+ * - macOS：pbcopy（系统自带）
+ * - Windows：clip（系统自带）
+ * - Linux/其他：Wayland 优先 wl-copy，X11 用 xclip/xsel；仅返回实际存在的命令。
+ * 返回值作为单个 shell 命令字符串传给 tmux，由 tmux 用 /bin/sh 执行。
+ */
+let clipboardCommand: string | null | undefined;
+function resolveClipboardCommand(): string | null {
+  if (clipboardCommand !== undefined) return clipboardCommand;
+  if (process.platform === 'darwin') {
+    clipboardCommand = 'pbcopy';
+  } else if (process.platform === 'win32') {
+    clipboardCommand = 'clip';
+  } else {
+    // 候选命令名均为硬编码常量，无外部输入；仅挑选系统上实际存在的一个。
+    const candidates = process.env.WAYLAND_DISPLAY
+      ? ['wl-copy', 'xclip -selection clipboard', 'xsel --clipboard --input']
+      : ['xclip -selection clipboard', 'xsel --clipboard --input', 'wl-copy'];
+    clipboardCommand = candidates.find((cmd) => {
+      try {
+        return spawnSync('command', ['-v', cmd.split(' ')[0]], { encoding: 'utf8', shell: '/bin/sh' }).status === 0;
+      } catch {
+        return false;
+      }
+    }) ?? null;
+  }
+  logInfo('terminal', 'clipboard_resolved', { command: clipboardCommand });
+  return clipboardCommand;
 }
 
 /** 创建一个 PTY 会话，输出通过 sender 推送到对应渲染进程，返回会话 id 与 tmux 名。 */
@@ -115,7 +154,17 @@ export function createTerminalSession(sender: WebContents, options?: CreateTermi
     // `; set -g mouse on`：开启鼠标模式，让 tmux 接管滚轮滚动其历史缓冲（copy-mode）。
     //   否则 tmux 占用 alternate screen 时，xterm 会把滚轮转成方向键，误触发 shell 命令历史。
     tmuxName = restore ?? `uuutil-${id}`;
-    ptyProcess = pty.spawn('tmux', ['new-session', '-A', '-s', tmuxName, ';', 'set', 'status', 'off', ';', 'set', '-g', 'mouse', 'on'], {
+    const tmuxArgs = ['new-session', '-A', '-s', tmuxName, ';', 'set', 'status', 'off', ';', 'set', '-g', 'mouse', 'on'];
+    // 鼠标模式接管拖拽后，浏览器原生框选失效。绑定 MouseDragEnd1Pane 到 copy-pipe，
+    // 让框选松手即写入系统剪贴板（弥补无法用 xterm 原生选择复制的问题）。
+    // 默认 copy-mode 表 + vi 表都绑，兼容用户任一 mode-keys 设置。
+    const clipboardCmd = resolveClipboardCommand();
+    if (clipboardCmd) {
+      for (const table of ['copy-mode', 'copy-mode-vi']) {
+        tmuxArgs.push(';', 'bind-key', '-T', table, 'MouseDragEnd1Pane', 'send-keys', '-X', 'copy-pipe-and-cancel', clipboardCmd);
+      }
+    }
+    ptyProcess = pty.spawn('tmux', tmuxArgs, {
       name: 'xterm-256color',
       cols,
       rows,
