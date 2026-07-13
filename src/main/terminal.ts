@@ -112,8 +112,10 @@ export function createTerminalSession(sender: WebContents, options?: CreateTermi
   if (useTmux) {
     // -A：session 存在则 attach（恢复），不存在则新建（幂等）。
     // `; set status off`：隐藏 tmux 状态栏，回收一行高度并弱化 tmux 存在感（幂等）。
+    // `; set -g mouse on`：开启鼠标模式，让 tmux 接管滚轮滚动其历史缓冲（copy-mode）。
+    //   否则 tmux 占用 alternate screen 时，xterm 会把滚轮转成方向键，误触发 shell 命令历史。
     tmuxName = restore ?? `uuutil-${id}`;
-    ptyProcess = pty.spawn('tmux', ['new-session', '-A', '-s', tmuxName, ';', 'set', 'status', 'off'], {
+    ptyProcess = pty.spawn('tmux', ['new-session', '-A', '-s', tmuxName, ';', 'set', 'status', 'off', ';', 'set', '-g', 'mouse', 'on'], {
       name: 'xterm-256color',
       cols,
       rows,
