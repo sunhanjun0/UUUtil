@@ -15,6 +15,7 @@ import { terminalIpc } from './terminal.ipc';
 import { logsIpc } from './logs.ipc';
 import { focusIpc } from './focus.ipc';
 import { screenshotIpc } from './screenshot.ipc';
+import { uiSettingsIpc } from './ui-settings.ipc';
 
 export function registerAllIpc(): void {
   registerIpcModules([
@@ -27,5 +28,6 @@ export function registerAllIpc(): void {
     logsIpc,
     focusIpc,
     screenshotIpc,
+    uiSettingsIpc,
   ]);
 }

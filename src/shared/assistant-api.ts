@@ -26,6 +26,7 @@ import type {
   KnowledgeSearchResult,
   KnowledgeTag,
   PluginInfo,
+  TabLayout,
 } from './types';
 
 export interface McpActivitySummary {
@@ -127,6 +128,11 @@ export interface AssistantApi {
 
   cli: {
     execute: (request: CliCommandRequest) => Promise<CliCommandResult>;
+  };
+
+  ui: {
+    getTabLayout: () => Promise<TabLayout>;
+    saveTabLayout: (layout: TabLayout) => Promise<SuccessResult>;
   };
 
   terminal: {

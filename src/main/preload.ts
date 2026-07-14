@@ -8,6 +8,7 @@ import type {
   AiProviderConfig,
   AiRuntimeConfig,
   CliCommandRequest,
+  TabLayout,
 } from '../shared/types';
 import type { AssistantApi } from '../shared/assistant-api';
 
@@ -97,6 +98,12 @@ const assistantApi: AssistantApi = {
   // ===== CLI 工具 =====
   cli: {
     execute: (request: CliCommandRequest) => ipcRenderer.invoke('core:cli:execute', request),
+  },
+
+  // ===== 界面设置 =====
+  ui: {
+    getTabLayout: (): Promise<TabLayout> => ipcRenderer.invoke('core:ui:get-tab-layout'),
+    saveTabLayout: (layout: TabLayout) => ipcRenderer.invoke('core:ui:save-tab-layout', layout),
   },
 
   // ===== 终端（PTY，仅供用户手动操作，禁止接入 AI）=====

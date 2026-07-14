@@ -86,6 +86,15 @@ export async function initDatabase(customPath?: string): Promise<SqlJsDatabase> 
     )
   `);
 
+  // 界面设置表（KV 存 JSON，如 TAB 栏显隐与排序）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS ui_settings (
+      key         TEXT PRIMARY KEY,
+      value       TEXT NOT NULL,
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   saveToDisk();
   return db;
 }

@@ -15,4 +15,5 @@ export {
   chat,
   streamChat,
 } from './ai';
+export { getTabLayout, saveTabLayout } from './ui-settings';
 export type { Plugin, PluginManifest } from './plugin-loader';

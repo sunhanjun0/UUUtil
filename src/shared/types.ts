@@ -293,3 +293,9 @@ export interface FocusApi {
   deleteTag(tagId: string): { success: boolean; error?: string };
   resetAll(): { success: boolean; error?: string };
 }
+
+/** 前台 TAB 栏布局配置：order 为路径顺序，hidden 为隐藏的路径集合（均以路由 path 为标识）。 */
+export interface TabLayout {
+  order: string[];
+  hidden: string[];
+}

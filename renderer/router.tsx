@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, ComponentType } from 'react';
 import { Box, Spinner } from '@chakra-ui/react';
-import { Bot, Calculator, Clock, Code2, FileText, Home, Languages, MessageCircle, Palette, ScrollText, Terminal } from 'lucide-react';
+import { Bot, Calculator, Clock, Code2, FileText, Home, Languages, MessageCircle, Palette, ScrollText, SlidersHorizontal, Terminal } from 'lucide-react';
+import type { TabLayout } from '../src/shared/types';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const KnowledgeBasePage = lazy(() => import('./pages/KnowledgeBasePage'));
@@ -13,6 +14,7 @@ const AiConfigPage = lazy(() => import('./pages/AiConfigPage'));
 const LogsPage = lazy(() => import('./pages/LogsPage'));
 const TerminalPage = lazy(() => import('./pages/TerminalPage'));
 const FocusPage = lazy(() => import('./pages/FocusPage'));
+const InterfaceSettingsPage = lazy(() => import('./pages/InterfaceSettingsPage'));
 
 export interface RouteConfig {
   path: string;
@@ -34,10 +36,34 @@ export const routes: RouteConfig[] = [
   { path: '/color-research', label: '配色', icon: Palette, component: ColorResearchPage, panel: 'front' },
   { path: '/ai-config', label: 'AI 配置', icon: Bot, component: AiConfigPage, panel: 'back' },
   { path: '/logs', label: '日志', icon: FileText, component: LogsPage, panel: 'back' },
+  { path: '/interface-settings', label: '界面设置', icon: SlidersHorizontal, component: InterfaceSettingsPage, panel: 'back' },
 ];
 
 export const foregroundRoutes = routes.filter((route) => route.panel === 'front');
 export const backgroundRoutes = routes.filter((route) => route.panel === 'back');
+
+/**
+ * 按布局配置（顺序 + 隐藏）过滤并排序一组路由，仅用于前台可配置 tab。
+ * - order 中出现的路径按其顺序排列；未在 order 中的路由（如新增 tab）按原顺序追加到末尾。
+ * - hidden 中的路径被过滤掉。
+ */
+export function applyTabLayout(list: RouteConfig[], layout: TabLayout): RouteConfig[] {
+  const byPath = new Map(list.map((route) => [route.path, route]));
+  const seen = new Set<string>();
+  const ordered: RouteConfig[] = [];
+  for (const path of layout.order) {
+    const route = byPath.get(path);
+    if (route && !seen.has(path)) {
+      ordered.push(route);
+      seen.add(path);
+    }
+  }
+  for (const route of list) {
+    if (!seen.has(route.path)) ordered.push(route);
+  }
+  const hidden = new Set(layout.hidden);
+  return ordered.filter((route) => !hidden.has(route.path));
+}
 
 const fallback = (
   <Box display="flex" alignItems="center" justifyContent="center" py={10}>

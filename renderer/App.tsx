@@ -3,11 +3,12 @@
  * 面板内容通过路由模块异步加载
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Flex, Tabs, TabList, Tab, IconButton, Tooltip } from '@chakra-ui/react';
 import { Bug, Camera, Droplets, Maximize2, Minimize2, Settings, X } from 'lucide-react';
-import { backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
+import { applyTabLayout, backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
 import type { RouteConfig } from './router';
+import type { TabLayout } from '../src/shared/types';
 import '../src/shared/assistant-api';
 import ballIconUrl from './assets/ball-icon.png';
 
@@ -27,7 +28,13 @@ export default function App({ role }: Props) {
   const [backDisplayPath, setBackDisplayPath] = useState(backgroundRoutes[0]?.path || foregroundRoutes[0].path);
   const [backPreviousPath, setBackPreviousPath] = useState<string | null>(null);
   const [backSlideDirection, setBackSlideDirection] = useState<1 | -1>(1);
-  const activeRoutes = panelSide === 'front' ? foregroundRoutes : backgroundRoutes;
+  const [tabLayout, setTabLayout] = useState<TabLayout>({ order: [], hidden: [] });
+  // 应用布局后的前台可见 tab；全部隐藏时回退到完整列表，避免面板无 tab 可用而锁死。
+  const visibleFrontRoutes = useMemo(() => {
+    const filtered = applyTabLayout(foregroundRoutes, tabLayout);
+    return filtered.length > 0 ? filtered : foregroundRoutes;
+  }, [tabLayout]);
+  const activeRoutes = panelSide === 'front' ? visibleFrontRoutes : backgroundRoutes;
   const activePath = panelSide === 'front' ? frontPath : backPath;
   const [flipped, setFlipped] = useState(false);
   const [timeStr, setTimeStr] = useState('');
@@ -42,6 +49,34 @@ export default function App({ role }: Props) {
   useEffect(() => {
     localStorage.setItem('uuutil:frosted-panel', frostedPanel ? '1' : '0');
   }, [frostedPanel]);
+
+  // 加载前台 TAB 栏布局；界面设置页保存后会派发 uuutil:tab-layout-changed 触发重载。
+  useEffect(() => {
+    if (role !== 'panel') return;
+    let cancelled = false;
+    async function loadLayout() {
+      try {
+        const layout = await window.assistant.ui.getTabLayout();
+        if (!cancelled) setTabLayout(layout);
+      } catch { /* browser 环境无 assistant */ }
+    }
+    loadLayout();
+    window.addEventListener('uuutil:tab-layout-changed', loadLayout);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('uuutil:tab-layout-changed', loadLayout);
+    };
+  }, [role]);
+
+  // 当前所在的前台 tab 被隐藏/移除后，跳转到首个可见 tab，避免停留在空白页。
+  useEffect(() => {
+    if (visibleFrontRoutes.some((route) => route.path === frontPath)) return;
+    const first = visibleFrontRoutes[0]?.path;
+    if (!first) return;
+    setFrontPath(first);
+    setFrontDisplayPath(first);
+    setFrontPreviousPath(null);
+  }, [visibleFrontRoutes, frontPath]);
 
   // 每隔 1 分钟翻转显示时间
   useEffect(() => {
@@ -272,7 +307,7 @@ export default function App({ role }: Props) {
         <Box flex={1} sx={{ WebkitAppRegion: 'no-drag' } as any} className="panel-nav-flip-scene">
           <Box className="panel-nav-flip-card" transform={panelSide === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)'}>
             <Box className="panel-nav-flip-face panel-nav-flip-front">
-              <RouteTabs routes={foregroundRoutes} activePath={frontPath} onNavigate={navigateTo} />
+              <RouteTabs routes={visibleFrontRoutes} activePath={frontPath} onNavigate={navigateTo} />
             </Box>
             <Box className="panel-nav-flip-face panel-nav-flip-back">
               <RouteTabs routes={backgroundRoutes} activePath={backPath} onNavigate={navigateTo} />
