@@ -1,14 +1,8 @@
 import type {
+  AttentionEvent,
   DevUtilsApi,
-  FocusAlert,
-  FocusAreaView,
-  FocusCheckIn,
-  FocusCheckInInput,
-  FocusCreateInput,
-  FocusListFilters,
-  FocusMetadataUpdateInput,
-  FocusStats,
-  FocusTag,
+  FieResult,
+  IngestResult,
   KnowledgeBaseApi,
 } from './types';
 
@@ -34,10 +28,6 @@ export type DevUtilsAction = keyof DevUtilsApi;
 export type DevUtilsResult = ReturnType<DevUtilsApi[DevUtilsAction]>;
 export type KnowledgeBaseAction = keyof KnowledgeBaseApi;
 export type KnowledgeBaseResult = ReturnType<KnowledgeBaseApi[KnowledgeBaseAction]>;
-
-export type FocusMetadataUpdatePayload = { focusId: string; input: FocusMetadataUpdateInput };
-export type FocusTagPayload = { name: string; color?: string };
-export type FocusTagUpdatePayload = { tagId: string; name: string; color?: string };
 
 export interface AppEventMap {
   'core:ready': [];
@@ -72,30 +62,8 @@ export interface AppEventMap {
   'knowledge-base:deleteTag': [string];
   'knowledge-base:result': [ActionResultPayload<KnowledgeBaseResult>];
 
-  'focus:create': [FocusCreateInput];
-  'focus:update-metadata': [FocusMetadataUpdatePayload];
-  'focus:check-in': [FocusCheckInInput];
-  'focus:get': [string];
-  'focus:list': [FocusListFilters?];
-  'focus:alerts': [];
-  'focus:checkins': [string];
-  'focus:stats': [];
-  'focus:create-tag': [FocusTagPayload];
-  'focus:update-tag': [FocusTagUpdatePayload];
-  'focus:list-tags': [];
-  'focus:delete-tag': [string];
-  'focus:created': [{ success: boolean; focusId?: string; error?: string }];
-  'focus:metadata-updated': [{ success: boolean; error?: string }];
-  'focus:checked-in': [{ success: boolean; checkInId?: string; error?: string }];
-  'focus:loaded': [FocusAreaView | null];
-  'focus:list-loaded': [FocusAreaView[]];
-  'focus:alerts-loaded': [FocusAlert[]];
-  'focus:checkins-loaded': [FocusCheckIn[]];
-  'focus:stats-loaded': [FocusStats];
-  'focus:tag-created': [{ success: boolean; tagId?: string; error?: string }];
-  'focus:tag-updated': [{ success: boolean; error?: string }];
-  'focus:tags-loaded': [FocusTag[]];
-  'focus:tag-deleted': [{ success: boolean; error?: string }];
+  'focus:ingest': [AttentionEvent];
+  'focus:ingested': [FieResult<IngestResult>];
   'focus:activated': [PluginLifecyclePayload];
   'focus:deactivated': [];
 }

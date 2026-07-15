@@ -10,23 +10,22 @@ import type {
   AiConfigResult,
   AiProviderConfig,
   AiRuntimeConfig,
+  AttentionEvent,
   CliCommandRequest,
   CliCommandResult,
-  FocusAlert,
-  FocusAreaView,
-  FocusCheckIn,
-  FocusCheckInInput,
-  FocusCreateInput,
-  FocusListFilters,
-  FocusMetadataUpdateInput,
-  FocusStats,
-  FocusTag,
+  FieFocus,
+  FieResult,
+  FieRunDetail,
+  FieRunSummary,
+  IngestBatchResult,
+  IngestResult,
   KnowledgeCategory,
   KnowledgeNote,
   KnowledgeSearchResult,
   KnowledgeTag,
   PluginInfo,
   TabLayout,
+  TrendPoint,
 } from './types';
 
 export interface McpActivitySummary {
@@ -102,18 +101,13 @@ export interface AssistantApi {
   deleteTag: (tagId: string) => Promise<any>;
 
   focus: {
-    create: (input: FocusCreateInput) => Promise<{ success: boolean; focusId?: string; error?: string }>;
-    updateMetadata: (focusId: string, input: FocusMetadataUpdateInput) => Promise<{ success: boolean; error?: string }>;
-    checkIn: (input: FocusCheckInInput) => Promise<{ success: boolean; checkInId?: string; error?: string }>;
-    get: (focusId: string) => Promise<FocusAreaView | null>;
-    list: (filters?: FocusListFilters) => Promise<FocusAreaView[]>;
-    alerts: () => Promise<FocusAlert[]>;
-    checkins: (focusId: string) => Promise<FocusCheckIn[]>;
-    stats: () => Promise<FocusStats>;
-    createTag: (name: string, color?: string) => Promise<{ success: boolean; tagId?: string; error?: string }>;
-    updateTag: (tagId: string, name: string, color?: string) => Promise<{ success: boolean; error?: string }>;
-    listTags: () => Promise<FocusTag[]>;
-    deleteTag: (tagId: string) => Promise<{ success: boolean; error?: string }>;
+    ingest: (event: AttentionEvent) => Promise<FieResult<IngestResult>>;
+    ingestBatch: (events: AttentionEvent[]) => Promise<FieResult<IngestBatchResult>>;
+    listFocuses: (options?: { limit?: number; includeArchived?: boolean }) => Promise<FieResult<FieFocus[]>>;
+    listRuns: (limit?: number) => Promise<FieResult<FieRunSummary[]>>;
+    getRun: (id: string) => Promise<FieResult<FieRunDetail>>;
+    trend: (options?: { days?: number; focusId?: string }) => Promise<FieResult<TrendPoint[]>>;
+    health: () => Promise<FieResult<{ ok: boolean; service: string }>>;
   };
 
   ai: {

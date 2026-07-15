@@ -175,123 +175,143 @@ export interface KnowledgeBaseApi {
 }
 
 // ==================== 焦点管理类型 ====================
-// 核心概念：焦点不是待办条目，而是通过检视记录观察到的注意力分布。
+// 核心概念：焦点由 FIE (Focus Ingestion Engine) 通过事件摄取自动归因产生。
+// 应用侧不再手动管理焦点，只做只读展示 + 事件摄取代理。
 
-export type FocusAttentionMode = 'deep' | 'pulse' | 'scan' | 'dormant';
-export type FocusReviewCadence = 'daily' | 'weekly' | 'biweekly' | 'monthly';
-export type FocusHealth = 'aligned' | 'drifting' | 'neglected' | 'cooling';
-export type FocusCheckInEnergy = 'engaged' | 'neutral' | 'avoiding';
-export type FocusAlertType = 'neglected' | 'weight_decay' | 'attention_drift' | 'exit_triggered';
+/** FIE 统一返回结构：网络不可达时 offline=true，供 UI 优雅降级。 */
+export type FieResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; offline?: boolean };
 
-export interface FocusTag {
+/** 摄取接口的请求体。source + sourceEventId 组成幂等键。 */
+export interface AttentionEvent {
+  /** 事件来源，如 codex / git-hook / ci / agent */
+  source: string;
+  /** 来源内唯一的事件 ID，与 source 组成幂等键 */
+  sourceEventId: string;
+  /** ISO 8601 且带时区偏移，如 2026-07-09T09:00:00+08:00 */
+  occurredAt: string;
+  /** 形如 domain.action 的事件类型，如 conversation.finished */
+  type: string;
+  /** 项目名，命中候选 Focus 项目名时贡献最高权重 */
+  project?: string;
+  /** 一句话摘要，参与关键词提取，写入前脱敏 */
+  summary?: string;
+  /** 原始正文，按隐私模式决定是否保留，不会出现在查询响应中 */
+  content?: string;
+  /** 任意键值，其中 files（字符串数组）用于文件维度跨工具匹配 */
+  metadata?: Record<string, unknown> & { files?: string[] };
+}
+
+export type FieDecision = 'skip' | 'check_in' | 'create_and_check_in' | null;
+
+/** /v1/events/ingest 的响应体。 */
+export interface IngestResult {
+  status: 'accepted' | 'duplicate';
+  deduplicated: boolean;
+  decision: FieDecision;
+  focusId: string | null;
+  runId: string;
+  reason: string | null;
+  lowConfidence: boolean;
+}
+
+/** 批量摄取结果，每条 results[] 另带 source/sourceEventId。 */
+export interface IngestBatchResult {
+  status: 'accepted';
+  accepted: number;
+  duplicates: number;
+  failed: number;
+  results: Array<IngestResult & { source: string; sourceEventId: string; error?: string }>;
+}
+
+/** FIE Focus 对象（查询返回，snake_case 忠实于接口）。 */
+export interface FieFocus {
   id: string;
   name: string;
-  color: string;
-  createdAt: string;
-  updatedAt: string;
+  project: string | null;
+  keywords: string[];
+  status: string;
+  merged_into: string | null;
+  last_activity_at: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface FocusArea {
+/** ingestion run 列表项。 */
+export interface FieRunSummary {
+  id: string;
+  status: string;
+  decision: FieDecision;
+  reason: string | null;
+  source: string;
+  source_event_id: string;
+  event_type: string;
+  occurred_at: string;
+  created_at: string;
+}
+
+/** run 决策候选。 */
+export interface FieRunCandidate {
   id: string;
   name: string;
-  description?: string;
-  weight: number;
-  attentionMode: FocusAttentionMode;
-  expectedExit?: string;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-  lastDecayAt: string;
+  score: number;
+  reason: string;
 }
 
-export interface FocusCheckIn {
+/** run 内脱敏后的事件。 */
+export interface FieRunEvent {
   id: string;
-  focusId: string;
-  timestamp: string;
-  energy: FocusCheckInEnergy;
-  blocker?: string;
-  nextAction?: string;
-  notes?: string;
-}
-
-export interface FocusAreaView extends FocusArea {
-  reviewCadence: FocusReviewCadence;
-  health: FocusHealth;
-  daysSinceLastCheckIn: number | null;
-  lastCheckInAt?: string;
-  recentCheckInCount: number;
-  checkInCount: number;
-  alerts: FocusAlert[];
-}
-
-export interface FocusAlert {
-  id: string;
-  focusId: string;
-  type: FocusAlertType;
-  message: string;
-  severity: 'info' | 'warning' | 'critical';
+  source: string;
+  sourceEventId: string;
+  occurredAt: string;
+  type: string;
+  project: string | null;
+  summary: string | null;
+  metadata: Record<string, unknown> | null;
   createdAt: string;
-  meta?: Record<string, unknown>;
 }
 
-export interface FocusStats {
-  totalAreas: number;
-  activeAreas: number;
-  modeCounts: Record<FocusAttentionMode, number>;
-  healthCounts: Record<FocusHealth, number>;
-  alertCount: number;
-  totalCheckIns: number;
-  checkInsLast7Days: number;
-  averageWeight: number;
+/** run 产生的 check-in。 */
+export interface FieRunCheckin {
+  id: string;
+  notes: string | null;
+  blocker: string | null;
+  nextAction: string | null;
+  createdAt: string;
+  focus: { id: string; name: string; project: string | null } | null;
 }
 
-export interface FocusListFilters {
-  minWeight?: number;
-  maxWeight?: number;
-  health?: FocusHealth;
-  attentionMode?: FocusAttentionMode;
-  tag?: string;
-  includeDormant?: boolean;
+/** 单次 run 详情。 */
+export interface FieRunDetail {
+  id: string;
+  status: string;
+  decision: FieDecision;
+  reason: string | null;
+  candidates: FieRunCandidate[];
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  event: FieRunEvent | null;
+  checkin: FieRunCheckin | null;
 }
 
-export interface FocusCreateInput {
-  name: string;
-  description?: string;
-  attentionMode: FocusAttentionMode;
-  weight: number;
-  expectedExit?: string;
-  tags?: string[];
+/** 活跃度趋势的单日聚合点。 */
+export interface TrendPoint {
+  date: string;
+  checkins: number;
+  focuses: number;
 }
 
-export interface FocusMetadataUpdateInput {
-  name?: string;
-  description?: string;
-  expectedExit?: string;
-  tags?: string[];
-}
-
-export interface FocusCheckInInput {
-  focusId: string;
-  energy: FocusCheckInEnergy;
-  blocker?: string;
-  nextAction?: string;
-  notes?: string;
-}
-
+/** focus 插件对外 API（FIE 客户端薄封装）。 */
 export interface FocusApi {
-  create(input: FocusCreateInput): { success: boolean; focusId?: string; error?: string };
-  updateMetadata(focusId: string, input: FocusMetadataUpdateInput): { success: boolean; error?: string };
-  checkIn(input: FocusCheckInInput): { success: boolean; checkInId?: string; error?: string };
-  get(focusId: string): FocusAreaView | null;
-  list(filters?: FocusListFilters): FocusAreaView[];
-  alerts(): FocusAlert[];
-  checkins(focusId: string): FocusCheckIn[];
-  stats(): FocusStats;
-  createTag(name: string, color?: string): { success: boolean; tagId?: string; error?: string };
-  updateTag(tagId: string, name: string, color?: string): { success: boolean; error?: string };
-  listTags(): FocusTag[];
-  deleteTag(tagId: string): { success: boolean; error?: string };
-  resetAll(): { success: boolean; error?: string };
+  ingest(event: AttentionEvent): Promise<FieResult<IngestResult>>;
+  ingestBatch(events: AttentionEvent[]): Promise<FieResult<IngestBatchResult>>;
+  listFocuses(options?: { limit?: number; includeArchived?: boolean }): Promise<FieResult<FieFocus[]>>;
+  listRuns(limit?: number): Promise<FieResult<FieRunSummary[]>>;
+  getRun(id: string): Promise<FieResult<FieRunDetail>>;
+  getTrend(options?: { days?: number; focusId?: string }): Promise<FieResult<TrendPoint[]>>;
+  health(): Promise<FieResult<{ ok: boolean; service: string }>>;
 }
 
 /** 前台 TAB 栏布局配置：order 为路径顺序，hidden 为隐藏的路径集合（均以路由 path 为标识）。 */

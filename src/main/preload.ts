@@ -49,20 +49,15 @@ const assistantApi: AssistantApi = {
   createTag: (name: string) => ipcRenderer.invoke('plugin:knowledge-base:createTag', name),
   deleteTag: (tagId: string) => ipcRenderer.invoke('plugin:knowledge-base:deleteTag', tagId),
 
-  // ===== 焦点注意力观察 Focus API =====
+  // ===== 焦点注意力观察 Focus API（FIE 客户端）=====
   focus: {
-    create: (input) => ipcRenderer.invoke('focus:create', input),
-    updateMetadata: (focusId, input) => ipcRenderer.invoke('focus:update-metadata', focusId, input),
-    checkIn: (input) => ipcRenderer.invoke('focus:check-in', input),
-    get: (focusId) => ipcRenderer.invoke('focus:get', focusId),
-    list: (filters) => ipcRenderer.invoke('focus:list', filters),
-    alerts: () => ipcRenderer.invoke('focus:alerts'),
-    checkins: (focusId) => ipcRenderer.invoke('focus:checkins', focusId),
-    stats: () => ipcRenderer.invoke('focus:stats'),
-    createTag: (name, color) => ipcRenderer.invoke('focus:create-tag', name, color),
-    updateTag: (tagId, name, color) => ipcRenderer.invoke('focus:update-tag', tagId, name, color),
-    listTags: () => ipcRenderer.invoke('focus:list-tags'),
-    deleteTag: (tagId) => ipcRenderer.invoke('focus:delete-tag', tagId),
+    ingest: (event) => ipcRenderer.invoke('focus:ingest', event),
+    ingestBatch: (events) => ipcRenderer.invoke('focus:ingest-batch', events),
+    listFocuses: (options) => ipcRenderer.invoke('focus:list-focuses', options),
+    listRuns: (limit) => ipcRenderer.invoke('focus:list-runs', limit),
+    getRun: (id) => ipcRenderer.invoke('focus:get-run', id),
+    trend: (options) => ipcRenderer.invoke('focus:trend', options),
+    health: () => ipcRenderer.invoke('focus:health'),
   },
 
   // AI 核心 API

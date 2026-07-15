@@ -167,17 +167,17 @@ export function readRecentLogs(linesCount = 200): string[] {
   }
 }
 
-/** 读取最近一次 MCP 工具调用日志，用于悬浮球跨进程活动提示 */
+/** 读取最近一次 FIE 事件摄取日志，用于悬浮球跨进程活动提示 */
 export function getLatestMcpActivity(): McpActivitySummary | null {
   const recentLines = readRecentLogs(300);
 
   for (let index = recentLines.length - 1; index >= 0; index--) {
     try {
       const entry = JSON.parse(recentLines[index]) as LogEntry;
-      if (entry.scope !== 'mcp') continue;
-      if (entry.message !== 'tool_call_started') continue;
+      if (entry.scope !== 'focus') continue;
+      if (entry.message !== 'event_ingested') continue;
 
-      const tool = typeof entry.meta?.tool === 'string' ? entry.meta.tool : undefined;
+      const tool = typeof entry.meta?.source === 'string' ? entry.meta.source : undefined;
       return {
         time: entry.time,
         message: entry.message,

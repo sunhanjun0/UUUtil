@@ -269,7 +269,7 @@ MCP Client 配置示例（Streamable HTTP）：
 - `docs/requirements.md`：当前产品需求与交互约定。
 - `docs/ai-architecture.md`：AI / Agent 旁路运行时与 Connector 架构原则。
 - `docs/assistant-ui-integration.md`：assistant-ui 接入边界、阶段计划和开发约束。
-- `docs/focus-mcp-integration.md`：焦点 MCP 接入、Agent 写入流程、Client 配置和排查手册。
+- `docs/focus-fie-integration.md`：焦点 FIE 接入、事件摄取模型、只读看板和排查手册。
 - `docs/changes/001-scaffold.md`：项目脚手架记录。
 - `docs/changes/002-first-packaging-issues.md`：首次打包问题记录。
 - `docs/changes/003-whiteboard-panel-tools.md`：面板交互、白板与工具能力迭代记录。
