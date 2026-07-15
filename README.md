@@ -19,8 +19,7 @@
 - 配色研究页：用于沉淀 UI 色彩方案实验。
 - AI 核心框架：提供可配置 Provider、默认模型参数、统一 Chat/Streaming 调用接口和独立助手页，便于后续接入翻译、白板 Agent、知识库问答等能力。
 - AI 助手：支持流式输出、Markdown 渲染、停止生成、耗时/Token 页脚、会话历史、新对话侧边栏和图片/音频等多模态附件输入。
-- 焦点看板：以注意力观察为目标，展示由助手、MCP 或外部系统自动写入的关注对象、检视记录、健康度、权重和告警，不作为手动 TODO 使用。
-- MCP 服务：应用启动时提供本机 Streamable HTTP MCP 服务，统一承接外部系统对焦点数据的读写，避免多进程直接抢写 sql.js 数据库。
+- 焦点看板：以注意力观察为目标，展示由助手、Skill 或外部系统上报并由 FIE 归因的关注对象、检视记录、健康度、权重和告警，不作为手动 TODO 使用。
 - 日志框架：主进程提供 JSON Lines 结构化日志、日志轮转、渲染进程日志上报 IPC，并内置日志管理页用于查看、过滤、打开目录和清空日志。
 
 ## 技术栈
@@ -54,9 +53,6 @@ npm run start        # 运行已构建的 Electron 应用
 npm run dev:main     # 仅编译并运行主进程
 npm run dev:renderer # 仅启动 Vite 开发服务器
 npm run pack         # 使用 electron-builder 打包目录版 macOS 应用
-npm run mcp:build    # 编译 MCP 入口
-npm run mcp:stdio    # stdio MCP 兼容入口，默认代理到应用内 HTTP MCP
-npm run focus:reset-all # 开发期清空焦点数据
 ```
 
 ## 目录结构
@@ -72,7 +68,6 @@ src/
 ├── main/                 # Electron 主进程与 preload
 │   ├── index.ts
 │   └── preload.ts
-├── mcp/                  # MCP 工具定义、stdio 兼容入口与 HTTP 服务
 ├── plugins/              # 插件目录
 │   ├── calculator/
 │   ├── dev-utils/
@@ -161,12 +156,12 @@ http://localhost:11434/v1
 
 核心设计：
 
-- 数据输入：主要来自 MCP 工具、Codex Skill、内部助手或其他外部系统；渲染界面只做观察与展示。
+- 数据输入：主要来自 Codex Skill、内部助手或其他外部系统，以事件形式上报给 FIE；渲染界面只做观察与展示。
 - 焦点对象：代表项目、产品方向、调试线索、架构风险、反复出现的问题或长期关注主题。
 - 检视记录：通过 `focus_check_in` 追加，记录本轮进展、能量状态、阻塞和下一步。
 - 权重变化：权重会随时间衰减，也会因重复检视恢复；UI 不直接显示数字权重，而用泡泡尺寸表达。
 - 健康度：根据最近检视、权重、能量状态和告警计算 `aligned` / `drifting` / `neglected` / `cooling`。
-- 标签：标签以 JSON 形式存储，支持 MCP 与 IPC 维护。
+- 标签：标签以 JSON 形式存储，通过 FIE 事件与 IPC 维护。
 
 看板展示：
 
@@ -174,66 +169,16 @@ http://localhost:11434/v1
 - 泡泡内容只显示图标，悬停时展示名称、状态、描述、最近检视等详情。
 - 泡泡直径与权重关联，弱化数字负担。
 - 当泡泡遮挡超过阈值时，悬停会触发轻量星形扩散和连线，便于访问被覆盖焦点。
-- 悬浮球收到 MCP 写入时会出现短暂光圈提示，用于确认外部调用已经进入系统。
+- 悬浮球收到外部写入活动时会出现短暂光圈提示，用于确认外部调用已经进入系统。
 
-## MCP 服务
+## 外部接入（FIE 与 CLI）
 
-项目提供应用内常驻 Streamable HTTP MCP 服务，用于让内部助手、外部 MCP Client 或 Skill 自动维护 UUUtil 数据。目前首批工具聚焦 `focus` 数据，UI 只作为焦点看板使用，不鼓励手动维护。
+外部系统对 UUUtil 的接入分两条路径，均不再依赖已删除的应用内 MCP 服务。
 
-核心原则：**外部系统不要各自启动 stdio 进程直接读写同一个 sql.js 数据库文件**。Electron 主应用启动后会持有唯一数据库连接，并在本机启动 HTTP MCP 承接服务，所有外部系统统一调用这个入口，工具调用在服务内串行执行，避免多进程抢写覆盖。
+焦点数据由独立运行的 FIE（Focus Ingestion Engine，默认 `http://127.0.0.1:17879`）承接。应用只作为 FIE 的只读视图与事件摄取代理：写入路径是把 `AttentionEvent` 转发给 FIE，读取路径是拉取 FIE 返回的 focuses / runs / trend。详见 `docs/focus-fie-integration.md`。
 
-默认服务地址：
+通用能力调度由 CLI 承接（设计阶段，待开发）。CLI 是面向本机外部工具的能力出口：外部程序通过 `uuutil call <plugin.action> --json '{...}'` 把命令打进运行中的 UUUtil，由命令注册表分发到对应插件并回传结构化结果，通信走 loopback HTTP。设计详见 `docs/cli-integration.md`。
 
-```text
-http://127.0.0.1:17878/mcp
-```
-
-健康检查：
-
-```bash
-curl http://127.0.0.1:17878/health
-```
-
-可通过环境变量调整监听地址：
-
-```bash
-UUUTIL_MCP_HOST=127.0.0.1
-UUUTIL_MCP_PORT=17878
-UUUTIL_MCP_PATH=/mcp
-```
-
-构建命令：
-
-```bash
-npm run mcp:build
-```
-
-旧的 `npm run mcp:stdio` 仍保留为开发/兼容入口，但不建议多个外部系统长期用它直接连接同一数据库。生产式集成应优先使用应用内常驻 HTTP MCP 服务。
-
-MCP 工具调用会写入 Electron 用户数据目录下的 `logs/uuutil.log`。日志 scope 为 `mcp` / `mcp:http`，包含 `tool_call_started`、`tool_call_completed`、`tool_call_failed`，便于排查外部系统是否真的写入了焦点数据。
-
-可用工具：
-
-- `focus_create`：声明一个关注对象。
-- `focus_check_in`：记录一次检视，作为注意力观察的主要输入。
-- `focus_update_metadata`：修正名称、描述、退出条件或标签，不直接修改权重/健康度。
-- `focus_list` / `focus_get`：查询焦点，返回实时计算的 health、reviewCadence、daysSinceLastCheckIn 和 alerts。
-- `focus_alerts` / `focus_checkins` / `focus_stats`：读取异动、检视历史与注意力分布统计。
-- `focus_create_tag` / `focus_update_tag` / `focus_delete_tag` / `focus_list_tags`：维护焦点标签。
-
-开发期清库可使用 `npm run focus:reset-all`，该能力不作为正式 MCP 工具暴露。
-
-MCP Client 配置示例（Streamable HTTP）：
-
-```json
-{
-  "mcpServers": {
-    "uuutil": {
-      "url": "http://127.0.0.1:17878/mcp"
-    }
-  }
-}
-```
 
 ## 日志框架
 
@@ -270,6 +215,7 @@ MCP Client 配置示例（Streamable HTTP）：
 - `docs/ai-architecture.md`：AI / Agent 旁路运行时与 Connector 架构原则。
 - `docs/assistant-ui-integration.md`：assistant-ui 接入边界、阶段计划和开发约束。
 - `docs/focus-fie-integration.md`：焦点 FIE 接入、事件摄取模型、只读看板和排查手册。
+- `docs/cli-integration.md`：CLI 面向外部工具的能力出口设计（通信、命令风格、注册表）。
 - `docs/changes/001-scaffold.md`：项目脚手架记录。
 - `docs/changes/002-first-packaging-issues.md`：首次打包问题记录。
 - `docs/changes/003-whiteboard-panel-tools.md`：面板交互、白板与工具能力迭代记录。

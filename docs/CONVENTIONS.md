@@ -22,7 +22,7 @@ bus.on('knowledge:results', handler);
 - 通过 `getDatabase()` 获取已初始化的连接
 - 写操作后调用 `autoSave()` 持久化到磁盘
 - sql.js 是内存数据库 + 手动持久化模式
-- 外部系统不要绕过应用主进程直接长期写 `.data/assistant.db`；需要跨进程接入时优先调用应用内 MCP/IPC 入口
+- 外部系统不要绕过应用主进程直接长期写 `.data/assistant.db`；需要跨进程接入时优先调用应用主进程的 IPC / CLI 入口
 - 如果存在外部写入，读取前应使用 `reloadDatabaseIfChanged()` 之类的受控刷新能力，避免内存数据库覆盖新文件
 
 ### 4. 日志统一走 core/logger
@@ -65,23 +65,25 @@ autoSave(); // 写操作后必须调用
 - `src/main/preload.ts` 只暴露经过 `contextBridge` 包装的最小 API，不直接暴露 `ipcRenderer`、Node API 或任意命令执行能力。
 - 终端 PTY API 仅供用户手动操作，禁止接入 AI 或远程内容驱动的调用链。
 
-## MCP 接入约定
+## CLI 接入约定
 
-- 应用内 Streamable HTTP MCP 服务是外部系统读写 UUUtil 数据的首选入口，默认地址为 `http://127.0.0.1:17878/mcp`。
-- stdio MCP 入口只作为兼容层，默认代理到应用内 HTTP MCP；除明确开发调试外，不要让多个 stdio direct-db 进程同时写同一个数据库。
-- MCP 工具实现应复用插件 API 和核心数据库入口，不复制业务规则。
-- MCP 写操作必须串行化，并在写入后触发持久化。
-- MCP 调用必须进入统一日志，scope 建议使用 `mcp` 或 `mcp:http`，记录工具名、耗时、成功/失败和错误摘要。
-- MCP 日志不得记录完整用户输入、Token、请求头、附件正文或 base64。
+- CLI 是面向本机外部工具的能力出口，通信走 loopback HTTP（默认 `http://127.0.0.1:17878/cmd`），不做鉴权。
+- CLI 站在 EventBus 前面，做「外部命令 → 内部 bus 事件」的翻译与请求/响应配对；内部代码一律直接用 `bus`，不经过 CLI。
+- 命令风格只提供机器路径：`uuutil call <plugin.action> --json '{...}'`，参数优先 `--json`，缺省从 stdin 读；另有 `list` / `help` / `ping` 内建元命令。
+- 命令 id 用 `plugin.action` 点号命名，与 bus 的 `plugin-id:action` 冒号命名区分。
+- 命令由插件声明式注册（命令 id、描述、参数 schema、对应 bus 事件）；CLI 与 HTTP server 不持有插件业务知识，`list` / `help` 从注册表实时生成。
+- 校验与分发全归 App 侧注册表；请求/响应按 requestId 配对，超时返回明确错误。
+- CLI 调用进入统一日志，scope 建议 `cli`，记录命令 id、耗时、成功/失败和错误摘要，不记录完整参数正文、Token 或附件内容。
+- 应用内 MCP 服务已废弃并删除，不再作为外部接入入口。
 
 ## 焦点功能约定
 
 - 焦点是注意力观察对象，不是 TODO、任务完成状态或手动打卡系统。
-- 焦点数据主要由 MCP、Skill、内部助手或其他外部系统写入；渲染界面默认只读展示。
-- 新增焦点写入能力时优先扩展 `src/plugins/focus/api.ts` 的合同，再通过 IPC/MCP 暴露。
+- 焦点数据主要由 Skill、内部助手或其他外部系统以事件形式上报给 FIE 写入；渲染界面默认只读展示。
+- 新增焦点写入能力时优先扩展 `src/plugins/focus/api.ts` 的合同，再通过 IPC / CLI 暴露。
 - `focus_check_in` 是主要追加入口；不要为一次性小动作创建大量重复焦点。
 - 权重、健康度、告警和检视节奏应由系统计算，不在 UI 中要求用户手动维护。
-- 开发期清库只能通过脚本或明确的内部接口完成，不暴露为正式 MCP 工具。
+- 开发期清库只能通过 FIE 侧或明确的内部接口完成，不暴露为正式外部命令。
 
 ## 错误处理
 
