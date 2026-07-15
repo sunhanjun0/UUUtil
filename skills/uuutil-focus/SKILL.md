@@ -1,146 +1,114 @@
 ---
 name: uuutil-focus
-description: Mandatory end-of-turn attention logging for UUUtil Focus through the uuutil MCP tools. Use for every substantive Codex turn involving implementation, debugging, planning, product/design decisions, reviews, handoffs, blockers, validation, MCP/skill/tooling work, or multi-step discussion; near the end of the turn, always consider UUUtil Focus, find or create the relevant focus, and call focus_check_in, focus_create, focus_list, focus_get, or focus_update_metadata unless the turn is trivial or the user explicitly opts out.
+description: 在每个实质性回合末尾，通过本机 `uuutil` CLI 把注意力事件上报给 UUUtil Focus。适用于涉及实现、调试、规划、产品/设计决策、评审、交接、阻塞、验证、工具/skill 开发或多轮讨论的回合。回合接近结束时，用 `uuutil call focus.ingest` 上报一条事件即可，归因（skip / check_in / create_and_check_in）由 FIE 引擎自动完成。仅在琐碎回合或用户明确拒绝时跳过。
 ---
 
 # UUUtil Focus
 
-Use this skill to help Codex cooperate with the user's UUUtil Focus system. Focus is an attention observation dashboard, not a task manager. Preserve the user's real attention trail across conversations without asking the user to manually maintain focus records.
+用这个 skill 与用户的 UUUtil Focus 系统协作。Focus 是一个注意力观察看板，不是任务管理器。你的职责是把用户跨对话的真实注意力轨迹保留下来，而不需要用户手动维护焦点记录。
 
-## Why This Exists
+## 核心模型（重点：这里变了）
 
-UUUtil Focus exists because meaningful work often happens inside assistant conversations and tool runs, but that attention disappears unless the assistant records it. The system should let the user later see what they have actually been paying attention to, what is drifting, and what needs another look.
+你**不需要**判断某个回合属于哪个焦点，也**不需要**自己创建焦点或写 check-in。你只负责**上报一条注意力事件**。由一个独立服务 FIE（Focus Ingestion Engine，焦点摄取引擎）接收事件并自行决定：
 
-Treat a focus as a living attention object: a project, product direction, bug class, investigation thread, architectural concern, recurring risk, or personal operating theme. The signal is not whether a task is complete. The signal is attention over time: progress, silence, avoidance, blockers, decisions, next actions, and repeated returns to the same topic.
+- `skip` —— 不值得记录。
+- `check_in` —— 匹配到已有焦点，追加一条 check-in。
+- `create_and_check_in` —— 没有合适匹配，新建一个焦点并写入 check-in。
 
-Use Focus to answer questions like:
+所以对你来说写操作只有一个：`focus.ingest`。如实上报，把归因交给 FIE。不要自己去预匹配、去重或管理焦点对象。
 
-- What topics received real attention recently?
-- Which important topics are becoming neglected or drifting?
-- Which low-weight topics are receiving repeated attention and may deserve more weight?
-- What blocker, decision, or next action emerged from a conversation?
-- Which assistant conversations belong to the same sustained thread of work?
+把焦点理解为一个“活的注意力对象”：某个项目、产品方向、一类 bug、调查线索、架构隐忧、反复出现的风险或长期主题。它衡量的是**注意力随时间的变化**（进展、沉默、阻塞、决策、下一步、反复回到同一话题），而不是任务是否完成。
 
-Do not use Focus as a TODO app. Do not create one focus per tiny task. Do not mark focus objects complete, delete them, reset weights, or manually maintain status.
+## Agent 职责
 
-## Agent Responsibility
+在自然的工作边界上充当“注意力记录员”。先完成用户交代的正事；在每个实质性回合接近结束、给出最终回复之前，上报一条注意力事件。把它当作回合末尾的默认动作，而不是可选项。
 
-Act as an attention scribe at natural work boundaries. Do the user's requested work first. Near the end of every substantive turn, run a Focus checkpoint: decide which existing focus this turn belongs to, create one only if needed, and record a check-in through MCP. Treat this as default end-of-turn hygiene, not an optional extra.
+安静、自动地上报。除非用户明确禁止，或内容异常敏感，否则不必征求许可。有用时才简短提一句记录了什么，绝不让焦点记账占据最终回复。
 
-Prefer quiet, automatic maintenance. Do not ask the user for permission before routine check-ins unless the user explicitly forbids recording or the content is unusually sensitive. Mention the recorded focus only when useful; do not let focus bookkeeping dominate the final answer. If the turn required several back-and-forth UI/code refinements, still record one compact check-in summarizing the iteration.
+出现以下任一情况时上报事件：
 
-Use this end-of-turn decision loop every time:
+- 有意义的实现、重构、调试、评审或验证进展。
+- 产品、交互、架构、流程或集成方面的决策。
+- 阻塞、不确定性、依赖、未决风险或失败的尝试。
+- 需要后续 agent 注意的交接、计划、下一步或状态小结。
+- 跨回合反复讨论的同一话题。
+- 改变未来工作方式的工具、skill、插件或自动化工作。
 
-1. Ask: did this turn contain substantive work? If yes, continue. If it was only a greeting, casual chat, or a simple one-off answer, skip Focus.
-2. Decide whether the work matches an existing focus or needs a new one. Prefer matching existing focus objects over creating duplicates.
-3. Execute `focus_check_in` for the chosen focus. If no suitable focus exists, call `focus_create` first, then `focus_check_in`.
+以下情况跳过：打招呼、附和、琐碎的事实性回答、纯机械的一次性命令、用完即弃的探索，或不产生持久上下文的回合。
 
+默认规则：只要你改了文件、跑了验证、改了配置、查了 bug、做了设计决策，或用了多条消息打磨行为，就在最终回复前上报一条事件。只有回合明显琐碎时才跳过。
 
-Record a check-in when the turn includes any of these:
+## 如何上报（唯一的命令）
 
-- Meaningful implementation, refactor, debugging, review, or validation progress.
-- Product, UX, architecture, workflow, or integration decisions.
-- A blocker, uncertainty, dependency, unresolved risk, or failed attempt.
-- A handoff, plan, next action, or state summary that future agents should notice.
-- Repeated discussion of the same topic across turns.
-- Tooling, MCP, skill, plugin, or automation work that changes how future work happens.
+```bash
+uuutil call focus.ingest --json '{
+  "source": "codex",
+  "sourceEventId": "<每条事件唯一的-id>",
+  "occurredAt": "2026-07-15T14:53:00+08:00",
+  "type": "conversation.finished",
+  "project": "<项目或仓库名>",
+  "summary": "<一句话如实概括本回合发生了什么>"
+}'
+```
 
-Skip recording for greetings, acknowledgements, trivial factual answers, purely mechanical commands, throwaway exploration, or turns that do not create durable context.
+摘要较长时，改用 stdin 传 JSON，避免命令行转义麻烦：
 
-Default rule: if the assistant edited files, ran validation, changed configuration, investigated a bug, made a design decision, or spent multiple messages refining behavior, record a check-in before the final response. Only skip when the turn is clearly trivial.
+```bash
+echo '{"source":"codex","sourceEventId":"...","occurredAt":"...","type":"conversation.finished","project":"...","summary":"..."}' | uuutil call focus.ingest
+```
 
-## Core Workflow
+字段说明：
 
-Use this workflow near the end of every substantive turn, before the final response:
+- `source`：你的稳定来源标识，例如 `codex`。它与 `sourceEventId` 组成幂等键。
+- `sourceEventId`：每条事件唯一。复用同一个值会被当作重复事件去重，所以每个新回合用一个新值（时间戳或 uuid）。
+- `occurredAt`：ISO 8601 带时区偏移，例如 `2026-07-15T14:53:00+08:00`。
+- `type`：形如 `domain.action` 的字符串。回合末尾常用 `conversation.finished`。
+- `project`：项目/仓库名。它对归因到正确焦点影响很大。
+- `summary`：一句如实的话，写清本回合改了什么、决定了什么或卡在哪。写给日后扫看板的 agent 看。
+- `content`（可选）：更完整的正文，脱敏由 FIE 负责。
+- `metadata`（可选）：任意键值；其中 `files`（字符串数组）可用于按文件路径跨工具匹配。
 
-1. Identify the attention object: choose the stable topic the user would recognize later.
-2. Search existing focuses with `focus_list`; reuse an existing focus when the work is clearly part of the same topic.
-3. Create a focus with `focus_create` only when no existing focus fits.
-4. Add a check-in with `focus_check_in` summarizing what happened, the blocker if any, and a concrete next action if known.
-5. Use `focus_update_metadata` only to correct the focus name, description, tags, expected exit, or attention mode when the existing metadata is misleading.
-6. Continue the user-facing response; do not block the main task on cosmetic metadata cleanup.
+用用户的工作语言写摘要。对这位用户的 UUUtil 工作，通常用中文合适。
 
-## How To Choose Or Create A Focus
+好的摘要：`补全 focus CLI 读命令（list/runs/run/trend/health）并端到端验证。`
+差的摘要：`做了点东西。`
 
-Reuse an existing focus when the current work shares the same long-lived concern, even if the immediate task differs. For example, MCP logging, Codex MCP configuration, and tool smoke tests can all belong to one focus if they serve the same UUUtil assistant-integration effort.
+## 读取（可选，用于写得更准或核对）
 
-Create a new focus when the topic has a different owner, product area, risk, or long-term purpose. Use names that are short and recognizable, such as `UUUtil Focus MCP integration`, `Focus attention redesign`, or `Electron app startup stability`.
+上报本身不需要读，但读能帮你写出更准的 `summary`，或确认写入是否落地：
 
-When creating a focus, choose metadata this way:
+- `uuutil call focus.list --json '{"limit":20}'` —— 当前焦点（名称、项目、关键词、状态）。
+- `uuutil call focus.runs --json '{"limit":10}'` —— 最近的归因决策。
+- `uuutil call focus.run --json '{"id":"run_xxx"}'` —— 某次 run 的候选、事件和 check-in。
+- `uuutil call focus.trend --json '{"days":30}'` —— 按天的活跃趋势。
+- `uuutil call focus.health --json '{}'` —— 检查 FIE 是否可达。
 
-- `name`: Use a stable noun phrase, not a one-off action.
-- `description`: Explain why the topic deserves attention and what kind of work belongs there.
-- `attentionMode`: Use `deep` for primary strategic work, `pulse` for recurring active work, `scan` for periodic monitoring, and `dormant` for low-activity watch items.
-- `expectedExit`: Describe the condition where attention can naturally fade; treat it as display-only, not a status.
-- `tags`: Use compact JSON-style categories such as `codex`, `mcp`, `uuutil`, `focus`, `debugging`, `design`, or `release`.
+## 输出与失败处理
 
-Avoid creating duplicate focuses because a name is slightly different. Prefer updating metadata when a better name or description becomes obvious.
+每条命令都把 JSON 打到 stdout，成功 exit 0、失败非 0。成功时 `data` 里带着 FIE 的决策，例如：
 
-## How To Write Check-Ins
+```json
+{ "ok": true, "data": { "decision": "check_in", "focusId": "focus_...", "reason": "..." } }
+```
 
-Make check-ins useful to a future agent scanning the Focus dashboard. Keep them factual, compact, and tied to observable progress.
+命令失败时：
 
-Use `energy` this way:
+- `code: "transport"` / “连接不上 UUUtil” —— UUUtil 桌面应用没在运行，或 CLI 服务未启动。不要转而去改数据库或用别的方式打 FIE。简短说明焦点记录未能完成，然后继续。
+- `code: "handler_error"` 且消息含“FIE 服务不可达” —— FIE 引擎没在跑，同样处理。
+- `code: "invalid_args"` —— 补齐缺失/非法字段后重试。
 
-- `engaged`: Progress is active, clear, or gaining momentum.
-- `neutral`: The turn records maintenance, routine progress, or uncertain-but-not-stuck work.
-- `avoiding`: The conversation reveals deferral, friction, unclear ownership, repeated failure, or reluctance.
+绝不让 Focus 记录失败拖垮用户的主任务。如果重要，用一句话说明这次没记上，并留足上下文供之后重试。
 
-Use fields this way:
+## 协作规则
 
-- `notes`: Summarize what changed, what was learned, or what decision was made.
-- `blocker`: Record only a real impediment, ambiguity, missing dependency, failing validation, or external wait.
-- `nextAction`: Record the next useful action if one is known; omit it when there is no meaningful next action.
+Focus 是跨 agent、跨工具的共享状态：
 
-Write check-ins in the same language as the user's work context unless there is a clear reason to do otherwise. For this user's UUUtil work, Chinese check-ins are usually appropriate.
+- 只上报真实发生的事，绝不编造进展。
+- 把不确定写成不确定，而不是写成已定的决策。
+- 高层概括够用时，别把敏感细节写进 `summary` / `content`。
+- 不要试图从这个 skill 删除、重置、合并或批量编辑焦点——设计上就没有这类命令。
+- 归因交给 FIE。如果你的事件落到了预期之外的焦点上，那是 FIE 的判断，不是需要你纠正的错误。
 
-Good check-in style:
+## 最终回复行为
 
-- `notes`: `补充 uuutil-focus skill，使其说明记录目的、触发标准、MCP 调用流程和 Agent 协作方式。`
-- `blocker`: `无。`
-- `nextAction`: `如需要，可把该 skill 接入更多自动触发场景并验证 Codex 是否按回合末尾调用 MCP。`
-
-Bad check-in style:
-
-- `notes`: `Did stuff.`
-- `nextAction`: `继续。`
-- Creating a separate focus named `Update SKILL.md` for a one-time edit.
-
-## MCP Tool Expectations
-
-Prefer the configured `uuutil` MCP server over direct database access. The recommended transport is the UUUtil app's local Streamable HTTP MCP service at `http://127.0.0.1:17878/mcp`; stdio entries should proxy to that service instead of starting independent DB writers. The exact UI surface may expose tools with names like `focus_list`, `focus_create`, `focus_check_in`, `focus_get`, `focus_stats`, `focus_alerts`, and `focus_update_metadata`.
-
-Before recording, assume the UUUtil desktop app should be running so the HTTP MCP service owns the single database connection. If the MCP server is unavailable, do not fall back to editing SQLite files directly; report the failure briefly and leave retry context.
-
-Minimum useful sequence:
-
-1. Call `focus_list` to find a matching focus.
-2. Call `focus_create` if no matching focus exists.
-3. Call `focus_check_in` for the chosen focus.
-
-Use read tools when they help choose correctly:
-
-- `focus_get`: Inspect one candidate focus before adding a check-in.
-- `focus_stats`: Understand current distribution or verify records after many writes.
-- `focus_alerts`: Notice neglected or drifting work before planning a follow-up.
-
-Do not rely on the renderer UI to create check-ins. The UI is intentionally read-only for focus observation. Assistant/MCP/tool integrations are the primary writers. Do not run multiple direct-DB MCP servers for the same UUUtil database; use the app-hosted HTTP MCP service as the shared coordination point.
-
-## Collaboration Rules
-
-Cooperate with other agents and external systems by treating Focus as shared state:
-
-- Prefer appending check-ins over rewriting history.
-- Do not delete, reset, or bulk-clear data from a skill workflow.
-- Do not fabricate progress; record only what happened in the conversation or tool results.
-- Preserve uncertainty by writing it as uncertainty, not as a decision.
-- Keep sensitive details out of check-ins when a high-level summary is sufficient.
-- If another system already created the focus, reuse it instead of creating a competing one.
-
-If MCP calls fail, do not fail the user's main task. State briefly that Focus recording could not be completed if it matters, and include enough context in the final answer for a later agent to retry.
-
-## Final Response Behavior
-
-Keep the final response focused on the user's requested work. If a Focus check-in was recorded, mention it only as a short note when helpful, such as: `已顺手记录到 UUUtil Focus。`
-
-Do not expose raw MCP payloads unless the user asks. Do not make Focus recording sound like a separate task the user must maintain.
+最终回复保持聚焦在用户交代的正事上。如果你上报了事件，有用时才简短提一句，例如：`已顺手记录到 UUUtil Focus。` 除非用户要求，不要展示原始 JSON 负载，也不要把焦点记录说得像是用户需要维护的任务。

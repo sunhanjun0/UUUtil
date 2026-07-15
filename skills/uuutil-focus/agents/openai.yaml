@@ -1,4 +1,4 @@
 interface:
   display_name: "UUUtil Focus"
-  short_description: "Record assistant attention into UUUtil Focus"
-  default_prompt: "Use $uuutil-focus to record this meaningful work as a UUUtil Focus check-in."
+  short_description: "通过 uuutil CLI 把助手的注意力上报到 UUUtil Focus"
+  default_prompt: "用 $uuutil-focus 把这次有意义的工作作为一条 UUUtil Focus 注意力事件上报。"
