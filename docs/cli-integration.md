@@ -1,6 +1,6 @@
 # CLI 接入设计
 
-> 状态：设计定稿，待开发。本文件是 UUUtil CLI 的权威设计说明与开发起点。
+> 状态：最小闭环已实现并验证。本文件是 UUUtil CLI 的权威设计与实现说明。
 
 ## 1. 定位
 
@@ -77,34 +77,43 @@ uuutil ping                   # 探活；skill 可先 ping 再干活
 
 插件在自己的合同里**声明式**注册命令，CLI 与 HTTP server 都不持有插件业务知识；`list` / `help` 的内容全部从注册表实时生成。
 
-每条命令声明包含：
+插件在 `activate()` 中调用 `registerCommand()`（`src/core/command-registry.ts`）声明一条命令，包含：
 
-- `command`：命令 id，`plugin.action`。
+- `command`：命令 id，`plugin.action`（内核按 `^[a-z0-9-]+\.[a-z0-9-]+$` 校验）。
 - `description`：一句话描述，供 `list` / `help`。
-- `paramsSchema`：参数结构（用于 App 侧校验与 `help` 输出）。
-- `event`：内部对应触发的 bus 事件名（`plugin-id:action`）。
+- `params`：参数结构数组（`name` / `type` / `required` / `description`），用于 App 侧必填校验与 `help` 输出。
+- `example`：示例参数对象，供 `help` 展示。
+- `handler`：`(args) => Promise<unknown> | unknown`，返回值即命令结果 `data`。
 
-注册与铁律一致：命令声明属于插件对外合同的一部分，随 `api.ts` 维护；插件新增命令时，CLI 与 server 均无需改动。
+handler 内部可直接调用插件 `api`，也可走 bus，由插件自行决定；对外只暴露这条声明式命令。注册与铁律一致：命令声明属于插件对外合同的一部分，随插件维护；插件新增命令时，CLI 与 server 均无需改动。
 
-## 6. 请求/响应配对（承重墙）
+## 6. 请求/响应配对
 
-bus 是广播式的：请求事件与结果事件是两条独立广播（如 `dev-utils:invoke` → `dev-utils:result`），彼此无绑定。CLI 需要「一问一答」，因此调度层必须把广播式 bus 包装成请求/响应调用：
+CLI 需要「一问一答」的返回值。由于插件 `api` 方法本身是 async 的，注册表直接持有插件声明的 async `handler`，`invokeCommand()` 用 `await` 拿到返回值即可，无需给 bus 事件附加 `requestId` 做广播配对。
 
-- 每次调用生成 `requestId`。
-- server 按注册表 `event` 触发对应 bus 事件，并携带 `requestId`。
-- 插件处理后发出结果事件，回传同一 `requestId`。
-- 调度层按 `requestId` 收线，超时未收到则返回超时错误。
+- `invokeCommand(command, args, timeoutMs)` 先做必填校验，再 `await` handler。
+- 用 `Promise.race` 加超时兜底（默认 15s），超时返回 `code: timeout`。
+- 全程不抛出：统一转成 `{ ok:true, data }` 或 `{ ok:false, error:{ code, message } }`；错误码含 `not_found` / `invalid_args` / `handler_error` / `timeout`。
 
-因此插件结果事件的负载需要能携带 `requestId`；这项约定与「声明式注册」是同一件事的两面，插件侧合同需支持。
+> 备注：早期设计设想过「bus 广播 + requestId 配对」；实现时因插件 api 已是 async，改用注册表直接持有 handler 的方式，更简洁且同样满足「声明式注册 + 插件不被外部 import」两条铁律。
 
-## 7. 待开发范围（初版）
+## 7. 已实现范围（最小闭环）
 
-- 主进程内 loopback HTTP server（`/cmd`、探活）与生命周期（随 App 起停）。
-- 命令注册表 + 请求/响应配对调度层（requestId、超时）。
-- 插件命令声明合同（在 `api.ts` / manifest 层扩展）。
-- CLI 二进制：参数解析（`--json` / stdin）、HTTP 调用、JSON 输出、exit code。
-- 内建元命令：`list` / `help` / `ping`。
-- 至少一个样例命令打通全链路（建议 `focus.create` 或等价只写命令）。
+- 命令注册表 `src/core/command-registry.ts`：声明式注册 + async 调用 + 超时兜底。
+- loopback HTTP server `src/main/cli-server.ts`：`GET /ping`、`GET /list`、`GET /help`、`POST /cmd`，随 App 起停（在插件加载后启动）。
+- CLI 二进制 `src/cli/index.ts`：`ping` / `list` / `help` / `call`，`--json` 与 stdin 入参，JSON 输出，exit code。
+- 样例命令：`hello-world.greet`（纯验证）、`focus.ingest`（真实写路径，打通到 FIE 归因）。
+- 已在真实 Electron + FIE 环境端到端验证：正常调用、缺必填、未知命令、handler 抛错、连不上 App 均返回预期结果与退出码。
+
+安装为全局命令（开发期）：
+
+```bash
+npm run build:main   # 生成 dist/cli/index.js
+npm link             # 将 uuutil 链接到全局（如 npm 全局前缀无写权限，可 npm config set prefix ~/.npm-global）
+uuutil ping          # 任意目录可用
+```
+
+改动 CLI 源码后需重新 `npm run build:main`；`dist/` 不入库，换机需先 build 再 link。
 
 ## 8. 未定 / 后续探讨
 

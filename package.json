@@ -4,6 +4,9 @@
   "description": "插件化个人辅助软件 - 脚手架",
   "author": "hanjun",
   "main": "dist/main/index.js",
+  "bin": {
+    "uuutil": "dist/cli/index.js"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "dev:main": "tsc -p tsconfig.main.json && NODE_ENV=development node ./node_modules/electron/cli.js dist/main/index.js",
@@ -12,7 +15,8 @@
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "start": "electron dist/main/index.js",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "cli:build": "tsc -p tsconfig.main.json"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.14.23",

@@ -17,6 +17,6 @@
       "@shared/*": ["src/shared/*"]
     }
   },
-  "include": ["src/main/**/*", "src/mcp/**/*", "src/core/**/*", "src/plugins/**/*", "src/shared/**/*", "src/types/**/*"],
+  "include": ["src/main/**/*", "src/cli/**/*", "src/core/**/*", "src/plugins/**/*", "src/shared/**/*", "src/types/**/*"],
   "exclude": ["node_modules", "dist", "renderer"]
 }

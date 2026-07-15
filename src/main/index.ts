@@ -19,6 +19,7 @@ import {
 import { loadAllPlugins, listPlugins } from '../core/plugin-loader';
 import { disposeAllTerminals } from './terminal';
 import { registerAllIpc } from './ipc';
+import { startCliServer, type CliServerHandle } from './cli-server';
 import {
   createBallWindow,
   createTray,
@@ -26,6 +27,8 @@ import {
   isBallWindowAlive,
   showPanelWindow,
 } from './windows';
+
+let cliServer: CliServerHandle | null = null;
 
 async function bootstrap(): Promise<void> {
   initLogger();
@@ -44,6 +47,10 @@ async function bootstrap(): Promise<void> {
   logInfo('app', '核心已就绪');
 
   registerAllIpc();
+
+  cliServer = await startCliServer();
+  if (cliServer) logInfo('app', 'CLI 服务已启动', { port: cliServer.port });
+
   createBallWindow();
   createTray();
   registerGlobalShortcuts();
@@ -69,6 +76,7 @@ app.on('will-quit', () => {
 
 app.on('before-quit', () => {
   logInfo('app', '应用退出');
+  void cliServer?.close();
   disposeAllTerminals();
   closeDatabase();
   closeLogger();

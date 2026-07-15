@@ -16,4 +16,6 @@ export {
   streamChat,
 } from './ai';
 export { getTabLayout, saveTabLayout } from './ui-settings';
+export { registerCommand, listCommands, describeCommand, invokeCommand } from './command-registry';
+export type { CommandDefinition, CommandParam, CommandResult } from './command-registry';
 export type { Plugin, PluginManifest } from './plugin-loader';

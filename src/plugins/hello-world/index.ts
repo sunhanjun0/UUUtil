@@ -4,6 +4,7 @@
 
 import { bus } from '../../core/event-bus';
 import { getDatabase, autoSave } from '../../core/db';
+import { registerCommand } from '../../core/command-registry';
 import type { PluginManifest } from '../../core/plugin-loader';
 import { api } from './api';
 
@@ -36,6 +37,15 @@ export function activate(): void {
     } catch (err) {
       console.error('[hello-world] 记录事件失败:', err);
     }
+  });
+
+  // 声明式注册 CLI 命令：外部工具可通过 `uuutil call hello-world.greet` 调用。
+  registerCommand({
+    command: 'hello-world.greet',
+    description: '返回一句问候，用于验证 CLI 全链路',
+    params: [{ name: 'name', type: 'string', required: true, description: '被问候者的名字' }],
+    example: { name: '世界' },
+    handler: (args) => ({ greeting: api.greet(String(args.name ?? '')) }),
   });
 
   bus.emit('hello-world:activated', { version: manifest.version });
