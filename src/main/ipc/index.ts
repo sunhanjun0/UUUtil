@@ -14,6 +14,7 @@ import { cliIpc } from './cli.ipc';
 import { terminalIpc } from './terminal.ipc';
 import { logsIpc } from './logs.ipc';
 import { focusIpc } from './focus.ipc';
+import { reminderIpc } from './reminder.ipc';
 import { screenshotIpc } from './screenshot.ipc';
 import { uiSettingsIpc } from './ui-settings.ipc';
 
@@ -27,6 +28,7 @@ export function registerAllIpc(): void {
     terminalIpc,
     logsIpc,
     focusIpc,
+    reminderIpc,
     screenshotIpc,
     uiSettingsIpc,
   ]);

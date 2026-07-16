@@ -319,3 +319,54 @@ export interface TabLayout {
   order: string[];
   hidden: string[];
 }
+
+// ===== Reminder（提醒框架）=====
+
+/** 提醒类型：告知 vs 需处理。 */
+export type ReminderType = 'info' | 'action';
+
+/** 严重级别，UI 后续阶段用来分色/排序。 */
+export type ReminderSeverity = 'info' | 'warning' | 'error';
+
+/** 提醒状态。阶段 1 只会出现 active；done/dismissed 待后续阶段接入。 */
+export type ReminderStatus = 'active' | 'done' | 'dismissed';
+
+/** 一条提醒对象（面板/CLI 读取时返回）。 */
+export interface Reminder {
+  id: string;
+  source: string;
+  key: string | null;
+  type: ReminderType;
+  severity: ReminderSeverity;
+  title: string;
+  body: string | null;
+  status: ReminderStatus;
+  createdAt: string;
+  updatedAt: string;
+  doneAt: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+/** 创建一条提醒的入参。 */
+export interface CreateReminderInput {
+  source: string;
+  title: string;
+  type?: ReminderType;
+  severity?: ReminderSeverity;
+  body?: string;
+  key?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** 列表查询选项。 */
+export interface ListRemindersOptions {
+  status?: ReminderStatus;
+  limit?: number;
+}
+
+/** reminder 插件对外 API。 */
+export interface ReminderApi {
+  create(input: CreateReminderInput): Reminder;
+  list(options?: ListRemindersOptions): Reminder[];
+  get(id: string): Reminder | null;
+}

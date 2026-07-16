@@ -15,6 +15,8 @@ import type {
   CliCommandResult,
   FieFocus,
   FieResult,
+  ListRemindersOptions,
+  Reminder,
   FieRunDetail,
   FieRunSummary,
   IngestBatchResult,
@@ -108,6 +110,11 @@ export interface AssistantApi {
     getRun: (id: string) => Promise<FieResult<FieRunDetail>>;
     trend: (options?: { days?: number; focusId?: string }) => Promise<FieResult<TrendPoint[]>>;
     health: () => Promise<FieResult<{ ok: boolean; service: string }>>;
+  };
+
+  reminder: {
+    list: (options?: ListRemindersOptions) => Promise<Reminder[]>;
+    get: (id: string) => Promise<Reminder | null>;
   };
 
   ai: {

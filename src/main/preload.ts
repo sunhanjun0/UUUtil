@@ -60,6 +60,12 @@ const assistantApi: AssistantApi = {
     health: () => ipcRenderer.invoke('focus:health'),
   },
 
+  // ===== 提醒中心 Reminder API（阶段 1 只读）=====
+  reminder: {
+    list: (options) => ipcRenderer.invoke('reminder:list', options),
+    get: (id) => ipcRenderer.invoke('reminder:get', id),
+  },
+
   // AI 核心 API
   ai: {
     listProviders: () => ipcRenderer.invoke('core:ai:list-providers'),

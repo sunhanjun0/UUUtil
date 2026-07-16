@@ -66,6 +66,9 @@ export interface AppEventMap {
   'focus:ingested': [FieResult<IngestResult>];
   'focus:activated': [PluginLifecyclePayload];
   'focus:deactivated': [];
+
+  'reminder:activated': [PluginLifecyclePayload];
+  'reminder:deactivated': [];
 }
 
 export type AppEventName = keyof AppEventMap;
