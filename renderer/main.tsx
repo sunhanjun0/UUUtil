@@ -199,6 +199,8 @@ if (!window.assistant) {
     reminder: {
       list: async () => [],
       get: async () => null,
+      respond: async () => null as any,
+      dismiss: async () => null as any,
       onUpdate: () => () => {},
     },
   };

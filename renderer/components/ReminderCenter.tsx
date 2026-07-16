@@ -10,10 +10,12 @@ import {
   Select,
   Spinner,
   Text,
+  Textarea,
   VStack,
+  useToast,
 } from '@chakra-ui/react';
 import { AlertTriangle, Bell, CheckCircle2, Info, RefreshCw } from 'lucide-react';
-import type { Reminder, ReminderSeverity, ReminderStatus, ReminderType } from '../../src/shared/types';
+import type { Reminder, ReminderAction, ReminderSeverity, ReminderStatus, ReminderType } from '../../src/shared/types';
 
 const STATUS_OPTIONS: { value: ReminderStatus; label: string }[] = [
   { value: 'active', label: '活跃' },
@@ -203,11 +205,174 @@ export default function ReminderCenter() {
                   </Box>
                 </Box>
               )}
+              <ReminderResponsePanel reminder={selected} onDone={() => { void load(); setSelectedId(selected.id); }} />
               <Text fontSize="10px" color="gray.400">id: {selected.id}</Text>
             </VStack>
           )}
         </Box>
       </Flex>
     </Flex>
+  );
+}
+
+interface ResponsePanelProps {
+  reminder: Reminder;
+  onDone: () => void;
+}
+
+function buttonColorScheme(style?: ReminderAction['style']): string | undefined {
+  if (style === 'primary') return 'blue';
+  if (style === 'danger') return 'red';
+  return undefined;
+}
+
+function ReminderResponsePanel({ reminder, onDone }: ResponsePanelProps) {
+  const toast = useToast();
+  const [pendingAction, setPendingAction] = useState<ReminderAction | null>(null);
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setPendingAction(null);
+    setReason('');
+  }, [reminder.id]);
+
+  async function submit(action: ReminderAction, reasonValue?: string) {
+    setSubmitting(true);
+    try {
+      await window.assistant.reminder.respond({
+        id: reminder.id,
+        actionId: action.id,
+        reason: reasonValue,
+      });
+      onDone();
+    } catch (err) {
+      toast({
+        status: 'error',
+        title: '响应失败',
+        description: err instanceof Error ? err.message : String(err),
+        duration: 4000,
+      });
+    } finally {
+      setSubmitting(false);
+      setPendingAction(null);
+      setReason('');
+    }
+  }
+
+  async function dismiss() {
+    setSubmitting(true);
+    try {
+      await window.assistant.reminder.dismiss(reminder.id);
+      onDone();
+    } catch (err) {
+      toast({
+        status: 'error',
+        title: '忽略失败',
+        description: err instanceof Error ? err.message : String(err),
+        duration: 4000,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // 已响应：展示响应摘要
+  if (reminder.status === 'done' && reminder.response) {
+    const label =
+      reminder.actions?.find((a) => a.id === reminder.response!.actionId)?.label ?? reminder.response.actionId;
+    return (
+      <Box borderTopWidth="1px" pt={3} mt={1}>
+        <HStack spacing={2} fontSize="sm">
+          <CheckCircle2 size={14} />
+          <Text>已响应：<b>{label}</b> · {formatRelativeTime(reminder.response.respondedAt)}</Text>
+        </HStack>
+        {reminder.response.reason && (
+          <Box mt={2} p={2} bg="gray.50" borderRadius="sm" fontSize="sm" whiteSpace="pre-wrap">
+            {reminder.response.reason}
+          </Box>
+        )}
+      </Box>
+    );
+  }
+
+  // 已忽略
+  if (reminder.status === 'dismissed') {
+    return (
+      <Box borderTopWidth="1px" pt={3} mt={1}>
+        <Text fontSize="sm" color="gray.500">已忽略 · {formatRelativeTime(reminder.doneAt ?? reminder.updatedAt)}</Text>
+      </Box>
+    );
+  }
+
+  // 活跃但没有 actions（notify 类），只给一个忽略入口
+  if (!reminder.actions || reminder.actions.length === 0) {
+    if (reminder.type !== 'action') return null;
+    return (
+      <Box borderTopWidth="1px" pt={3} mt={1}>
+        <Button size="sm" variant="ghost" onClick={() => void dismiss()} isLoading={submitting}>
+          忽略这条
+        </Button>
+      </Box>
+    );
+  }
+
+  return (
+    <Box borderTopWidth="1px" pt={3} mt={1}>
+      <Text fontSize="xs" color="gray.500" mb={2}>请选择一个响应</Text>
+      <HStack spacing={2} flexWrap="wrap">
+        {reminder.actions.map((action) => (
+          <Button
+            key={action.id}
+            size="sm"
+            colorScheme={buttonColorScheme(action.style)}
+            variant={action.style === 'primary' || action.style === 'danger' ? 'solid' : 'outline'}
+            isDisabled={submitting}
+            onClick={() => {
+              if (action.requiresReason) {
+                setPendingAction((prev) => (prev?.id === action.id ? null : action));
+                setReason('');
+              } else {
+                void submit(action);
+              }
+            }}
+          >
+            {action.label}
+          </Button>
+        ))}
+        <Button size="sm" variant="ghost" onClick={() => void dismiss()} isDisabled={submitting}>
+          忽略
+        </Button>
+      </HStack>
+      {pendingAction && (
+        <Box mt={3}>
+          <Text fontSize="xs" color="gray.600" mb={1}>
+            按 <b>{pendingAction.label}</b> 需要填写理由
+          </Text>
+          <Textarea
+            size="sm"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="请说明理由..."
+            rows={2}
+            isDisabled={submitting}
+          />
+          <HStack mt={2} spacing={2}>
+            <Button
+              size="sm"
+              colorScheme={buttonColorScheme(pendingAction.style) ?? 'blue'}
+              isDisabled={!reason.trim() || submitting}
+              isLoading={submitting}
+              onClick={() => void submit(pendingAction, reason.trim())}
+            >
+              提交 {pendingAction.label}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setPendingAction(null); setReason(''); }}>
+              取消
+            </Button>
+          </HStack>
+        </Box>
+      )}
+    </Box>
   );
 }

@@ -1,20 +1,33 @@
 /**
- * reminder 插件 —— 提醒框架（阶段 1：数据模型 + notify + 面板列表）
+ * reminder 插件 —— 提醒框架
  *
- * 阶段 1 只做数据落库、CLI 推送、面板可见。悬浮球光点/去重/回调都在后续阶段。
+ * 阶段 1：数据模型 + notify + 面板列表。
+ * 阶段 2：source+key 去重 + 两色悬浮球光点 + 实时事件通道。
+ * 阶段 3：reminder.ask 阻塞式确认 + reminder.respond。
  */
 
 import { bus } from '../../core/event-bus';
 import { registerCommand } from '../../core/command-registry';
 import type { PluginManifest } from '../../core/plugin-loader';
 import { api, ensureRemindersTable } from './api';
-import type { CreateReminderInput, ListRemindersOptions } from '../../shared/types';
+import { fulfillWaiter, registerWaiter } from './waiters';
+import type {
+  AskReminderInput,
+  AskReminderResult,
+  CreateReminderInput,
+  ListRemindersOptions,
+  ReminderAction,
+  RespondReminderInput,
+} from '../../shared/types';
+
+const DEFAULT_ASK_TIMEOUT_SEC = 300;
+const MAX_ASK_TIMEOUT_SEC = 3600;
 
 export const manifest: PluginManifest = {
   id: 'reminder',
   name: 'Reminder 提醒框架',
-  version: '0.1.0',
-  description: '外部工具通过 CLI 推送提醒，落库并在提醒中心展示（阶段 1）',
+  version: '0.3.0',
+  description: '外部工具通过 CLI 推送提醒 / 阻塞式确认，落库并在提醒中心展示',
 };
 
 export function activate(): void {
@@ -25,17 +38,17 @@ export function activate(): void {
     console.log('[reminder] 提醒表已就绪');
   });
 
-  // reminder.notify —— 推一条提醒（阶段 1 的核心命令）
+  // reminder.notify —— 单向推送
   registerCommand({
     command: 'reminder.notify',
-    description: '推送一条提醒到 UUUtil 提醒中心（阶段 1：落库 + 面板列表，不含悬浮球提示）',
+    description: '推送一条提醒到 UUUtil 提醒中心（单向，即发即退）',
     params: [
       { name: 'source', type: 'string', required: true, description: '发起方，如 codex / claude / vibecoding' },
-      { name: 'title', type: 'string', required: true, description: '标题，面板列表主要展示字段' },
-      { name: 'type', type: 'string', required: false, description: 'info | action，默认 info（action 类未来会触发暖橙光点）' },
+      { name: 'title', type: 'string', required: true, description: '标题' },
+      { name: 'type', type: 'string', required: false, description: 'info | action，默认 info' },
       { name: 'severity', type: 'string', required: false, description: 'info | warning | error，默认 info' },
       { name: 'body', type: 'string', required: false, description: '正文/详情' },
-      { name: 'key', type: 'string', required: false, description: '同 source 内的去重键（阶段 2 才启用）' },
+      { name: 'key', type: 'string', required: false, description: '同 source 内的去重键' },
       { name: 'metadata', type: 'object', required: false, description: '任意扩展 JSON' },
     ],
     example: {
@@ -52,6 +65,124 @@ export function activate(): void {
         deduped: result.deduped,
       });
       return result;
+    },
+  });
+
+  // reminder.ask —— 阻塞式确认
+  registerCommand({
+    command: 'reminder.ask',
+    timeoutMs: (MAX_ASK_TIMEOUT_SEC + 30) * 1000,
+    description: '推送一条待响应提醒并阻塞等待用户在面板上选择按钮；超时非 0 退出',
+    params: [
+      { name: 'source', type: 'string', required: true, description: '发起方，如 codex / claude' },
+      { name: 'title', type: 'string', required: true, description: '标题' },
+      { name: 'actions', type: 'object', required: true, description: '按钮数组：[{id,label,style?,requiresReason?}]' },
+      { name: 'severity', type: 'string', required: false, description: 'info | warning | error，默认 info' },
+      { name: 'body', type: 'string', required: false, description: '正文/详情' },
+      { name: 'key', type: 'string', required: false, description: '同 source 内的去重键（命中会覆盖上一位等待者）' },
+      { name: 'metadata', type: 'object', required: false, description: '任意扩展 JSON' },
+      { name: 'timeoutSec', type: 'number', required: false, description: `等待秒数，默认 ${DEFAULT_ASK_TIMEOUT_SEC}，上限 ${MAX_ASK_TIMEOUT_SEC}` },
+    ],
+    example: {
+      source: 'claude',
+      title: '确认删除 /tmp/old-cache？',
+      severity: 'warning',
+      actions: [
+        { id: 'approve', label: '允许', style: 'primary' },
+        { id: 'deny', label: '拒绝', style: 'danger', requiresReason: true },
+      ],
+    },
+    handler: async (args): Promise<AskReminderResult> => {
+      const input = args as unknown as AskReminderInput;
+      const timeoutSec = clampTimeout(input.timeoutSec);
+      const { reminder, deduped, supersededId } = api.createAsk({
+        ...input,
+        actions: input.actions as ReminderAction[],
+      });
+
+      if (deduped && supersededId) {
+        // 通知等待中的旧 CLI：这个位置已被新的 ask 顶替
+        fulfillWaiter(supersededId, { kind: 'superseded' });
+      }
+
+      bus.emit('reminder:changed', {
+        reason: 'ask',
+        type: 'action',
+        deduped,
+      });
+
+      const outcome = await registerWaiter(reminder.id, timeoutSec * 1000, () => {
+        // 超时：把这条卡片翻成 dismissed，避免面板一直挂着一个死按钮
+        try {
+          const current = api.get(reminder.id);
+          if (current && current.status === 'active') {
+            api.dismiss(reminder.id);
+            bus.emit('reminder:changed', { reason: 'dismiss', type: 'action', deduped: false });
+          }
+        } catch (err) {
+          console.error('[reminder] ask 超时清理失败:', err);
+        }
+      });
+
+      if (outcome.kind === 'responded') {
+        return {
+          status: 'responded',
+          reminderId: reminder.id,
+          actionId: outcome.response.actionId,
+          reason: outcome.response.reason ?? null,
+          respondedAt: outcome.response.respondedAt,
+        };
+      }
+      if (outcome.kind === 'superseded') {
+        return { status: 'superseded', reminderId: reminder.id };
+      }
+      if (outcome.kind === 'dismissed') {
+        return { status: 'dismissed', reminderId: reminder.id };
+      }
+      return { status: 'timeout', reminderId: reminder.id };
+    },
+  });
+
+  // reminder.respond —— 供脚本/测试直接落响应
+  registerCommand({
+    command: 'reminder.respond',
+    description: '为一条 active 的 ask 提交响应（面板也走同一底层 API）',
+    params: [
+      { name: 'id', type: 'string', required: true, description: 'reminder id' },
+      { name: 'actionId', type: 'string', required: true, description: 'actions 中定义的按钮 id' },
+      { name: 'reason', type: 'string', required: false, description: '理由；若按钮 requiresReason=true 则必填' },
+    ],
+    example: { id: 'rem_xxxx', actionId: 'approve' },
+    handler: (args) => {
+      const reminder = api.respond(args as unknown as RespondReminderInput);
+      // 用户 CLI 走的这条，同样要唤醒挂着的 ask
+      if (reminder.response) {
+        fulfillWaiter(reminder.id, { kind: 'responded', response: reminder.response });
+      }
+      bus.emit('reminder:changed', {
+        reason: 'respond',
+        type: reminder.type,
+        deduped: false,
+      });
+      return reminder;
+    },
+  });
+
+  // reminder.dismiss —— 主动忽略一条 active 提醒
+  registerCommand({
+    command: 'reminder.dismiss',
+    description: '忽略一条 active 提醒；若该条正在被 ask 阻塞等待，等待端会以 dismissed 状态退出',
+    params: [{ name: 'id', type: 'string', required: true, description: 'reminder id' }],
+    example: { id: 'rem_xxxx' },
+    handler: (args) => {
+      const reminder = api.dismiss(String(args.id));
+      fulfillWaiter(reminder.id, { kind: 'dismissed' });
+      bus.emit('reminder:changed', {
+        reason: 'dismiss',
+        type: reminder.type,
+        deduped: false,
+      });
+      return reminder;
     },
   });
 
@@ -89,6 +220,12 @@ export function activate(): void {
   });
 
   bus.emit('reminder:activated', { version: manifest.version });
+}
+
+function clampTimeout(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_ASK_TIMEOUT_SEC;
+  return Math.min(Math.max(Math.floor(n), 1), MAX_ASK_TIMEOUT_SEC);
 }
 
 export function deactivate(): void {

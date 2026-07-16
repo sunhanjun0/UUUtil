@@ -21,7 +21,7 @@ export interface PluginLike {
 
 export type PluginLifecyclePayload = { version: string };
 export type ReminderChangedPayload = {
-  reason: 'notify';
+  reason: 'notify' | 'ask' | 'respond' | 'dismiss';
   type: 'info' | 'action';
   deduped: boolean;
 };

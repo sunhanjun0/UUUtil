@@ -18,6 +18,7 @@ import type {
   ListRemindersOptions,
   Reminder,
   ReminderUpdatePayload,
+  RespondReminderInput,
   FieRunDetail,
   FieRunSummary,
   IngestBatchResult,
@@ -110,6 +111,8 @@ export interface AssistantApi {
   reminder: {
     list: (options?: ListRemindersOptions) => Promise<Reminder[]>;
     get: (id: string) => Promise<Reminder | null>;
+    respond: (input: RespondReminderInput) => Promise<Reminder>;
+    dismiss: (id: string) => Promise<Reminder>;
     onUpdate: (callback: (payload: ReminderUpdatePayload) => void) => () => void;
   };
 

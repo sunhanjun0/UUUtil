@@ -64,6 +64,8 @@ const assistantApi: AssistantApi = {
   reminder: {
     list: (options) => ipcRenderer.invoke('reminder:list', options),
     get: (id) => ipcRenderer.invoke('reminder:get', id),
+    respond: (input) => ipcRenderer.invoke('reminder:respond', input),
+    dismiss: (id) => ipcRenderer.invoke('reminder:dismiss', id),
     onUpdate: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         try { callback(payload as any); } catch { /* 忽略消费方异常 */ }

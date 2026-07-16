@@ -90,7 +90,13 @@ function request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<
 
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host: HOST, port, path, method, headers: payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {} },
+      {
+        host: HOST,
+        port,
+        path,
+        method,
+        headers: payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {},
+      },
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
@@ -114,6 +120,19 @@ function request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<
     if (payload) req.write(payload);
     req.end();
   });
+}
+
+function exitCodeForCall(command: string, res: CliResponse): number {
+  if (!res.ok) return 1;
+  // reminder.ask 用 data.status 区分终态；其他命令一律 0
+  if (command === 'reminder.ask' && res.data && typeof res.data === 'object') {
+    const status = (res.data as { status?: string }).status;
+    if (status === 'responded') return 0;
+    if (status === 'timeout') return 2;
+    if (status === 'dismissed') return 3;
+    if (status === 'superseded') return 4;
+  }
+  return 0;
 }
 
 async function main(): Promise<void> {
@@ -166,7 +185,7 @@ async function main(): Promise<void> {
       }
       const res = await httpPost('/cmd', { command, args });
       print(res);
-      process.exit(res.ok ? 0 : 1);
+      process.exit(exitCodeForCall(command, res));
     }
 
     fail('unknown_subcommand', `未知子命令：${sub}`);

@@ -331,6 +331,23 @@ export type ReminderSeverity = 'info' | 'warning' | 'error';
 /** 提醒状态。阶段 1 只会出现 active；done/dismissed 待后续阶段接入。 */
 export type ReminderStatus = 'active' | 'done' | 'dismissed';
 
+/** ask 类型提醒可以带一组按钮，供面板/CLI 联动响应。 */
+export interface ReminderAction {
+  id: string;
+  label: string;
+  /** default | primary | danger，仅用于按钮视觉。 */
+  style?: 'default' | 'primary' | 'danger';
+  /** 是否要求填写理由（面板会展开 textarea）。 */
+  requiresReason?: boolean;
+}
+
+/** 用户响应 ask 后写入的结果快照。 */
+export interface ReminderResponse {
+  actionId: string;
+  reason?: string;
+  respondedAt: string;
+}
+
 /** 一条提醒对象（面板/CLI 读取时返回）。 */
 export interface Reminder {
   id: string;
@@ -345,6 +362,10 @@ export interface Reminder {
   updatedAt: string;
   doneAt: string | null;
   metadata: Record<string, unknown> | null;
+  /** 仅 ask 类型可能有；notify 直接为 null。 */
+  actions: ReminderAction[] | null;
+  /** 已响应 / 已忽略后才有值。 */
+  response: ReminderResponse | null;
 }
 
 /** 创建一条提醒的入参。 */
@@ -370,11 +391,53 @@ export interface CreateReminderResult {
   deduped: boolean;
 }
 
+/** ask 命令入参。type 强制为 action，`actions` 必填。 */
+export interface AskReminderInput {
+  source: string;
+  title: string;
+  actions: ReminderAction[];
+  severity?: ReminderSeverity;
+  body?: string;
+  key?: string;
+  metadata?: Record<string, unknown>;
+  /** 阻塞等待秒数，默认 300，上限 3600。 */
+  timeoutSec?: number;
+}
+
+/** ask 命令的三种终态返回。 */
+export type AskReminderResult =
+  | {
+      status: 'responded';
+      reminderId: string;
+      actionId: string;
+      reason: string | null;
+      respondedAt: string;
+    }
+  | {
+      status: 'timeout';
+      reminderId: string;
+    }
+  | {
+      status: 'superseded';
+      reminderId: string;
+    }
+  | {
+      status: 'dismissed';
+      reminderId: string;
+    };
+
+/** respond 命令入参，也用于面板 IPC。 */
+export interface RespondReminderInput {
+  id: string;
+  actionId: string;
+  reason?: string;
+}
+
 /** 主进程 → 渲染进程的 reminder 变更事件负载。 */
 export interface ReminderUpdatePayload {
   activeActionCount: number;
   lastInfoAt: string | null;
-  reason: 'notify';
+  reason: 'notify' | 'ask' | 'respond' | 'dismiss';
   type: ReminderType;
   deduped: boolean;
 }
@@ -382,6 +445,9 @@ export interface ReminderUpdatePayload {
 /** reminder 插件对外 API。 */
 export interface ReminderApi {
   create(input: CreateReminderInput): CreateReminderResult;
+  createAsk(input: AskReminderInput): { reminder: Reminder; deduped: boolean; supersededId: string | null };
+  respond(input: RespondReminderInput): Reminder;
+  dismiss(id: string): Reminder;
   list(options?: ListRemindersOptions): Reminder[];
   get(id: string): Reminder | null;
   countActiveActions(): number;

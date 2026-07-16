@@ -30,6 +30,8 @@ export interface CommandDefinition {
   example?: Record<string, unknown>;
   /** 实际执行体，返回值即命令结果 data */
   handler: (args: Record<string, unknown>) => Promise<unknown> | unknown;
+  /** 可选：覆盖默认超时（ms）。阻塞式命令（如 reminder.ask）应放大。 */
+  timeoutMs?: number;
 }
 
 /** 命令执行结果，序列化后即 CLI 拿到的 JSON。 */
@@ -90,7 +92,7 @@ function validateArgs(def: CommandDefinition, args: Record<string, unknown>): st
 export async function invokeCommand(
   command: string,
   args: Record<string, unknown> = {},
-  timeoutMs = DEFAULT_TIMEOUT,
+  timeoutMs?: number,
 ): Promise<CommandResult> {
   const def = commands.get(command);
   if (!def) {
@@ -104,12 +106,13 @@ export async function invokeCommand(
     return { ok: false, error: { code: 'invalid_args', message: invalid } };
   }
 
+  const effectiveTimeout = timeoutMs ?? def.timeoutMs ?? DEFAULT_TIMEOUT;
   const startedAt = Date.now();
   try {
     const data = await Promise.race([
       Promise.resolve(def.handler(args)),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('命令执行超时')), timeoutMs),
+        setTimeout(() => reject(new Error('命令执行超时')), effectiveTimeout),
       ),
     ]);
     logInfo('command', 'command_completed', { command, durationMs: Date.now() - startedAt });
