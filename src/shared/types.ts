@@ -364,9 +364,25 @@ export interface ListRemindersOptions {
   limit?: number;
 }
 
+/** create 返回值：包含实际写入 / 复用的 reminder，以及是否命中去重。 */
+export interface CreateReminderResult {
+  reminder: Reminder;
+  deduped: boolean;
+}
+
+/** 主进程 → 渲染进程的 reminder 变更事件负载。 */
+export interface ReminderUpdatePayload {
+  activeActionCount: number;
+  lastInfoAt: string | null;
+  reason: 'notify';
+  type: ReminderType;
+  deduped: boolean;
+}
+
 /** reminder 插件对外 API。 */
 export interface ReminderApi {
-  create(input: CreateReminderInput): Reminder;
+  create(input: CreateReminderInput): CreateReminderResult;
   list(options?: ListRemindersOptions): Reminder[];
   get(id: string): Reminder | null;
+  countActiveActions(): number;
 }

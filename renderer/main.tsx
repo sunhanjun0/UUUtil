@@ -182,7 +182,6 @@ if (!window.assistant) {
     openLogsDir: () => console.log('[mock] openLogsDir'),
     getLogPath: () => '/tmp/mock.log',
     readRecentLogs: async (lines?: number) => [],
-    getLatestMcpActivity: async () => null,
     clearLogs: async () => {},
     takeScreenshot: async () => {
       console.log('[mock] takeScreenshot');
@@ -196,6 +195,11 @@ if (!window.assistant) {
       getRun: async () => ({ ok: false, error: 'mock: run_not_found' }),
       trend: async () => ({ ok: true, data: [] }),
       health: async () => ({ ok: true, data: { ok: true, service: 'mock-fie' } }),
+    },
+    reminder: {
+      list: async () => [],
+      get: async () => null,
+      onUpdate: () => () => {},
     },
   };
 }

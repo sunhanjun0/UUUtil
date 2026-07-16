@@ -64,6 +64,13 @@ const assistantApi: AssistantApi = {
   reminder: {
     list: (options) => ipcRenderer.invoke('reminder:list', options),
     get: (id) => ipcRenderer.invoke('reminder:get', id),
+    onUpdate: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        try { callback(payload as any); } catch { /* 忽略消费方异常 */ }
+      };
+      ipcRenderer.on('reminder:update', listener);
+      return () => ipcRenderer.removeListener('reminder:update', listener);
+    },
   },
 
   // AI 核心 API
@@ -137,7 +144,6 @@ const assistantApi: AssistantApi = {
   openLogsDir: () => ipcRenderer.invoke('core:logs:open-dir'),
   getLogPath: () => ipcRenderer.invoke('core:logs:get-path'),
   readRecentLogs: (lines?: number) => ipcRenderer.invoke('core:logs:recent', lines),
-  getLatestMcpActivity: () => ipcRenderer.invoke('core:logs:latest-mcp-activity'),
   clearLogs: () => ipcRenderer.invoke('core:logs:clear'),
   takeScreenshot: () => ipcRenderer.invoke('screenshot:take'),
 };

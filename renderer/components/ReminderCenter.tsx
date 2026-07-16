@@ -74,10 +74,21 @@ export default function ReminderCenter() {
   }, [load]);
 
   useEffect(() => {
+    // 兜底轮询：即使事件通道断开也保证列表最终一致
     const timer = window.setInterval(() => {
       void load();
     }, 5000);
     return () => window.clearInterval(timer);
+  }, [load]);
+
+  useEffect(() => {
+    // 主进程广播的 reminder:update 事件到达时立即重载，无需等轮询
+    const unsubscribe = window.assistant.reminder.onUpdate?.(() => {
+      void load();
+    });
+    return () => {
+      unsubscribe?.();
+    };
   }, [load]);
 
   const selected = useMemo(() => items.find((it) => it.id === selectedId) ?? null, [items, selectedId]);

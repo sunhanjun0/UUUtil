@@ -77,52 +77,84 @@ button:active {
   box-shadow: none !important;
 }
 
-/* 悬浮球：MCP 活动提示光圈 */
-.ball-mcp-pulse::before,
-.ball-mcp-pulse::after {
+/* 悬浮球：提醒光点
+   - action（暖橙 #F59E0B）持续脉动，直到 activeActionCount 归零
+   - info（靛蓝 #3B82F6）单次淡出提示
+   两条 class 与 CSS 变量互相独立；同一时刻只可能激活其中一个。 */
+.ball-reminder-action::before,
+.ball-reminder-action::after {
   content: "";
   position: absolute;
   inset: -6px;
   border-radius: 999px;
   opacity: 0;
   pointer-events: none;
-  border: 2px solid rgba(56, 189, 248, 0.82);
-  box-shadow: 0 0 14px rgba(56, 189, 248, 0.68), 0 0 26px rgba(34, 197, 94, 0.34);
+  border: 2px solid rgba(245, 158, 11, 0.85);
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.75), 0 0 26px rgba(245, 158, 11, 0.35);
 }
 
-.ball-mcp-pulse.is-active::before {
-  animation: uuutil-mcp-pulse-ring 1.05s ease-out 3;
+.ball-reminder-action.is-active::before {
+  animation: uuutil-reminder-action-ring 1.6s ease-out infinite;
 }
 
-.ball-mcp-pulse.is-active::after {
-  animation: uuutil-mcp-pulse-ring 1.05s ease-out 3;
-  animation-delay: 0.18s;
+.ball-reminder-action.is-active::after {
+  animation: uuutil-reminder-action-ring 1.6s ease-out infinite;
+  animation-delay: 0.5s;
 }
 
-.ball-mcp-pulse.is-active {
-  animation: uuutil-mcp-pulse-core 0.7s ease-in-out 4;
+.ball-reminder-action.is-active {
+  animation: uuutil-reminder-action-core 1.6s ease-in-out infinite;
 }
 
-@keyframes uuutil-mcp-pulse-ring {
+.ball-reminder-info::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  border: 2px solid rgba(59, 130, 246, 0.85);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.7);
+}
+
+.ball-reminder-info.is-active::before {
+  animation: uuutil-reminder-info-ring 1.8s ease-out 1;
+}
+
+@keyframes uuutil-reminder-action-ring {
   0% {
-    opacity: 0.95;
-    transform: scale(0.86);
+    opacity: 0.9;
+    transform: scale(0.9);
   }
-  62% {
-    opacity: 0.26;
+  70% {
+    opacity: 0.15;
   }
   100% {
     opacity: 0;
-    transform: scale(1.48);
+    transform: scale(1.5);
   }
 }
 
-@keyframes uuutil-mcp-pulse-core {
+@keyframes uuutil-reminder-action-core {
   0%, 100% {
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
   }
   50% {
-    transform: scale(1.08);
-    box-shadow: 0 0 16px rgba(56, 189, 248, 0.95), 0 0 30px rgba(34, 197, 94, 0.56);
+    transform: scale(1.05);
+    box-shadow: 0 0 18px rgba(245, 158, 11, 0.95), 0 0 30px rgba(245, 158, 11, 0.5);
+  }
+}
+
+@keyframes uuutil-reminder-info-ring {
+  0% {
+    opacity: 0.95;
+    transform: scale(0.88);
+  }
+  70% {
+    opacity: 0.25;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
   }
 }

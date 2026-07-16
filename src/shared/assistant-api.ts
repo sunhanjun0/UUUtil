@@ -17,6 +17,7 @@ import type {
   FieResult,
   ListRemindersOptions,
   Reminder,
+  ReminderUpdatePayload,
   FieRunDetail,
   FieRunSummary,
   IngestBatchResult,
@@ -30,12 +31,6 @@ import type {
   TrendPoint,
 } from './types';
 
-export interface McpActivitySummary {
-  time: string;
-  message: string;
-  tool?: string;
-  level: 'debug' | 'info' | 'warn' | 'error';
-}
 
 export interface WhiteboardAttachmentInput {
   name: string;
@@ -115,6 +110,7 @@ export interface AssistantApi {
   reminder: {
     list: (options?: ListRemindersOptions) => Promise<Reminder[]>;
     get: (id: string) => Promise<Reminder | null>;
+    onUpdate: (callback: (payload: ReminderUpdatePayload) => void) => () => void;
   };
 
   ai: {
@@ -154,7 +150,6 @@ export interface AssistantApi {
   openLogsDir: () => Promise<SuccessResult>;
   getLogPath: () => Promise<string | null>;
   readRecentLogs: (lines?: number) => Promise<string[]>;
-  getLatestMcpActivity: () => Promise<McpActivitySummary | null>;
   clearLogs: () => Promise<SuccessResult>;
 }
 

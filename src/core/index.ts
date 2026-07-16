@@ -4,7 +4,7 @@
 export { bus } from './event-bus';
 export { initDatabase, getDatabase, closeDatabase, autoSave, flushDatabase, reloadDatabaseIfChanged } from './db';
 export { loadAllPlugins, listPlugins, getPluginCount } from './plugin-loader';
-export { initLogger, initLoggerAt, closeLogger, debug, info, warn, error, openLogsDir, getLogPath, readRecentLogs, getLatestMcpActivity, clearLogs } from './logger';
+export { initLogger, initLoggerAt, closeLogger, debug, info, warn, error, openLogsDir, getLogPath, readRecentLogs, clearLogs } from './logger';
 export {
   initAi,
   listAiProviders,

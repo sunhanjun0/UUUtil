@@ -39,12 +39,12 @@ export default function App({ role }: Props) {
   const [flipped, setFlipped] = useState(false);
   const [timeStr, setTimeStr] = useState('');
   const [showToolbar, setShowToolbar] = useState(false);
-  const [mcpPulseActive, setMcpPulseActive] = useState(false);
+  const [reminderVisual, setReminderVisual] = useState<'idle' | 'info' | 'action'>('idle');
   const dragging = useRef(false);
   const didDrag = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
-  const lastMcpActivityTime = useRef<string | null>(null);
-  const mcpPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const infoFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastInfoAtRef = useRef<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('uuutil:frosted-panel', frostedPanel ? '1' : '0');
@@ -103,42 +103,43 @@ export default function App({ role }: Props) {
     };
   }, [role]);
 
-  // MCP 独立进程写入日志后，悬浮球通过轻量轮询播放活动提示。
+  // 提醒变更：主进程通过 reminder:update 事件推送，悬浮球据此驱动两色光点状态机。
   useEffect(() => {
     if (role !== 'ball') return;
-
     let disposed = false;
 
-    async function checkMcpActivity() {
+    async function primeState() {
       try {
-        const activity = await window.assistant.getLatestMcpActivity();
-        if (!activity || disposed) return;
-
-        if (lastMcpActivityTime.current === null) {
-          lastMcpActivityTime.current = activity.time;
-          return;
-        }
-
-        if (activity.time !== lastMcpActivityTime.current) {
-          lastMcpActivityTime.current = activity.time;
-          setMcpPulseActive(false);
-          window.setTimeout(() => setMcpPulseActive(true), 20);
-
-          if (mcpPulseTimer.current) clearTimeout(mcpPulseTimer.current);
-          mcpPulseTimer.current = setTimeout(() => setMcpPulseActive(false), 2600);
-        }
-      } catch {
-        // 浏览器 mock 或日志暂不可读时忽略，不能影响悬浮球。
-      }
+        const list = await window.assistant.reminder.list({ status: 'active', limit: 200 });
+        if (disposed) return;
+        const hasAction = (list ?? []).some((r) => r.type === 'action');
+        setReminderVisual(hasAction ? 'action' : 'idle');
+      } catch { /* 忽略初始化失败 */ }
     }
+    void primeState();
 
-    checkMcpActivity();
-    const intervalTimer = window.setInterval(checkMcpActivity, 1200);
+    const unsubscribe = window.assistant.reminder.onUpdate?.((payload) => {
+      if (disposed) return;
+      if (payload.activeActionCount > 0) {
+        setReminderVisual('action');
+        return;
+      }
+      if (payload.type === 'info' && payload.lastInfoAt && payload.lastInfoAt !== lastInfoAtRef.current) {
+        lastInfoAtRef.current = payload.lastInfoAt;
+        setReminderVisual('info');
+        if (infoFlashTimer.current) clearTimeout(infoFlashTimer.current);
+        infoFlashTimer.current = setTimeout(() => {
+          setReminderVisual((prev) => (prev === 'info' ? 'idle' : prev));
+        }, 1800);
+        return;
+      }
+      setReminderVisual('idle');
+    });
 
     return () => {
       disposed = true;
-      window.clearInterval(intervalTimer);
-      if (mcpPulseTimer.current) clearTimeout(mcpPulseTimer.current);
+      if (infoFlashTimer.current) clearTimeout(infoFlashTimer.current);
+      unsubscribe?.();
     };
   }, [role]);
 
@@ -253,11 +254,23 @@ export default function App({ role }: Props) {
         </div>
 
         <div
-          className={mcpPulseActive ? 'ball-mcp-pulse is-active' : 'ball-mcp-pulse'}
+          className={
+            reminderVisual === 'action'
+              ? 'ball-reminder-action is-active'
+              : reminderVisual === 'info'
+                ? 'ball-reminder-info is-active'
+                : ''
+          }
           style={ballStyles.glowRing}
           onMouseDown={handleMouseDown}
           onClick={handleExpand}
-          title={mcpPulseActive ? 'MCP 刚刚被调用' : '展开面板'}
+          title={
+            reminderVisual === 'action'
+              ? '有待处理提醒，点击查看'
+              : reminderVisual === 'info'
+                ? '收到新提醒'
+                : '展开面板'
+          }
         >
           <div style={{
             ...ballStyles.flipContainer,

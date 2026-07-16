@@ -44,7 +44,15 @@ export function activate(): void {
       title: '构建完成',
       body: 'main 分支构建成功，耗时 42s',
     },
-    handler: (args) => api.create(args as unknown as CreateReminderInput),
+    handler: (args) => {
+      const result = api.create(args as unknown as CreateReminderInput);
+      bus.emit('reminder:changed', {
+        reason: 'notify',
+        type: result.reminder.type,
+        deduped: result.deduped,
+      });
+      return result;
+    },
   });
 
   // reminder.list —— 列出提醒

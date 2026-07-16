@@ -20,6 +20,11 @@ export interface PluginLike {
 }
 
 export type PluginLifecyclePayload = { version: string };
+export type ReminderChangedPayload = {
+  reason: 'notify';
+  type: 'info' | 'action';
+  deduped: boolean;
+};
 export type CalculatorResultPayload = { expression: string; result: string };
 export type HelloWorldGreetedPayload = { name: string; greeting: string };
 export type ActionResultPayload<T = unknown> = { action: string; result: T };
@@ -69,6 +74,7 @@ export interface AppEventMap {
 
   'reminder:activated': [PluginLifecyclePayload];
   'reminder:deactivated': [];
+  'reminder:changed': [ReminderChangedPayload];
 }
 
 export type AppEventName = keyof AppEventMap;

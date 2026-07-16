@@ -11,7 +11,6 @@ import {
   openLogsDir,
   getLogPath,
   readRecentLogs,
-  getLatestMcpActivity,
   clearLogs,
 } from '../../core';
 
@@ -28,7 +27,6 @@ export const logsIpc: IpcModule = {
     defineInvoke('core:logs:open-dir', () => ({ success: openLogsDir() })),
     defineInvoke('core:logs:get-path', () => getLogPath()),
     defineInvoke('core:logs:recent', (_event, lines?: number) => readRecentLogs(lines)),
-    defineInvoke('core:logs:latest-mcp-activity', () => getLatestMcpActivity()),
     defineInvoke('core:logs:clear', () => ({ success: clearLogs() })),
   ],
 };

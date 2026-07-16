@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, autoSave } from '../../core/db';
 import type {
   CreateReminderInput,
+  CreateReminderResult,
   ListRemindersOptions,
   Reminder,
   ReminderApi,
@@ -90,55 +91,95 @@ function mapRow(row: unknown[]): Reminder {
 }
 
 export const api: ReminderApi = {
-  create(input: CreateReminderInput): Reminder {
+  create(input: CreateReminderInput): CreateReminderResult {
     if (!input || typeof input.source !== 'string' || !input.source.trim()) {
       throw new Error('source 必填');
     }
     if (typeof input.title !== 'string' || !input.title.trim()) {
       throw new Error('title 必填');
     }
+    const source = input.source.trim();
+    const key = input.key ? input.key.trim() : null;
     const type: ReminderType = input.type && VALID_TYPES.includes(input.type) ? input.type : 'info';
     const severity: ReminderSeverity =
       input.severity && VALID_SEVERITIES.includes(input.severity) ? input.severity : 'info';
+    const title = input.title.trim();
+    const body = input.body ?? null;
+    const metadataJson = input.metadata ? JSON.stringify(input.metadata) : null;
+    const now = new Date().toISOString();
+
+    // 去重：同 source+key 存在 active 记录时，更新而不是新增
+    if (key) {
+      const existingRows = selectRows(
+        `SELECT id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json
+         FROM plugin_reminder_items
+         WHERE source = ? AND key = ? AND status = 'active'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [source, key],
+      );
+      if (existingRows.length > 0) {
+        const existing = mapRow(existingRows[0]);
+        const db = getDatabase();
+        db.run(
+          `UPDATE plugin_reminder_items
+             SET type = ?, severity = ?, title = ?, body = ?, metadata_json = ?, updated_at = ?
+           WHERE id = ?`,
+          [type, severity, title, body, metadataJson, now, existing.id],
+        );
+        autoSave();
+        return {
+          reminder: {
+            ...existing,
+            type,
+            severity,
+            title,
+            body,
+            metadata: input.metadata ?? null,
+            updatedAt: now,
+          },
+          deduped: true,
+        };
+      }
+    }
 
     const id = `rem_${uuidv4()}`;
-    const now = new Date().toISOString();
-    const metadataJson = input.metadata ? JSON.stringify(input.metadata) : null;
-
     const db = getDatabase();
     db.run(
       `INSERT INTO plugin_reminder_items
        (id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NULL, ?)`,
-      [
-        id,
-        input.source.trim(),
-        input.key ? input.key.trim() : null,
-        type,
-        severity,
-        input.title.trim(),
-        input.body ? input.body : null,
-        now,
-        now,
-        metadataJson,
-      ],
+      [id, source, key, type, severity, title, body, now, now, metadataJson],
     );
     autoSave();
 
     return {
-      id,
-      source: input.source.trim(),
-      key: input.key ? input.key.trim() : null,
-      type,
-      severity,
-      title: input.title.trim(),
-      body: input.body ?? null,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-      doneAt: null,
-      metadata: input.metadata ?? null,
+      reminder: {
+        id,
+        source,
+        key,
+        type,
+        severity,
+        title,
+        body,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+        doneAt: null,
+        metadata: input.metadata ?? null,
+      },
+      deduped: false,
     };
+  },
+
+  countActiveActions(): number {
+    const rows = selectRows(
+      `SELECT COUNT(*) FROM plugin_reminder_items WHERE type = 'action' AND status = 'active'`,
+    );
+    const row = rows[0];
+    if (!row) return 0;
+    const n = Number(row[0]);
+    return Number.isFinite(n) ? n : 0;
   },
 
   list(options?: ListRemindersOptions): Reminder[] {
