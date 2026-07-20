@@ -7,6 +7,18 @@
 
 import { app, globalShortcut } from 'electron';
 import path from 'path';
+
+// 父进程（例如 concurrently）可能提前退出，留下孤儿主进程；此时任何往 stdout/stderr
+// 的写入都会抛 EPIPE，经由 Node 冒泡触发 Electron 的 uncaughtException 弹窗。
+// 这里给两条流各挂一个静默 error 监听，把管道断开的情况吞掉，日志文件不受影响。
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    if (err && err.code !== 'EPIPE') {
+      // 非 EPIPE 的写错误依然让 Electron 感知，但也不再让它当致命异常
+      try { process.stderr.write(`[stream-error] ${err.message}\n`); } catch { /* 二次 EPIPE 忽略 */ }
+    }
+  });
+}
 import {
   initDatabase,
   closeDatabase,

@@ -118,16 +118,20 @@ function writeLog(level: LogLevel, scope: string, message: string, meta?: Record
     });
   }
 
-  // 开发模式也输出到控制台
+  // 开发模式也输出到控制台。stdout/stderr 管道可能已经断开（例如父进程 concurrently
+  // 早退，只剩孤儿主进程），此时直写会抛 EPIPE 冒泡到 Electron 的 uncaughtException 弹窗，
+  // 因此这里整体套 try/catch 静默丢弃，日志文件的落盘不受影响。
   if (process.env.NODE_ENV === 'development') {
     const prefix = `[${entry.time}] [${level.toUpperCase()}] [${scope}]`;
-    if (level === 'error') {
-      console.error(prefix, message, meta || '');
-    } else if (level === 'warn') {
-      console.warn(prefix, message, meta || '');
-    } else {
-      console.log(prefix, message, meta || '');
-    }
+    try {
+      if (level === 'error') {
+        console.error(prefix, message, meta || '');
+      } else if (level === 'warn') {
+        console.warn(prefix, message, meta || '');
+      } else {
+        console.log(prefix, message, meta || '');
+      }
+    } catch { /* pipe closed / EPIPE 等，忽略 */ }
   }
 }
 
