@@ -472,6 +472,16 @@ export const api: ReminderApi = {
 
     const actionsJson = input.actions ? JSON.stringify(input.actions) : null;
     const metadataJson = input.metadata ? JSON.stringify(input.metadata) : null;
+    // SQL bind 不接受 undefined，全部显式转 null
+    const safeInput = {
+      agentId: input.agentId ? String(input.agentId) : null,
+      topic: input.topic ? String(input.topic) : null,
+      stage: input.stage ? String(input.stage) : null,
+      priority: input.priority ? String(input.priority) : null,
+      project: input.project ? String(input.project) : null,
+      title: String(input.title),
+      body: input.body ? String(input.body) : null,
+    };
     const db = getDatabase();
 
     if (existing) {
