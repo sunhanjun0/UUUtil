@@ -27,7 +27,7 @@ const VALID_TYPES: ReminderType[] = ['info', 'action'];
 const VALID_SEVERITIES: ReminderSeverity[] = ['info', 'warning', 'error'];
 const VALID_STATUSES: ReminderStatus[] = ['active', 'done', 'dismissed'];
 
-const SELECT_COLS =
+const SELECT_COLS = "id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json, actions_json, response_json, agent_id, topic, stage, priority, project, history_json";
   'id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json, actions_json, response_json';
 
 /** 初始化提醒表；由插件 activate 时在 core:ready 之后调用一次。 */
@@ -448,7 +448,13 @@ export const api: ReminderApi = {
 
   agentUpdate(input: any) {
     const now = new Date().toISOString();
-    const existing = this.agentQuery(input.topic);
+    const existing = (() => {
+    const rows = selectRows(
+      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
+      [input.topic],
+    );
+    return rows.length ? mapRow(rows[0]) : null;
+  })();
 
     let history: any[] = [];
     if (existing && existing.history) {
@@ -482,23 +488,35 @@ export const api: ReminderApi = {
       );
       autoSave();
 
-      const waiter = this._agentWaiters.get(input.topic);
+      const waiter = new Map().get(input.topic);
       if (waiter) {
-        const updated = this.agentQuery(input.topic);
+        const updated = (() => {
+    const rows = selectRows(
+      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
+      [input.topic],
+    );
+    return rows.length ? mapRow(rows[0]) : null;
+  })();
         if (updated && updated.response) {
           clearTimeout(waiter.timer);
-          this._agentWaiters.delete(input.topic);
+          new Map().delete(input.topic);
           waiter.resolve(updated);
         }
       }
-      return this.agentQuery(input.topic)!;
+      return (() => {
+    const rows = selectRows(
+      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
+      [input.topic],
+    );
+    return rows.length ? mapRow(rows[0]) : null;
+  })()!;
     }
 
     const id = `rem_${uuidv4()}`;
     db.run(
       `INSERT INTO plugin_reminder_items
        (id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json, actions_json, response_json, agent_id, topic, stage, priority, project, history_json)
-       VALUES (?, ?, ?, 'action', ?, ?, ?, 'active', ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, 'action', ?, ?, ?, 'active', ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
       [
         id, input.agentId, input.topic,
         input.priority === 'high' ? 'warning' : 'info',
@@ -510,7 +528,13 @@ export const api: ReminderApi = {
       ],
     );
     autoSave();
-    return this.agentQuery(input.topic)!;
+    return (() => {
+    const rows = selectRows(
+      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
+      [input.topic],
+    );
+    return rows.length ? mapRow(rows[0]) : null;
+  })()!;
   },
 
   agentQuery(topic: string): any | null {
@@ -523,7 +547,13 @@ export const api: ReminderApi = {
   },
 
   agentClose(topic: string, result: 'done' | 'cancelled' | 'superseded'): any {
-    const existing = this.agentQuery(topic);
+    const existing = (() => {
+    const rows = selectRows(
+      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
+      [topic],
+    );
+    return rows.length ? mapRow(rows[0]) : null;
+  })();
     if (!existing) throw new Error(`topic 不存在: ${topic}`);
     const now = new Date().toISOString();
     const db = getDatabase();
@@ -534,27 +564,39 @@ export const api: ReminderApi = {
     );
     autoSave();
 
-    const waiter = this._agentWaiters.get(topic);
+    const waiter = new Map().get(topic);
     if (waiter) {
       clearTimeout(waiter.timer);
-      this._agentWaiters.delete(topic);
-      waiter.resolve(this.agentQuery(topic));
+      new Map().delete(topic);
+      waiter.resolve((() => {
+    const rows = selectRows(
+      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
+      [topic],
+    );
+    return rows.length ? mapRow(rows[0]) : null;
+  })());
     }
-    return this.agentQuery(topic)!;
+    return (() => {
+    const rows = selectRows(
+      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
+      [topic],
+    );
+    return rows.length ? mapRow(rows[0]) : null;
+  })()!;
   },
 
   _setAgentWaiter(topic: string, resolveFn: any, timeoutMs: number): void {
-    const existing = this._agentWaiters.get(topic);
+    const existing = new Map().get(topic);
     if (existing) clearTimeout(existing.timer);
 
     const timer = setTimeout(() => {
-      const w = this._agentWaiters.get(topic);
+      const w = new Map().get(topic);
       if (w && w.timer === timer) {
-        this._agentWaiters.delete(topic);
+        new Map().delete(topic);
         resolveFn(null);
       }
     }, timeoutMs);
 
-    this._agentWaiters.set(topic, { resolve: resolveFn, timer });
+    new Map().set(topic, { resolve: resolveFn, timer });
   },
 };

@@ -23,14 +23,11 @@ import {
   Bell,
   Bot,
   CheckCircle2,
-  ChevronDown,
   Clock,
   Folder,
   Info,
-  RefreshCw,
+  RefreshCw, ChevronDown,
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import type { Reminder, ReminderAction, ReminderSeverity, ReminderStatus, ReminderType } from '../../src/shared/types';
 
 const STATUS_OPTIONS: { value: ReminderStatus; label: string }[] = [
@@ -38,45 +35,6 @@ const STATUS_OPTIONS: { value: ReminderStatus; label: string }[] = [
   { value: 'done', label: '已完成' },
   { value: 'dismissed', label: '已忽略' },
 ];
-
-const STAGE_LABELS: Record<string, { label: string; color: string }> = {
-  propose: { label: '提议', color: 'blue' },
-  progress: { label: '进行中', color: 'orange' },
-  done: { label: '已完成', color: 'green' },
-  blocked: { label: '阻塞', color: 'red' },
-  info: { label: '信息', color: 'gray' },
-  stale: { label: '过期', color: 'gray' },
-};
-
-// Agent 提醒的 Markdown 内容渲染
-function AgentBodyMarkdown({ body }: { body: string }) {
-  return (
-    <Box
-      className="agent-markdown-content"
-      fontSize="sm"
-      sx={{
-        p: { my: 2 },
-        h1: { fontSize: '1.25rem', fontWeight: 'bold', my: 2 },
-        h2: { fontSize: '1.1rem', fontWeight: 'bold', my: 2 },
-        h3: { fontSize: '1rem', fontWeight: 'bold', my: 1 },
-        code: { bg: 'gray.100', px: 1, py: 0.5, borderRadius: 'sm', fontSize: '0.8em' },
-        pre: { bg: 'gray.800', color: 'white', p: 3, borderRadius: 'md', overflow: 'auto', my: 2, code: { bg: 'transparent' } },
-        ul: { pl: 4, my: 2 },
-        ol: { pl: 4, my: 2 },
-        li: { my: 0.5 },
-        blockquote: { borderLeft: '3px solid', borderColor: 'gray.300', pl: 3, color: 'gray.600', my: 2 },
-        table: { w: 'full', my: 2, borderCollapse: 'collapse' },
-        th: { border: '1px solid', borderColor: 'gray.200', p: 2, bg: 'gray.50', textAlign: 'left' },
-        td: { border: '1px solid', borderColor: 'gray.200', p: 2 },
-        a: { color: 'blue.500', textDecoration: 'underline' },
-      }}
-    >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-        {body}
-      </ReactMarkdown>
-    </Box>
-  );
-}
 
 function TypeDot({ type }: { type: ReminderType }) {
   const color = type === 'action' ? '#F59E0B' : '#3B82F6';
@@ -93,7 +51,7 @@ function TypeDot({ type }: { type: ReminderType }) {
   );
 }
 
-// Agent 标记：🤖 图标
+// Agent 标记
 function AgentBadge({ agentId, priority }: { agentId: string | null; priority: string | null }) {
   if (!agentId) return null;
   return (
@@ -136,7 +94,6 @@ export default function ReminderCenter() {
   const [items, setItems] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedHistoryIndex, setSelectedHistoryIndex] = useState<number>(0);
   const [projectFilter, setProjectFilter] = useState<string>('all');
 
   const load = useCallback(async () => {
@@ -152,7 +109,6 @@ export default function ReminderCenter() {
     }
   }, [status, projectFilter]);
 
-  // 提取所有项目用于筛选
   const projects = useMemo(() => {
     const set = new Set<string>();
     items.forEach((item) => {
@@ -163,34 +119,11 @@ export default function ReminderCenter() {
 
   const selected = useMemo(() => items.find((it) => it.id === selectedId) ?? null, [items, selectedId]);
 
-  // 选中项的历史版本（用于切换查看）
-  const selectedHistory = useMemo(() => {
-    if (!selected || !selected.history) return [];
-    return selected.history || [];
-  }, [selected]);
-
-  // 当前显示的历史版本（0 = 当前，1+ = 历史）
-  const displayVersion = useMemo(() => {
-    if (!selected) return null;
-    if (selectedHistoryIndex === 0) {
-      return { body: selected.body || '', stage: selected.stage, updatedAt: selected.updatedAt, isCurrent: true };
-    }
-    const historyItem = selectedHistory[selectedHistoryIndex - 1];
-    if (!historyItem) return null;
-    return { ...historyItem, isCurrent: false };
-  }, [selected, selectedHistoryIndex, selectedHistory]);
-
-  // 切换选中项时重置历史索引
-  useEffect(() => {
-    setSelectedHistoryIndex(0);
-  }, [selectedId]);
-
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    // 兜底轮询：即使事件通道断开也保证列表最终一致
     const timer = window.setInterval(() => {
       void load();
     }, 5000);
@@ -198,7 +131,6 @@ export default function ReminderCenter() {
   }, [load]);
 
   useEffect(() => {
-    // 主进程广播的 reminder:update 事件到达时立即重载，无需等轮询
     const unsubscribe = window.assistant.reminder.onUpdate?.(() => {
       void load();
     });
@@ -289,9 +221,13 @@ export default function ReminderCenter() {
                         </Text>
                       </HStack>
                       <HStack spacing={2}>
-                        {it.stage && STAGE_LABELS[it.stage] && (
-                          <Badge size="sm" variant="subtle" colorScheme={STAGE_LABELS[it.stage].color} fontSize="10px" px={1.5} py={0}>
-                            {STAGE_LABELS[it.stage].label}
+                        {it.stage && (
+                          <Badge size="sm" variant="subtle" colorScheme={
+                            it.stage === 'done' ? 'green' : 
+                            it.stage === 'blocked' ? 'red' : 
+                            it.stage === 'progress' ? 'orange' : 'blue'
+                          } fontSize="10px" px={1.5} py={0}>
+                            {it.stage}
                           </Badge>
                         )}
                         {!it.stage && <SeverityIcon severity={it.severity} />}
@@ -334,7 +270,7 @@ export default function ReminderCenter() {
             </Flex>
           ) : (
             <>
-              {/* 头部信息 */}
+              {/* 头部 */}
               <VStack align="stretch" spacing={2} p={3} borderBottomWidth="1px">
                 <Flex align="center" gap={2}>
                   <Heading size="sm">{selected.title}</Heading>
@@ -362,53 +298,14 @@ export default function ReminderCenter() {
                     </Badge>
                   )}
                 </HStack>
-
-                {/* 历史版本时间线 */}
-                {selectedHistory.length > 0 && (
-                  <Box>
-                    <Text fontSize="xs" color="gray.500" mb={1}>版本历史（点击切换）：</Text>
-                    <Flex gap={2} flexWrap="wrap">
-                      <Button
-                        key="current"
-                        size="xs"
-                        variant={selectedHistoryIndex === 0 ? 'solid' : 'outline'}
-                        colorScheme={selectedHistoryIndex === 0 ? 'blue' : 'gray'}
-                        onClick={() => setSelectedHistoryIndex(0)}
-                      >
-                        当前版本
-                      </Button>
-                      {Array.from({ length: selectedHistory.length }).map((_, i) => (
-                        <Button
-                          key={i}
-                          size="xs"
-                          variant={selectedHistoryIndex === i + 1 ? 'solid' : 'outline'}
-                          colorScheme={selectedHistoryIndex === i + 1 ? 'blue' : 'gray'}
-                          onClick={() => setSelectedHistoryIndex(i + 1)}
-                        >
-                          历史 #{i + 1}
-                        </Button>
-                      ))}
-                    </Flex>
-                  </Box>
-                )}
-
-                {!displayVersion?.isCurrent && displayVersion?.stage && STAGE_LABELS[displayVersion.stage] && (
-                  <Badge alignSelf="flex-start" variant="subtle" colorScheme={STAGE_LABELS[displayVersion.stage].color}>
-                    {STAGE_LABELS[displayVersion.stage].label}
-                  </Badge>
-                )}
               </VStack>
 
-              {/* 内容区域 */}
+              {/* 内容区域 - 简单的预格式化文本 */}
               <Box flex={1} overflow="auto" p={3}>
-                {displayVersion?.body ? (
-                  selected.agentId ? (
-                    <AgentBodyMarkdown body={displayVersion.body} />
-                  ) : (
-                    <Box whiteSpace="pre-wrap" fontSize="sm">
-                      {displayVersion.body}
-                    </Box>
-                  )
+                {selected.body ? (
+                  <Box fontSize="sm" whiteSpace="pre-wrap" fontFamily={selected.agentId ? 'monospace' : 'inherit'}>
+                    {selected.body}
+                  </Box>
                 ) : null}
               </Box>
 
@@ -424,17 +321,13 @@ export default function ReminderCenter() {
   );
 }
 
-interface ResponsePanelProps {
-  reminder: Reminder;
-}
-
 function buttonColorScheme(style?: ReminderAction['style']): string | undefined {
   if (style === 'primary') return 'blue';
   if (style === 'danger') return 'red';
   return undefined;
 }
 
-function ReminderResponsePanel({ reminder }: ResponsePanelProps) {
+function ReminderResponsePanel({ reminder }: { reminder: Reminder }) {
   const toast = useToast();
   const [pendingAction, setPendingAction] = useState<ReminderAction | null>(null);
   const [reason, setReason] = useState('');
@@ -483,7 +376,6 @@ function ReminderResponsePanel({ reminder }: ResponsePanelProps) {
     }
   }
 
-  // 已响应：展示响应摘要
   if (reminder.status === 'done' && reminder.response) {
     const label =
       reminder.actions?.find((a) => a.id === reminder.response!.actionId)?.label ?? reminder.response.actionId;
@@ -495,12 +387,10 @@ function ReminderResponsePanel({ reminder }: ResponsePanelProps) {
     );
   }
 
-  // 已忽略
   if (reminder.status === 'dismissed') {
     return <Text fontSize="sm" color="gray.500">已忽略 · {formatRelativeTime(reminder.doneAt ?? reminder.updatedAt)}</Text>;
   }
 
-  // 活跃但没有 actions（notify 类），只给一个忽略入口
   if (!reminder.actions || reminder.actions.length === 0) {
     if (reminder.type !== 'action') return null;
     return (
