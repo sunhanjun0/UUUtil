@@ -30,7 +30,9 @@ import {
 } from 'lucide-react';
 import type { Reminder, ReminderAction, ReminderSeverity, ReminderStatus, ReminderType } from '../../src/shared/types';
 
-const STATUS_OPTIONS: { value: ReminderStatus; label: string }[] = [
+// 筛选状态：增加 "全部" 选项
+const STATUS_OPTIONS: { value: ReminderStatus | 'all'; label: string }[] = [
+  { value: 'all', label: '全部' },
   { value: 'active', label: '活跃' },
   { value: 'done', label: '已完成' },
   { value: 'dismissed', label: '已忽略' },
@@ -90,7 +92,7 @@ function formatRelativeTime(iso: string): string {
 }
 
 export default function ReminderCenter() {
-  const [status, setStatus] = useState<ReminderStatus>('active');
+  const [status, setStatus] = useState<ReminderStatus | 'all'>('all');
   const [items, setItems] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -99,7 +101,9 @@ export default function ReminderCenter() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      let list = await window.assistant.reminder.list({ status, limit: 100 });
+      // status === 'all' 时不传过滤参数，返回全部
+      const filterStatus = status === 'all' ? undefined : status;
+      let list = await window.assistant.reminder.list({ status: filterStatus, limit: 100 });
       if (projectFilter !== 'all') {
         list = list.filter((item) => item.project === projectFilter);
       }
