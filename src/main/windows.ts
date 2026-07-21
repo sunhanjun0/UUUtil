@@ -107,7 +107,7 @@ function updatePanelShape(): void {
 export function createBallWindow(): void {
   const { workAreaSize } = screen.getPrimaryDisplay();
 
-  const x = savedBallPos?.x ?? workAreaSize.width - BALL_SIZE - 8;
+  const x = savedBallPos?.x ?? workAreaSize.width - 200;
   const y = savedBallPos?.y ?? Math.round(workAreaSize.height / 2 - BALL_SIZE / 2);
 
   ballWindow = new BrowserWindow({
