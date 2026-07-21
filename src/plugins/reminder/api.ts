@@ -528,13 +528,13 @@ export const api: ReminderApi = {
        (id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json, actions_json, response_json, agent_id, topic, stage, priority, project, history_json)
        VALUES (?, ?, ?, 'action', ?, ?, ?, 'active', ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
       [
-        id, input.agentId, input.topic,
+        id, input.agentId || null, input.topic || null,
         input.priority === 'high' ? 'warning' : 'info',
-        input.title, input.body,
+        input.title || '', input.body || '',
         now, now,
-        metadataJson, actionsJson,
-        input.agentId, input.topic, input.stage, input.priority, input.project || null,
-        JSON.stringify({ history: [] }),
+        metadataJson || null, actionsJson || null,
+        input.agentId || null, input.topic || null, input.stage || null, input.priority || null, input.project || null,
+        JSON.stringify({ history: history || [] }),
       ],
     );
     autoSave();
