@@ -131,6 +131,8 @@ export function createBallWindow(): void {
 
   ballWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   ballWindow.setShape(CIRCLE_SHAPE);
+  // floating 级别高于普通 alwaysOnTop，确保始终不会被面板或其他应用窗口覆盖
+  ballWindow.setAlwaysOnTop(true, 'screen-saver');
   loadWindow(ballWindow, 'ball');
 
   ballWindow.on('move', () => {
@@ -170,7 +172,12 @@ export function showPanelWindow(): void {
     panelWindow.focus();
     panelVisible = true;
     updateTrayMenu(true);
-    slideWindow(panelWindow, startX, targetX, 0, 1, 300, 'ease-out', 0.2, 300, 'ease-out');
+    slideWindow(panelWindow, startX, targetX, 0, 1, 300, 'ease-out', 0.2, 300, 'ease-out', () => {
+      // 面板每次显示后确保悬浮球仍在最上层
+      if (ballWindow && !ballWindow.isDestroyed()) {
+        ballWindow.setAlwaysOnTop(true, 'screen-saver');
+      }
+    });
     return;
   }
 
@@ -236,6 +243,10 @@ export function showPanelWindow(): void {
     logInfo('window', 'panel_enter_animation');
     slideWindow(panelWindow, startX, targetX, 0, 1, 400, 'ease-out', 0.3, 400, 'ease-out', () => {
       savedPanelPos = { x: targetX, y: targetY };
+      // 面板动画结束后确保悬浮球仍在最上层
+      if (ballWindow && !ballWindow.isDestroyed()) {
+        ballWindow.setAlwaysOnTop(true, 'screen-saver');
+      }
     });
   };
 
