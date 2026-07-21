@@ -48,7 +48,13 @@ export function ensureRemindersTable(): void {
       done_at TEXT,
       metadata_json TEXT,
       actions_json TEXT,
-      response_json TEXT
+      response_json TEXT,
+      agent_id TEXT,
+      topic TEXT,
+      stage TEXT,
+      priority TEXT,
+      project TEXT,
+      history_json TEXT
     )
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_reminder_status_created ON plugin_reminder_items (status, created_at DESC)`);
@@ -56,6 +62,12 @@ export function ensureRemindersTable(): void {
   // 老库兼容：阶段 1 建的表没有 actions_json / response_json，补上；sql.js 无 IF NOT EXISTS 语法，靠 try
   try { db.run(`ALTER TABLE plugin_reminder_items ADD COLUMN actions_json TEXT`); } catch { /* 已存在 */ }
   try { db.run(`ALTER TABLE plugin_reminder_items ADD COLUMN response_json TEXT`); } catch { /* 已存在 */ }
+  try { db.run(`ALTER TABLE plugin_reminder_items ADD COLUMN agent_id TEXT`); } catch { /* 已存在 */ }
+  try { db.run(`ALTER TABLE plugin_reminder_items ADD COLUMN topic TEXT`); } catch { /* 已存在 */ }
+  try { db.run(`ALTER TABLE plugin_reminder_items ADD COLUMN stage TEXT`); } catch { /* 已存在 */ }
+  try { db.run(`ALTER TABLE plugin_reminder_items ADD COLUMN priority TEXT`); } catch { /* 已存在 */ }
+  try { db.run(`ALTER TABLE plugin_reminder_items ADD COLUMN project TEXT`); } catch { /* 已存在 */ }
+  try { db.run(`ALTER TABLE plugin_reminder_items ADD COLUMN history_json TEXT`); } catch { /* 已存在 */ }
   autoSave();
 }
 
@@ -131,6 +143,12 @@ function mapRow(row: unknown[]): Reminder {
     metadata: parseJsonObject(row[11]),
     actions: parseActions(row[12]),
     response: parseResponse(row[13]),
+    agentId: row[14] === null || row[14] === undefined ? null : String(row[14]),
+    topic: row[15] === null || row[15] === undefined ? null : String(row[15]),
+    stage: row[16] === null || row[16] === undefined ? null : (row[16] as any),
+    priority: row[17] === null || row[17] === undefined ? null : (row[17] as any),
+    project: row[18] === null || row[18] === undefined ? null : String(row[18]),
+    history: parseJsonObject(row[19]) ? (parseJsonObject(row[19]) as any).history : null,
   };
 }
 
@@ -233,6 +251,7 @@ export const api: ReminderApi = {
         id,
         source,
         key,
+        agentId: null, topic: null, stage: null, priority: null, project: null, history: null,
         type,
         severity,
         title,
@@ -310,6 +329,7 @@ export const api: ReminderApi = {
         id,
         source,
         key,
+        agentId: null, topic: null, stage: null, priority: null, project: null, history: null,
         type: 'action',
         severity,
         title,
@@ -421,5 +441,120 @@ export const api: ReminderApi = {
     if (!row) return 0;
     const n = Number(row[0]);
     return Number.isFinite(n) ? n : 0;
+  },
+
+  // Agent 专属模式内部状态：topic -> waiter
+  _agentWaiters: new Map<string, { resolve: (r: any | null) => void; timer: any }>(),
+
+  agentUpdate(input: any) {
+    const now = new Date().toISOString();
+    const existing = this.agentQuery(input.topic);
+
+    let history: any[] = [];
+    if (existing && existing.history) {
+      history = [...existing.history];
+    }
+    if (existing) {
+      // 旧版本记入历史，全量覆盖 body
+      history.unshift({
+        stage: existing.stage || 'info',
+        body: existing.body || '',
+        updatedAt: existing.updatedAt,
+        metadata: existing.metadata,
+      });
+    }
+
+    const actionsJson = input.actions ? JSON.stringify(input.actions) : null;
+    const metadataJson = input.metadata ? JSON.stringify(input.metadata) : null;
+    const db = getDatabase();
+
+    if (existing) {
+      db.run(
+        `UPDATE plugin_reminder_items
+           SET stage = ?, priority = ?, project = ?, title = ?, body = ?, actions_json = ?, metadata_json = ?, updated_at = ?, history_json = ?
+         WHERE id = ?`,
+        [
+          input.stage, input.priority, input.project || null,
+          input.title, input.body, actionsJson, metadataJson, now,
+          JSON.stringify({ history }),
+          existing.id,
+        ],
+      );
+      autoSave();
+
+      const waiter = this._agentWaiters.get(input.topic);
+      if (waiter) {
+        const updated = this.agentQuery(input.topic);
+        if (updated && updated.response) {
+          clearTimeout(waiter.timer);
+          this._agentWaiters.delete(input.topic);
+          waiter.resolve(updated);
+        }
+      }
+      return this.agentQuery(input.topic)!;
+    }
+
+    const id = `rem_${uuidv4()}`;
+    db.run(
+      `INSERT INTO plugin_reminder_items
+       (id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json, actions_json, response_json, agent_id, topic, stage, priority, project, history_json)
+       VALUES (?, ?, ?, 'action', ?, ?, ?, 'active', ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+      [
+        id, input.agentId, input.topic,
+        input.priority === 'high' ? 'warning' : 'info',
+        input.title, input.body,
+        now, now,
+        metadataJson, actionsJson,
+        input.agentId, input.topic, input.stage, input.priority, input.project || null,
+        JSON.stringify({ history: [] }),
+      ],
+    );
+    autoSave();
+    return this.agentQuery(input.topic)!;
+  },
+
+  agentQuery(topic: string): any | null {
+    const rows = selectRows(
+      `SELECT id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json, actions_json, response_json, agent_id, topic, stage, priority, project, history_json
+       FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
+      [topic],
+    );
+    return rows.length ? mapRow(rows[0]) : null;
+  },
+
+  agentClose(topic: string, result: 'done' | 'cancelled' | 'superseded'): any {
+    const existing = this.agentQuery(topic);
+    if (!existing) throw new Error(`topic 不存在: ${topic}`);
+    const now = new Date().toISOString();
+    const db = getDatabase();
+    const closeStage = result === 'done' ? 'done' : 'stale';
+    db.run(
+      `UPDATE plugin_reminder_items SET status = 'done', stage = ?, updated_at = ?, done_at = ? WHERE id = ?`,
+      [closeStage, now, now, existing.id],
+    );
+    autoSave();
+
+    const waiter = this._agentWaiters.get(topic);
+    if (waiter) {
+      clearTimeout(waiter.timer);
+      this._agentWaiters.delete(topic);
+      waiter.resolve(this.agentQuery(topic));
+    }
+    return this.agentQuery(topic)!;
+  },
+
+  _setAgentWaiter(topic: string, resolveFn: any, timeoutMs: number): void {
+    const existing = this._agentWaiters.get(topic);
+    if (existing) clearTimeout(existing.timer);
+
+    const timer = setTimeout(() => {
+      const w = this._agentWaiters.get(topic);
+      if (w && w.timer === timer) {
+        this._agentWaiters.delete(topic);
+        resolveFn(null);
+      }
+    }, timeoutMs);
+
+    this._agentWaiters.set(topic, { resolve: resolveFn, timer });
   },
 };

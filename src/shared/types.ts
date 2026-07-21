@@ -366,6 +366,12 @@ export interface Reminder {
   actions: ReminderAction[] | null;
   /** 已响应 / 已忽略后才有值。 */
   response: ReminderResponse | null;
+  agentId: string | null;
+  topic: string | null;
+  stage: 'propose' | 'progress' | 'done' | 'blocked' | 'info' | 'stale' | null;
+  priority: 'normal' | 'high' | null;
+  project: string | null;
+  history: any[] | null;
 }
 
 /** 创建一条提醒的入参。 */
@@ -451,4 +457,9 @@ export interface ReminderApi {
   list(options?: ListRemindersOptions): Reminder[];
   get(id: string): Reminder | null;
   countActiveActions(): number;
+  agentUpdate(input: any): Reminder;
+  agentQuery(topic: string): Reminder | null;
+  agentClose(topic: string, result: 'done' | 'cancelled' | 'superseded'): Reminder;
+  _agentWaiters: Map<string, any>;
+  _setAgentWaiter(topic: string, resolveFn: any, timeoutMs: number): void;
 }
