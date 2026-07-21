@@ -4,6 +4,7 @@
  * 阶段 1：数据模型 + notify + 面板列表。
  * 阶段 2：source+key 去重 + 两色悬浮球光点 + 实时事件通道。
  * 阶段 3：reminder.ask 阻塞式确认 + reminder.respond。
+ * 阶段 4：Agent 专属模式（agent.update / agent.wait / agent.query / agent.close）。
  */
 
 import { bus } from '../../core/event-bus';
@@ -26,8 +27,8 @@ const MAX_ASK_TIMEOUT_SEC = 3600;
 export const manifest: PluginManifest = {
   id: 'reminder',
   name: 'Reminder 提醒框架',
-  version: '0.3.0',
-  description: '外部工具通过 CLI 推送提醒 / 阻塞式确认，落库并在提醒中心展示',
+  version: '0.4.0',
+  description: '外部工具通过 CLI 推送提醒 / 阻塞式确认，支持 Agent 专属模式',
 };
 
 export function activate(): void {
@@ -216,6 +217,105 @@ export function activate(): void {
       const item = api.get(String(args.id));
       if (!item) throw new Error(`提醒不存在：${args.id}`);
       return item;
+    },
+  });
+
+  // ===== Agent 专属模式命令 =====
+
+  // agent.update —— 推送/更新 Agent 提醒（同 topic 自动合并，历史记入 history 数组）
+  registerCommand({
+    command: 'agent.update',
+    description: '推送或更新一条 Agent 专属提醒；同 topic 自动合并，旧版本记入 history 数组',
+    params: [
+      { name: 'agentId', type: 'string', required: true, description: 'Agent 标识，如 codex / claude' },
+      { name: 'topic', type: 'string', required: true, description: '主题唯一键（同 topic 自动合并）' },
+      { name: 'stage', type: 'string', required: true, description: 'propose | progress | done | blocked | info | stale' },
+      { name: 'priority', type: 'string', required: false, description: 'normal | high，默认 normal' },
+      { name: 'project', type: 'string', required: false, description: '项目分组标识' },
+      { name: 'title', type: 'string', required: true, description: '标题' },
+      { name: 'body', type: 'string', required: true, description: '完整内容（Markdown 格式）' },
+      { name: 'actions', type: 'object', required: false, description: '按钮数组：[{id,label,style?,requiresReason?}]' },
+      { name: 'metadata', type: 'object', required: false, description: '任意扩展 JSON' },
+    ],
+    example: {
+      agentId: 'codex',
+      topic: 'task:refactor-20260721',
+      stage: 'progress',
+      priority: 'normal',
+      project: 'UUUtil',
+      title: '重构提醒框架 UI',
+      body: '## 进度\n- ✅ 数据模型扩展\n- 🔄 UI 渲染中',
+      actions: [{ id: 'approve', label: '批准', style: 'primary' }],
+    },
+    handler: (args) => {
+      const reminder = api.agentUpdate(args);
+      bus.emit('reminder:changed', {
+        reason: 'notify',
+        type: reminder.type,
+        deduped: false,
+      });
+      return reminder;
+    },
+  });
+
+  // agent.wait —— 等待用户响应（阻塞）
+  registerCommand({
+    command: 'agent.wait',
+    timeoutMs: (MAX_ASK_TIMEOUT_SEC + 30) * 1000,
+    description: '阻塞等待某 topic 的 Agent 提醒被用户响应',
+    params: [
+      { name: 'topic', type: 'string', required: true, description: '主题唯一键' },
+      { name: 'timeoutSec', type: 'number', required: false, description: `等待秒数，默认 ${DEFAULT_ASK_TIMEOUT_SEC}，上限 ${MAX_ASK_TIMEOUT_SEC}` },
+    ],
+    example: { topic: 'task:refactor-20260721', timeoutSec: 300 },
+    handler: async (args) => {
+      const topic = String(args.topic);
+      const timeoutSec = clampTimeout(args.timeoutSec);
+
+      // 先检查是否已有响应
+      const existing = api.agentQuery(topic);
+      if (existing && existing.response) {
+        return existing;
+      }
+
+      // 没有响应，注册 waiter
+      return new Promise((resolve) => {
+        api._setAgentWaiter(topic, resolve, timeoutSec * 1000);
+      });
+    },
+  });
+
+  // agent.query —— 查询某 topic 的当前状态
+  registerCommand({
+    command: 'agent.query',
+    description: '查询某 topic 的 Agent 提醒当前状态',
+    params: [{ name: 'topic', type: 'string', required: true, description: '主题唯一键' }],
+    example: { topic: 'task:refactor-20260721' },
+    handler: (args) => {
+      const item = api.agentQuery(String(args.topic));
+      if (!item) throw new Error(`topic 不存在：${args.topic}`);
+      return item;
+    },
+  });
+
+  // agent.close —— 关闭某 topic 的提醒（标记为 done/stale）
+  registerCommand({
+    command: 'agent.close',
+    description: '关闭某 topic 的 Agent 提醒，标记为 done/stale',
+    params: [
+      { name: 'topic', type: 'string', required: true, description: '主题唯一键' },
+      { name: 'result', type: 'string', required: true, description: 'done | cancelled | superseded' },
+    ],
+    example: { topic: 'task:refactor-20260721', result: 'done' },
+    handler: (args) => {
+      const result = args.result as 'done' | 'cancelled' | 'superseded';
+      const reminder = api.agentClose(String(args.topic), result);
+      bus.emit('reminder:changed', {
+        reason: 'dismiss',
+        type: reminder.type,
+        deduped: false,
+      });
+      return reminder;
     },
   });
 
