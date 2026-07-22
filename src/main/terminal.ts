@@ -54,6 +54,13 @@ function resolveShell(): string {
 let tmuxAvailable: boolean | null = null;
 function isTmuxAvailable(): boolean {
   if (tmuxAvailable !== null) return tmuxAvailable;
+
+  // 如果已经在 tmux 环境中运行（比如在 Orca 内），不嵌套使用 tmux，避免冲突
+  if (process.env.TMUX) {
+    logInfo('terminal', 'tmux_skipped', { reason: 'already_in_tmux' });
+    return tmuxAvailable = false;
+  }
+
   try {
     const result = spawnSync('tmux', ['-V'], { encoding: 'utf8' });
     tmuxAvailable = result.status === 0;

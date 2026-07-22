@@ -28,6 +28,7 @@ import {
   closeLogger,
   info as logInfo,
   warn as logWarn,
+  error as logError,
 } from '../core';
 import { loadAllPlugins, listPlugins } from '../core/plugin-loader';
 import { disposeAllTerminals } from './terminal';
@@ -98,6 +99,52 @@ async function bootstrap(): Promise<void> {
   console.log('=== bootstrap 完成 ===');
   logInfo('app', 'bootstrap_complete');
 }
+
+// ========== 全局异常处理 - 记录异常日志帮助排查崩溃 ==========
+
+// 未捕获的同步异常
+process.on('uncaughtException', (err) => {
+  const errorInfo = {
+    name: err.name,
+    message: err.message,
+    stack: err.stack,
+  };
+  logError('app', 'uncaught_exception', errorInfo);
+  console.error('[uncaughtException]', errorInfo);
+
+  // 尝试干净退出
+  try {
+    globalShortcut.unregisterAll();
+    closeDatabase();
+    closeLogger();
+  } finally {
+    process.exit(1);
+  }
+});
+
+// 未处理的 Promise rejection
+process.on('unhandledRejection', (reason, promise) => {
+  let reasonStr: string;
+  let reasonInfo: unknown;
+  if (reason instanceof Error) {
+    reasonStr = reason.message;
+    reasonInfo = { name: reason.name, message: reason.message, stack: reason.stack };
+  } else {
+    reasonStr = String(reason);
+    reasonInfo = { reason: reasonStr };
+  }
+  logWarn('app', 'unhandled_rejection', {
+    reason: reasonStr,
+    reason_detail: reasonInfo,
+  });
+  console.warn('[unhandledRejection]', reason);
+  // 不退出，只记录日志
+});
+
+// 进程退出事件
+process.on('exit', (code) => {
+  logInfo('app', 'process_exit', { exitCode: code });
+});
 
 app.whenReady().then(bootstrap);
 
