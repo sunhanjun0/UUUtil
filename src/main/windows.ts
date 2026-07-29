@@ -107,8 +107,14 @@ function updatePanelShape(): void {
 export function createBallWindow(): void {
   const { workAreaSize } = screen.getPrimaryDisplay();
 
-  const x = savedBallPos?.x ?? workAreaSize.width - 200;
-  const y = savedBallPos?.y ?? Math.round(workAreaSize.height / 2 - BALL_SIZE / 2);
+  let x = savedBallPos?.x ?? Math.round(workAreaSize.width / 2 - BALL_SIZE / 2);
+  let y = savedBallPos?.y ?? Math.round(workAreaSize.height / 2 - BALL_SIZE / 2);
+
+  // 确保悬浮球始终在屏幕可见区域内
+  if (x + BALL_SIZE > workAreaSize.width) x = workAreaSize.width - BALL_SIZE - 8;
+  if (y + BALL_SIZE > workAreaSize.height) y = workAreaSize.height - BALL_SIZE - 8;
+  if (x < 0) x = 8;
+  if (y < 0) y = 8;
 
   ballWindow = new BrowserWindow({
     width: BALL_SIZE,
@@ -161,9 +167,16 @@ export function showPanelWindow(): void {
 
     logInfo('window', 'show_panel_reuse');
     const { workAreaSize } = screen.getPrimaryDisplay();
-    const currentPanelPos = panelWindow.getPosition();
-    const targetX = savedPanelPos?.x ?? currentPanelPos[0];
-    const targetY = savedPanelPos?.y ?? currentPanelPos[1];
+    const defaultPanelSize = getPanelSize();
+    const PW = savedPanelSize?.width ?? defaultPanelSize.width;
+    const PH = savedPanelSize?.height ?? defaultPanelSize.height;
+    let targetX = savedPanelPos?.x ?? panelWindow.getPosition()[0];
+    let targetY = savedPanelPos?.y ?? panelWindow.getPosition()[1];
+    // 确保复用位置也在屏幕内
+    if (targetX + PW > workAreaSize.width) targetX = workAreaSize.width - PW - 16;
+    if (targetY + PH > workAreaSize.height) targetY = workAreaSize.height - PH - 16;
+    if (targetX < 0) targetX = 16;
+    if (targetY < 0) targetY = 16;
     const startX = workAreaSize.width;
     panelWindow.setPosition(startX, targetY);
     panelWindow.setOpacity(0);

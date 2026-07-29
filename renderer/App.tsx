@@ -698,6 +698,7 @@ const ballStyles: Record<string, React.CSSProperties> = {
     position: 'relative',
     transformStyle: 'preserve-3d',
     transition: 'transform 3s cubic-bezier(0.4, 0, 0.2, 1)',
+    WebkitAppRegion: 'no-drag' as any,
   },
   ball: {
     width: 44,
@@ -725,6 +726,7 @@ const ballStyles: Record<string, React.CSSProperties> = {
     position: 'absolute',
     backfaceVisibility: 'hidden',
     transform: 'rotateY(180deg)',
+    WebkitAppRegion: 'no-drag' as any,
     top: 0,
     left: 0,
   },
