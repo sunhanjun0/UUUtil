@@ -111,7 +111,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 }
 
 /** 启动 CLI HTTP server；端口占用等错误只告警，不阻断应用启动。 */
-export function startCliServer(): Promise<CliServerHandle | null> {
+export function startCliServer(retryCount: number = 1): Promise<CliServerHandle | null> {
   const port = resolvePort();
 
   return new Promise((resolve) => {
@@ -126,6 +126,15 @@ export function startCliServer(): Promise<CliServerHandle | null> {
     });
 
     server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && retryCount > 0) {
+        // 如果是端口占用，等待 200ms 后重试（TIME_WAIT 端口可能刚释放）
+        logWarn('cli:http', 'address_inuse_retry', { port, retryLeft: retryCount });
+        setTimeout(() => {
+          server.close();
+          startCliServer(retryCount - 1).then(resolve);
+        }, 200);
+        return;
+      }
       logWarn('cli:http', 'server_error', { code: err.code, error: err.message });
       resolve(null);
     });
