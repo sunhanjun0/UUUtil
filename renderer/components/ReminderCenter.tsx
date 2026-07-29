@@ -156,7 +156,7 @@ export default function ReminderCenter() {
           w="120px"
           value={status}
           onChange={(e) => {
-            setStatus(e.target.value as ReminderStatus);
+            setStatus(e.target.value as ReminderStatus | 'all');
             setSelectedId(null);
           }}
         >

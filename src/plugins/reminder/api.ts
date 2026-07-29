@@ -28,7 +28,6 @@ const VALID_SEVERITIES: ReminderSeverity[] = ['info', 'warning', 'error'];
 const VALID_STATUSES: ReminderStatus[] = ['active', 'done', 'dismissed'];
 
 const SELECT_COLS = "id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json, actions_json, response_json, agent_id, topic, stage, priority, project, history_json";
-  'id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json, actions_json, response_json';
 
 /** 初始化提醒表；由插件 activate 时在 core:ready 之后调用一次。 */
 export function ensureRemindersTable(): void {
@@ -409,17 +408,19 @@ export const api: ReminderApi = {
   },
 
   list(options?: ListRemindersOptions): Reminder[] {
-    const status: ReminderStatus =
-      options?.status && VALID_STATUSES.includes(options.status) ? options.status : 'active';
+    const hasStatus = options?.status && VALID_STATUSES.includes(options.status);
     const limit = Math.min(Math.max(options?.limit ?? 20, 1), 200);
-    const rows = selectRows(
-      `SELECT ${SELECT_COLS}
-       FROM plugin_reminder_items
-       WHERE status = ?
-       ORDER BY created_at DESC
-       LIMIT ?`,
-      [status, limit],
-    );
+    let sql = `SELECT ${SELECT_COLS}
+       FROM plugin_reminder_items`;
+    const params: unknown[] = [];
+    if (hasStatus) {
+      sql += ` WHERE status = ?`;
+      params.push(options!.status);
+    }
+    sql += ` ORDER BY created_at DESC
+       LIMIT ?`;
+    params.push(limit);
+    const rows = selectRows(sql, params);
     return rows.map(mapRow);
   },
 
