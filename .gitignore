@@ -7,6 +7,10 @@ release/
 .playwright-mcp/
 .claude/settings.local.json
 
+# Agent 运行时产物（日志、pid、上下文、项目缓存）
+.multica/
+.agent_context/
+
 .DS_Store
 *.log
 npm-debug.log*
