@@ -499,7 +499,7 @@ export const api: ReminderApi = {
       );
       autoSave();
 
-      const waiter = new Map().get(input.topic);
+      const waiter = this._agentWaiters.get(input.topic);
       if (waiter) {
         const updated = (() => {
     const rows = selectRows(
@@ -510,7 +510,7 @@ export const api: ReminderApi = {
   })();
         if (updated && updated.response) {
           clearTimeout(waiter.timer);
-          new Map().delete(input.topic);
+          this._agentWaiters.delete(input.topic);
           waiter.resolve(updated);
         }
       }
@@ -575,10 +575,10 @@ export const api: ReminderApi = {
     );
     autoSave();
 
-    const waiter = new Map().get(topic);
+    const waiter = this._agentWaiters.get(topic);
     if (waiter) {
       clearTimeout(waiter.timer);
-      new Map().delete(topic);
+      this._agentWaiters.delete(topic);
       waiter.resolve((() => {
     const rows = selectRows(
       `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
@@ -597,17 +597,17 @@ export const api: ReminderApi = {
   },
 
   _setAgentWaiter(topic: string, resolveFn: any, timeoutMs: number): void {
-    const existing = new Map().get(topic);
+    const existing = this._agentWaiters.get(topic);
     if (existing) clearTimeout(existing.timer);
 
     const timer = setTimeout(() => {
-      const w = new Map().get(topic);
+      const w = this._agentWaiters.get(topic);
       if (w && w.timer === timer) {
-        new Map().delete(topic);
+        this._agentWaiters.delete(topic);
         resolveFn(null);
       }
     }, timeoutMs);
 
-    new Map().set(topic, { resolve: resolveFn, timer });
+    this._agentWaiters.set(topic, { resolve: resolveFn, timer });
   },
 };
