@@ -191,6 +191,19 @@ function findActiveByKey(source: string, key: string): Reminder | null {
   return rows.length > 0 ? mapRow(rows[0]) : null;
 }
 
+/** 按 topic 查询最新一条提醒（不限状态）；无则返回 null。 */
+function findLatestByTopic(topic: string): Reminder | null {
+  const rows = selectRows(
+    `SELECT ${SELECT_COLS}
+     FROM plugin_reminder_items
+     WHERE topic = ?
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [topic],
+  );
+  return rows.length > 0 ? mapRow(rows[0]) : null;
+}
+
 export const api: ReminderApi = {
   create(input: CreateReminderInput): CreateReminderResult {
     if (!input || typeof input.source !== 'string' || !input.source.trim()) {
@@ -449,13 +462,7 @@ export const api: ReminderApi = {
 
   agentUpdate(input: any) {
     const now = new Date().toISOString();
-    const existing = (() => {
-    const rows = selectRows(
-      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
-      [input.topic],
-    );
-    return rows.length ? mapRow(rows[0]) : null;
-  })();
+    const existing = findLatestByTopic(input.topic);
 
     let history: any[] = [];
     if (existing && existing.history) {
@@ -501,26 +508,14 @@ export const api: ReminderApi = {
 
       const waiter = this._agentWaiters.get(input.topic);
       if (waiter) {
-        const updated = (() => {
-    const rows = selectRows(
-      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
-      [input.topic],
-    );
-    return rows.length ? mapRow(rows[0]) : null;
-  })();
+        const updated = findLatestByTopic(input.topic);
         if (updated && updated.response) {
           clearTimeout(waiter.timer);
           this._agentWaiters.delete(input.topic);
           waiter.resolve(updated);
         }
       }
-      return (() => {
-    const rows = selectRows(
-      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
-      [input.topic],
-    );
-    return rows.length ? mapRow(rows[0]) : null;
-  })()!;
+      return findLatestByTopic(input.topic)!;
     }
 
     const id = `rem_${uuidv4()}`;
@@ -539,32 +534,15 @@ export const api: ReminderApi = {
       ],
     );
     autoSave();
-    return (() => {
-    const rows = selectRows(
-      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
-      [input.topic],
-    );
-    return rows.length ? mapRow(rows[0]) : null;
-  })()!;
+    return findLatestByTopic(input.topic)!;
   },
 
   agentQuery(topic: string): any | null {
-    const rows = selectRows(
-      `SELECT id, source, key, type, severity, title, body, status, created_at, updated_at, done_at, metadata_json, actions_json, response_json, agent_id, topic, stage, priority, project, history_json
-       FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
-      [topic],
-    );
-    return rows.length ? mapRow(rows[0]) : null;
+    return findLatestByTopic(topic);
   },
 
   agentClose(topic: string, result: 'done' | 'cancelled' | 'superseded'): any {
-    const existing = (() => {
-    const rows = selectRows(
-      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
-      [topic],
-    );
-    return rows.length ? mapRow(rows[0]) : null;
-  })();
+    const existing = findLatestByTopic(topic);
     if (!existing) throw new Error(`topic 不存在: ${topic}`);
     const now = new Date().toISOString();
     const db = getDatabase();
@@ -579,21 +557,9 @@ export const api: ReminderApi = {
     if (waiter) {
       clearTimeout(waiter.timer);
       this._agentWaiters.delete(topic);
-      waiter.resolve((() => {
-    const rows = selectRows(
-      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
-      [topic],
-    );
-    return rows.length ? mapRow(rows[0]) : null;
-  })());
+      waiter.resolve(findLatestByTopic(topic));
     }
-    return (() => {
-    const rows = selectRows(
-      `SELECT ${SELECT_COLS} FROM plugin_reminder_items WHERE topic = ? ORDER BY created_at DESC LIMIT 1`,
-      [topic],
-    );
-    return rows.length ? mapRow(rows[0]) : null;
-  })()!;
+    return findLatestByTopic(topic)!;
   },
 
   _setAgentWaiter(topic: string, resolveFn: any, timeoutMs: number): void {
