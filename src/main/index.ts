@@ -30,7 +30,7 @@ import {
   warn as logWarn,
   error as logError,
 } from '../core';
-import { loadAllPlugins, listPlugins } from '../core/plugin-loader';
+import { loadAllPlugins, listPlugins, registerPluginCommands } from '../core/plugin-loader';
 import { disposeAllTerminals } from './terminal';
 import { registerAllIpc } from './ipc';
 import { startCliServer, type CliServerHandle } from './cli-server';
@@ -57,6 +57,9 @@ async function bootstrap(): Promise<void> {
   await loadAllPlugins();
   logInfo('app', '插件加载完成', { count: listPlugins().length });
 
+  // 核心插件管理命令（plugin.list / plugin.enable / plugin.disable），供 uuutil CLI 调用
+  registerPluginCommands();
+
   bus.emit('core:ready');
   logInfo('app', '核心已就绪');
 
@@ -65,38 +68,29 @@ async function bootstrap(): Promise<void> {
   cliServer = await startCliServer();
   if (cliServer) logInfo('app', 'CLI 服务已启动', { port: cliServer.port });
 
-  // 开始调试日志
-  console.log('=== 开始创建窗口和托盘 ===');
   logInfo('window', 'about_to_create_ball_window');
 
   try {
     createBallWindow();
-    console.log('createBallWindow 成功');
     logInfo('window', 'ball_window_created');
   } catch (e) {
-    console.error('createBallWindow 失败:', e);
     logWarn('window', 'ball_window_error', { error: String(e) });
   }
 
   try {
     createTray();
-    console.log('createTray 成功');
     logInfo('window', 'tray_created');
   } catch (e) {
-    console.error('createTray 失败:', e);
     logWarn('window', 'tray_error', { error: String(e) });
   }
 
   try {
     registerGlobalShortcuts();
-    console.log('registerGlobalShortcuts 成功');
     logInfo('window', 'global_shortcuts_registered');
   } catch (e) {
-    console.error('registerGlobalShortcuts 失败:', e);
     logWarn('window', 'shortcuts_error', { error: String(e) });
   }
 
-  console.log('=== bootstrap 完成 ===');
   logInfo('app', 'bootstrap_complete');
 }
 

@@ -3,7 +3,7 @@
  */
 
 import { bus } from '../../core/event-bus';
-import { getDatabase, autoSave } from '../../core/db';
+import { recordEvent } from '../../core/db';
 import type { PluginManifest } from '../../core/plugin-loader';
 import { api } from './api';
 
@@ -25,16 +25,8 @@ export function activate(): void {
     const result = api.calculate(expression);
     bus.emit('calculator:result', { expression, result });
 
-    try {
-      const db = getDatabase();
-      db.run(
-        `INSERT INTO _events_log (event, payload) VALUES (?, ?)`,
-        ['calculator:calculate', JSON.stringify({ expression, result })]
-      );
-      autoSave();
-    } catch (err) {
-      console.error('[calculator] 记录事件失败:', err);
-    }
+    // 事件日志统一入口：行数上限 / 时间窗口清理由 core/db 负责
+    recordEvent('calculator:calculate', { expression, result });
   });
 
   bus.emit('calculator:activated', { version: manifest.version });

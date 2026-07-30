@@ -5,7 +5,7 @@
  */
 
 import { bus } from '../../core';
-import { listPlugins } from '../../core/plugin-loader';
+import { listPlugins, listRegisteredPlugins, setPluginEnabled } from '../../core/plugin-loader';
 import { defineInvoke } from './types';
 import type { IpcModule } from './types';
 import { waitForPluginEvent, invokeActionPlugin } from '../plugin-bridge';
@@ -14,6 +14,11 @@ export const pluginIpc: IpcModule = {
   namespace: 'plugin',
   defs: [
     defineInvoke('core:list-plugins', () => listPlugins()),
+
+    // 插件开关：列出全部注册插件（含禁用）、启用 / 禁用
+    defineInvoke('plugin:list-registered', () => listRegisteredPlugins()),
+    defineInvoke('plugin:set-enabled', (_event, id: string, enabled: boolean) =>
+      setPluginEnabled(id, enabled)),
 
     defineInvoke('plugin:hello-world:greet', (_event, name: string) => {
       bus.emit('hello-world:greet', name);

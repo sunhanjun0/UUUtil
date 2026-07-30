@@ -10,6 +10,27 @@ export interface PluginInfo {
   enabled: boolean;
 }
 
+/** `_plugins` 表中的注册插件信息（含禁用 / 未加载的插件） */
+export interface RegisteredPluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  /** _plugins.enabled 开关状态 */
+  enabled: boolean;
+  /** 当前会话是否已加载并激活 */
+  loaded: boolean;
+}
+
+/** setPluginEnabled 的执行结果 */
+export interface PluginStateResult {
+  id: string;
+  enabled: boolean;
+  /** 是否同步调用了 deactivate()（仅禁用已激活插件时为 true） */
+  deactivated: boolean;
+  /** immediate=运行时即时生效；on-restart=下次启动生效 */
+  applied: 'immediate' | 'on-restart';
+}
+
 /** 事件日志条目 */
 export interface EventLogEntry {
   event: string;

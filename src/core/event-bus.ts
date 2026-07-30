@@ -57,6 +57,18 @@ class EventBus {
     this.listeners.get(event)?.delete(handler);
   }
 
+  /** 取消所有以 prefix 开头的事件监听（用于插件禁用时按命名空间批量清理） */
+  offPrefix(prefix: string): number {
+    let removed = 0;
+    for (const event of Array.from(this.listeners.keys())) {
+      if (event.startsWith(prefix)) {
+        removed += this.listeners.get(event)!.size;
+        this.listeners.delete(event);
+      }
+    }
+    return removed;
+  }
+
   /** 触发事件（同步） */
   emit<K extends AppEventName>(event: K, ...args: EventArgs<K>): void {
     this.emitDynamic(event, ...args);

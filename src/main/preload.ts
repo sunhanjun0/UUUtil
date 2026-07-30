@@ -25,6 +25,8 @@ const assistantApi: AssistantApi = {
 
   // ===== 插件 API =====
   listPlugins: () => ipcRenderer.invoke('core:list-plugins'),
+  listRegisteredPlugins: () => ipcRenderer.invoke('plugin:list-registered'),
+  setPluginEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('plugin:set-enabled', id, enabled),
   greet: (name: string) => ipcRenderer.invoke('plugin:hello-world:greet', name),
   calculate: (expression: string) => ipcRenderer.invoke('plugin:calculator:calculate', expression),
   devUtils: (action: string, ...args: any[]) => ipcRenderer.invoke('plugin:dev-utils:invoke', action, ...args),

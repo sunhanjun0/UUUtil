@@ -28,10 +28,16 @@ export interface CommandDefinition {
   params?: CommandParam[];
   /** 命令示例参数（对象），供 help 展示 */
   example?: Record<string, unknown>;
-  /** 实际执行体，返回值即命令结果 data */
-  handler: (args: Record<string, unknown>) => Promise<unknown> | unknown;
+  /** 实际执行体，返回值即命令结果 data。ctx 携带调用方生命周期信号（如 HTTP 连接断开）。 */
+  handler: (args: Record<string, unknown>, ctx?: CommandContext) => Promise<unknown> | unknown;
   /** 可选：覆盖默认超时（ms）。阻塞式命令（如 reminder.ask）应放大。 */
   timeoutMs?: number;
+}
+
+/** 命令执行上下文：把调用方的生命周期信号传给 handler。 */
+export interface CommandContext {
+  /** 调用方提前断开（如 CLI HTTP 连接关闭）时 abort；长阻塞命令应监听它以及时收尾。 */
+  signal?: AbortSignal;
 }
 
 /** 命令执行结果，序列化后即 CLI 拿到的 JSON。 */
@@ -64,6 +70,22 @@ export function listCommands(): Array<{ command: string; description: string }> 
     .sort((a, b) => a.command.localeCompare(b.command));
 }
 
+/** 反注册某个 scope（插件 id）下所有命令，形如 `scope.action`。返回被移除的命令数。 */
+export function unregisterByScope(scope: string): number {
+  const prefix = `${scope}.`;
+  let removed = 0;
+  for (const command of Array.from(commands.keys())) {
+    if (command.startsWith(prefix)) {
+      commands.delete(command);
+      removed++;
+    }
+  }
+  if (removed > 0) {
+    logInfo('command', 'commands_unregistered_by_scope', { scope, removed });
+  }
+  return removed;
+}
+
 /** 取单条命令定义（去掉 handler），供 help 元命令。 */
 export function describeCommand(command: string):
   | { command: string; description: string; params: CommandParam[]; example?: Record<string, unknown> }
@@ -93,6 +115,7 @@ export async function invokeCommand(
   command: string,
   args: Record<string, unknown> = {},
   timeoutMs?: number,
+  signal?: AbortSignal,
 ): Promise<CommandResult> {
   const def = commands.get(command);
   if (!def) {
@@ -110,7 +133,7 @@ export async function invokeCommand(
   const startedAt = Date.now();
   try {
     const data = await Promise.race([
-      Promise.resolve(def.handler(args)),
+      Promise.resolve(def.handler(args, { signal })),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('命令执行超时')), effectiveTimeout),
       ),

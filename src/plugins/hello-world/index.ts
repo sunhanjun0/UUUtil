@@ -1,9 +1,13 @@
 /**
- * hello-world 插件
+ * hello-world 插件 —— 验证插件机制的示例插件。
+ *
+ * 注意：示例插件默认禁用（见 core/plugin-loader 的 EXAMPLE_PLUGIN_IDS），
+ * 生产启动不会加载它；需要时执行 `uuutil call plugin.enable --json '{"id":"hello-world"}'`
+ * 后重启即可启用。复制本目录开发新插件时，把新插件 id 从示例名单里排除即可正常加载。
  */
 
 import { bus } from '../../core/event-bus';
-import { getDatabase, autoSave } from '../../core/db';
+import { recordEvent } from '../../core/db';
 import { registerCommand } from '../../core/command-registry';
 import type { PluginManifest } from '../../core/plugin-loader';
 import { api } from './api';
@@ -27,16 +31,8 @@ export function activate(): void {
     const greeting = api.greet(name);
     bus.emit('hello-world:greeted', { name, greeting });
 
-    try {
-      const db = getDatabase();
-      db.run(
-        `INSERT INTO _events_log (event, payload) VALUES (?, ?)`,
-        ['hello-world:greet', JSON.stringify({ name, greeting })]
-      );
-      autoSave();
-    } catch (err) {
-      console.error('[hello-world] 记录事件失败:', err);
-    }
+    // 事件日志统一入口：行数上限 / 时间窗口清理由 core/db 负责
+    recordEvent('hello-world:greet', { name, greeting });
   });
 
   // 声明式注册 CLI 命令：外部工具可通过 `uuutil call hello-world.greet` 调用。

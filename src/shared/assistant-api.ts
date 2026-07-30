@@ -28,6 +28,8 @@ import type {
   KnowledgeSearchResult,
   KnowledgeTag,
   PluginInfo,
+  PluginStateResult,
+  RegisteredPluginInfo,
   TabLayout,
   TrendPoint,
 } from './types';
@@ -74,6 +76,10 @@ export interface AssistantApi {
   openDevTools: () => void;
 
   listPlugins: () => Promise<PluginInfo[]>;
+  /** 列出所有注册插件（含禁用 / 未加载），用于插件管理界面 */
+  listRegisteredPlugins: () => Promise<RegisteredPluginInfo[]>;
+  /** 启用 / 禁用插件：禁用即时 deactivate，启用下次启动生效 */
+  setPluginEnabled: (id: string, enabled: boolean) => Promise<PluginStateResult>;
   greet: (name: string) => Promise<SuccessResult>;
   calculate: (expression: string) => Promise<string>;
   devUtils: (action: string, ...args: any[]) => Promise<any>;

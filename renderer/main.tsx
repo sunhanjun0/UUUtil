@@ -76,6 +76,12 @@ if (!window.assistant) {
       { id: 'calculator', name: 'Calculator', version: '0.1.0', description: '简单计算器插件 (mock)' },
       { id: 'dev-utils', name: 'Dev Utils', version: '0.1.0', description: '开发工具集 (mock)' },
     ],
+    listRegisteredPlugins: async () => [
+      { id: 'hello-world', name: 'Hello World', version: '0.1.0', enabled: true, loaded: true },
+      { id: 'calculator', name: 'Calculator', version: '0.1.0', enabled: true, loaded: true },
+      { id: 'dev-utils', name: 'Dev Utils', version: '0.1.0', enabled: true, loaded: true },
+    ],
+    setPluginEnabled: async (id: string, enabled: boolean) => ({ id, enabled, deactivated: false, applied: 'on-restart' as const }),
     greet: async (_name: string) => ({ success: true }),
     calculate: async (expression: string) => {
       try {

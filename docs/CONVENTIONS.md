@@ -48,6 +48,13 @@ bus.on('knowledge:results', handler);
 - `core:*` — 内核事件（插件不要发 core 事件）
 - `plugin-id:*` — 插件自己的事件命名空间
 
+## 插件开关约定
+
+- `_plugins.enabled` 是插件启用 / 禁用的唯一开关。`loadAllPlugins()` 加载前先查表，`enabled=0` 的插件目录整体跳过（不 require、不激活）。
+- 目录在而表中无记录（首次启动 / 新增插件）由加载器自动注册并默认 `enabled=1`；注册走 upsert，只同步 `name` / `version`，禁止重置 `enabled`。
+- 运行时改开关统一走 `setPluginEnabled()`（core/plugin-loader），经 CLI `plugin.enable` / `plugin.disable` 或 IPC `plugin:set-enabled` 暴露。
+- 生效时机：禁用即时（已激活则调用 `deactivate()` 并卸载，发 `core:plugin-deactivated`），启用下次启动生效（避免同会话重复注册监听与命令）。因此插件的 `deactivate()` 应尽可能释放资源（定时器、监听器）。
+
 ## 数据库操作模式
 
 ```typescript

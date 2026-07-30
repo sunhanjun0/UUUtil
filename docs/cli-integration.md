@@ -87,6 +87,8 @@ uuutil ping                   # 探活；skill 可先 ping 再干活
 
 handler 内部可直接调用插件 `api`，也可走 bus，由插件自行决定；对外只暴露这条声明式命令。注册与铁律一致：命令声明属于插件对外合同的一部分，随插件维护；插件新增命令时，CLI 与 server 均无需改动。
 
+除插件命令外，内核在 bootstrap（`loadAllPlugins()` 之后）通过 `registerPluginCommands()` 注册一组 `plugin.*` 核心管理命令，用于插件开关管理（见 §8）。这类命令不属于任何插件，由 `src/core/plugin-loader.ts` 维护。
+
 ## 6. 请求/响应配对
 
 CLI 需要「一问一答」的返回值。由于插件 `api` 方法本身是 async 的，注册表直接持有插件声明的 async `handler`，`invokeCommand()` 用 `await` 拿到返回值即可，无需给 bus 事件附加 `requestId` 做广播配对。
@@ -115,7 +117,21 @@ uuutil ping          # 任意目录可用
 
 改动 CLI 源码后需重新 `npm run build:main`；`dist/` 不入库，换机需先 build 再 link。
 
-## 8. 未定 / 后续探讨
+## 8. 插件开关命令（plugin.*）
+
+`_plugins.enabled` 是插件启用 / 禁用的唯一开关：`loadAllPlugins()` 加载前先查表，`enabled=0` 的插件目录整体跳过；目录在而表中无记录（首次启动 / 新增插件）时自动注册并默认启用。
+
+对应的核心命令：
+
+```bash
+uuutil call plugin.list                                # 列出全部注册插件（id/name/version/enabled/loaded）
+uuutil call plugin.disable --json '{"id":"hello-world"}'   # 禁用：已激活则立即 deactivate 并卸载，下次启动不再加载
+uuutil call plugin.enable --json '{"id":"hello-world"}'    # 启用：写入 enabled=1，下次启动恢复加载
+```
+
+生效时机：禁用即时（运行时卸载 + 落库），启用在下次启动（避免同一会话内重复注册 bus 监听与 CLI 命令）。渲染进程可经 IPC `plugin:list-registered` / `plugin:set-enabled`（`window.assistant.listRegisteredPlugins` / `setPluginEnabled`）使用同一能力。
+
+## 9. 未定 / 后续探讨
 
 - 内部使用会不会与 bus 混淆：初版 CLI 定位纯外部，内部一律直接用 bus；如需内部复用注册表再单独讨论。
 - 与后续 Agent Tool Bridge 的关系：命令注册表可作为 Tool Bridge 的底座复用，避免另起炉灶。

@@ -3,7 +3,7 @@
  */
 
 import { bus } from '../../core/event-bus';
-import { getDatabase, autoSave } from '../../core/db';
+import { recordEvent } from '../../core/db';
 import type { PluginManifest } from '../../core/plugin-loader';
 import { api } from './api';
 
@@ -27,16 +27,8 @@ export function activate(): void {
       ? handler(...args)
       : { success: false, output: `未知开发工具动作: ${action}` };
 
-    try {
-      const db = getDatabase();
-      db.run(
-        `INSERT INTO _events_log (event, payload) VALUES (?, ?)`,
-        ['dev-utils:invoke', JSON.stringify({ action, result })]
-      );
-      autoSave();
-    } catch (err) {
-      // 忽略
-    }
+    // 事件日志统一入口：行数上限 / 时间窗口清理由 core/db 负责
+    recordEvent('dev-utils:invoke', { action, result });
 
     bus.emit('dev-utils:result', { action, result });
   });

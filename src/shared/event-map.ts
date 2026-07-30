@@ -38,6 +38,7 @@ export interface AppEventMap {
   'core:ready': [];
   'core:plugins-loaded': [PluginLike[]];
   'core:plugin-activated': [PluginManifestLike];
+  'core:plugin-deactivated': [PluginManifestLike];
 
   'hello-world:greet': [string];
   'hello-world:greeted': [HelloWorldGreetedPayload];

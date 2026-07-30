@@ -102,8 +102,18 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         ? (parsed.args as Record<string, unknown>)
         : {};
 
-    const result = await invokeCommand(command, args);
-    sendJson(res, result.ok ? 200 : 400, result);
+    // 调用方（如 claude hook）可能中途断开连接：用 AbortController 把断开信号透传给命令，
+    // 让长阻塞命令（reminder.ask）能及时收尾，而不是干等到超时。
+    const abortController = new AbortController();
+    res.on('close', () => {
+      if (!res.writableFinished) abortController.abort();
+    });
+
+    const result = await invokeCommand(command, args, undefined, abortController.signal);
+    // 调用方已断开就不再回写，避免往关闭的 socket 写数据报错
+    if (!abortController.signal.aborted) {
+      sendJson(res, result.ok ? 200 : 400, result);
+    }
     return;
   }
 
