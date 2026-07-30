@@ -484,3 +484,64 @@ export interface ReminderApi {
   _agentWaiters: Map<string, any>;
   _setAgentWaiter(topic: string, resolveFn: any, timeoutMs: number): void;
 }
+
+// ===== Clipboard（剪贴板历史）=====
+
+/** 剪贴板条目类型。阶段 1 仅文本，后续可扩展图片。 */
+export type ClipboardKind = 'text';
+
+/** 一条剪贴板历史记录（面板 / CLI 读取时返回）。 */
+export interface ClipboardItem {
+  id: string;
+  /** 文本内容。 */
+  content: string;
+  kind: ClipboardKind;
+  /** 内容字符长度。 */
+  length: number;
+  /** 是否置顶/收藏（置顶项不受上限清理影响）。 */
+  pinned: boolean;
+  /** 被复制回剪贴板的次数。 */
+  copyCount: number;
+  /** 首次记录时间（ISO）。 */
+  createdAt: string;
+  /** 最近一次被复制/复用的时间（ISO），用于排序。 */
+  lastUsedAt: string;
+}
+
+/** 列表查询选项。 */
+export interface ListClipboardOptions {
+  /** 关键字模糊搜索（content LIKE %keyword%）。 */
+  keyword?: string;
+  /** 仅返回置顶项。 */
+  pinnedOnly?: boolean;
+  /** 返回条数上限，默认 100，最大 500。 */
+  limit?: number;
+}
+
+/** clipboard.record 的返回值：实际写入/复用的条目，以及是否命中去重。 */
+export interface RecordClipboardResult {
+  item: ClipboardItem;
+  deduped: boolean;
+}
+
+/** 主进程 → 渲染进程的剪贴板变更事件负载。 */
+export interface ClipboardUpdatePayload {
+  reason: 'record' | 'copy' | 'pin' | 'remove' | 'clear';
+  /** 变更后当前总条数。 */
+  total: number;
+}
+
+/** clipboard 插件对外 API。 */
+export interface ClipboardApi {
+  /** 记录一段文本（内部去重 + 上限清理 + 敏感过滤）。返回 null 表示被过滤/为空。 */
+  record(content: string): RecordClipboardResult | null;
+  list(options?: ListClipboardOptions): ClipboardItem[];
+  get(id: string): ClipboardItem | null;
+  /** 把某条内容写回系统剪贴板，并刷新 copyCount / lastUsedAt。 */
+  copyToClipboard(id: string): ClipboardItem;
+  togglePin(id: string): ClipboardItem;
+  remove(id: string): void;
+  /** 清空非置顶历史。 */
+  clear(): number;
+  count(): number;
+}

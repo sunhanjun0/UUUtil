@@ -1,5 +1,6 @@
 import type {
   AttentionEvent,
+  ClipboardUpdatePayload,
   DevUtilsApi,
   FieResult,
   IngestResult,
@@ -76,6 +77,10 @@ export interface AppEventMap {
   'reminder:activated': [PluginLifecyclePayload];
   'reminder:deactivated': [];
   'reminder:changed': [ReminderChangedPayload];
+
+  'clipboard:activated': [PluginLifecyclePayload];
+  'clipboard:deactivated': [];
+  'clipboard:changed': [ClipboardUpdatePayload];
 }
 
 export type AppEventName = keyof AppEventMap;

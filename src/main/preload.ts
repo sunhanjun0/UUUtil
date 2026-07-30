@@ -77,6 +77,23 @@ const assistantApi: AssistantApi = {
     },
   },
 
+  // ===== 剪贴板历史 Clipboard API =====
+  clipboard: {
+    list: (options) => ipcRenderer.invoke('clipboard:list', options),
+    get: (id) => ipcRenderer.invoke('clipboard:get', id),
+    copy: (id) => ipcRenderer.invoke('clipboard:copy', id),
+    togglePin: (id) => ipcRenderer.invoke('clipboard:toggle-pin', id),
+    remove: (id) => ipcRenderer.invoke('clipboard:remove', id),
+    clear: () => ipcRenderer.invoke('clipboard:clear'),
+    onUpdate: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        try { callback(payload as any); } catch { /* 忽略消费方异常 */ }
+      };
+      ipcRenderer.on('clipboard:update', listener);
+      return () => ipcRenderer.removeListener('clipboard:update', listener);
+    },
+  },
+
   // AI 核心 API
   ai: {
     listProviders: () => ipcRenderer.invoke('core:ai:list-providers'),

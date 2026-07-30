@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, ComponentType } from 'react';
 import { Box, Spinner } from '@chakra-ui/react';
-import { Bell, Bot, Calculator, Clock, Code2, FileText, Home, Languages, MessageCircle, Palette, ScrollText, SlidersHorizontal, Terminal } from 'lucide-react';
+import { Bell, Bot, Calculator, Clipboard, Clock, Code2, FileText, Home, Languages, MessageCircle, Palette, ScrollText, SlidersHorizontal, Terminal } from 'lucide-react';
 import type { TabLayout } from '../src/shared/types';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -15,6 +15,7 @@ const LogsPage = lazy(() => import('./pages/LogsPage'));
 const TerminalPage = lazy(() => import('./pages/TerminalPage'));
 const FocusPage = lazy(() => import('./pages/FocusPage'));
 const ReminderCenterPage = lazy(() => import('./pages/ReminderCenterPage'));
+const ClipboardHistoryPage = lazy(() => import('./pages/ClipboardHistoryPage'));
 const InterfaceSettingsPage = lazy(() => import('./pages/InterfaceSettingsPage'));
 
 export interface RouteConfig {
@@ -29,6 +30,7 @@ export const routes: RouteConfig[] = [
   { path: '/', label: '首页', icon: Home, component: HomePage, panel: 'front' },
   { path: '/focus', label: '焦点', icon: Clock, component: FocusPage, panel: 'front' },
   { path: '/reminders', label: '提醒', icon: Bell, component: ReminderCenterPage, panel: 'front' },
+  { path: '/clipboard', label: '剪贴板', icon: Clipboard, component: ClipboardHistoryPage, panel: 'front' },
   { path: '/knowledge-base', label: '知识库', icon: ScrollText, component: KnowledgeBasePage, panel: 'front' },
   { path: '/assistant', label: '助手', icon: MessageCircle, component: AssistantPage, panel: 'front' },
   { path: '/translation', label: '翻译', icon: Languages, component: TranslationPage, panel: 'front' },

@@ -13,8 +13,11 @@ import type {
   AttentionEvent,
   CliCommandRequest,
   CliCommandResult,
+  ClipboardItem,
+  ClipboardUpdatePayload,
   FieFocus,
   FieResult,
+  ListClipboardOptions,
   ListRemindersOptions,
   Reminder,
   ReminderUpdatePayload,
@@ -120,6 +123,16 @@ export interface AssistantApi {
     respond: (input: RespondReminderInput) => Promise<Reminder>;
     dismiss: (id: string) => Promise<Reminder>;
     onUpdate: (callback: (payload: ReminderUpdatePayload) => void) => () => void;
+  };
+
+  clipboard: {
+    list: (options?: ListClipboardOptions) => Promise<ClipboardItem[]>;
+    get: (id: string) => Promise<ClipboardItem | null>;
+    copy: (id: string) => Promise<ClipboardItem>;
+    togglePin: (id: string) => Promise<ClipboardItem>;
+    remove: (id: string) => Promise<{ removed: number }>;
+    clear: () => Promise<{ cleared: number }>;
+    onUpdate: (callback: (payload: ClipboardUpdatePayload) => void) => () => void;
   };
 
   ai: {
