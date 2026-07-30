@@ -10,7 +10,7 @@
 import { bus } from '../../core/event-bus';
 import { registerCommand } from '../../core/command-registry';
 import type { PluginManifest } from '../../core/plugin-loader';
-import { api, ensureRemindersTable } from './api';
+import { api, ensureRemindersTable, reconcileOrphanedAsks } from './api';
 import { fulfillWaiter, registerWaiter } from './waiters';
 import type {
   AskReminderInput,
@@ -36,6 +36,12 @@ export function activate(): void {
 
   bus.on('core:ready', () => {
     ensureRemindersTable();
+    // 启动清理：结束因重启而失去等待器的阻塞确认提醒，避免永久挂在「未处理」
+    const cleaned = reconcileOrphanedAsks();
+    if (cleaned > 0) {
+      console.log(`[reminder] 启动清理：结束 ${cleaned} 条残留的阻塞确认提醒`);
+      bus.emit('reminder:changed', { reason: 'dismiss', type: 'action', deduped: false });
+    }
     console.log('[reminder] 提醒表已就绪');
   });
 
@@ -93,7 +99,7 @@ export function activate(): void {
         { id: 'deny', label: '拒绝', style: 'danger', requiresReason: true },
       ],
     },
-    handler: async (args): Promise<AskReminderResult> => {
+    handler: async (args, ctx): Promise<AskReminderResult> => {
       const input = args as unknown as AskReminderInput;
       const timeoutSec = clampTimeout(input.timeoutSec);
       const { reminder, deduped, supersededId } = api.createAsk({
@@ -112,7 +118,8 @@ export function activate(): void {
         deduped,
       });
 
-      const outcome = await registerWaiter(reminder.id, timeoutSec * 1000, () => {
+      // 先注册等待器（同步登记），再挂调用方掉线监听，避免「已断开」时 fulfill 早于注册
+      const outcomePromise = registerWaiter(reminder.id, timeoutSec * 1000, () => {
         // 超时：把这条卡片翻成 dismissed，避免面板一直挂着一个死按钮
         try {
           const current = api.get(reminder.id);
@@ -124,6 +131,28 @@ export function activate(): void {
           console.error('[reminder] ask 超时清理失败:', err);
         }
       });
+
+      // 调用方掉线（如 claude hook 被中断、用户转去对话里操作）→ 立即结束提醒，不干等超时
+      const signal = ctx?.signal;
+      const onCallerGone = () => {
+        try {
+          const current = api.get(reminder.id);
+          if (current && current.status === 'active') {
+            api.dismiss(reminder.id);
+            bus.emit('reminder:changed', { reason: 'dismiss', type: 'action', deduped: false });
+          }
+        } catch (err) {
+          console.error('[reminder] ask 调用方掉线清理失败:', err);
+        }
+        fulfillWaiter(reminder.id, { kind: 'dismissed' });
+      };
+      if (signal) {
+        if (signal.aborted) onCallerGone();
+        else signal.addEventListener('abort', onCallerGone, { once: true });
+      }
+
+      const outcome = await outcomePromise;
+      signal?.removeEventListener('abort', onCallerGone);
 
       if (outcome.kind === 'responded') {
         return {
@@ -190,9 +219,9 @@ export function activate(): void {
   // reminder.list —— 列出提醒
   registerCommand({
     command: 'reminder.list',
-    description: '列出提醒（默认 status=active，limit=20）',
+    description: '列出提醒（不传 status 返回全部状态，limit=20）',
     params: [
-      { name: 'status', type: 'string', required: false, description: 'active | done | dismissed，默认 active' },
+      { name: 'status', type: 'string', required: false, description: 'active | done | dismissed，不传则返回全部状态' },
       { name: 'limit', type: 'number', required: false, description: '返回条数上限，默认 20，最大 200' },
     ],
     example: { status: 'active', limit: 20 },

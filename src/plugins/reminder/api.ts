@@ -70,6 +70,36 @@ export function ensureRemindersTable(): void {
   autoSave();
 }
 
+/**
+ * 启动清理：把因应用重启而失去等待器（waiter）的阻塞 ask 提醒标记为 dismissed。
+ *
+ * 等待器是内存态的，应用一重启就清空，而这些 ask 的外部调用方（如 claude hook 进程）
+ * 也已断开，卡片永远等不到响应 —— 不清理就会永久挂在「未处理」。
+ *
+ * 仅清理 reminder.ask 创建的卡片，判据：
+ *   - actions_json 非空（notify 即便 type='action' 也写 NULL，借此区分）；
+ *   - agent_id 为空（排除 Agent 任务卡——那是持久看板，不该被自动结束）。
+ * info 通知、Agent 卡、已 done/dismissed 的一律不动。返回被清理的条数。
+ */
+export function reconcileOrphanedAsks(): number {
+  const db = getDatabase();
+  const rows = selectRows(
+    `SELECT COUNT(*) FROM plugin_reminder_items
+      WHERE status = 'active' AND actions_json IS NOT NULL AND agent_id IS NULL`,
+  );
+  const count = Number(rows[0]?.[0]) || 0;
+  if (count === 0) return 0;
+  const now = new Date().toISOString();
+  db.run(
+    `UPDATE plugin_reminder_items
+        SET status = 'dismissed', done_at = ?, updated_at = ?
+      WHERE status = 'active' AND actions_json IS NOT NULL AND agent_id IS NULL`,
+    [now, now],
+  );
+  autoSave();
+  return count;
+}
+
 function selectRows(sql: string, params: unknown[] = []): unknown[][] {
   const db = getDatabase();
   const stmt = db.prepare(sql);
@@ -487,7 +517,7 @@ export const api: ReminderApi = {
       stage: input.stage ? String(input.stage) : null,
       priority: input.priority ? String(input.priority) : null,
       project: input.project ? String(input.project) : null,
-      title: String(input.title),
+      title: input.title !== undefined ? String(input.title) : null,
       body: input.body ? String(input.body) : null,
     };
     const db = getDatabase();
@@ -498,8 +528,8 @@ export const api: ReminderApi = {
            SET stage = ?, priority = ?, project = ?, title = ?, body = ?, actions_json = ?, metadata_json = ?, updated_at = ?, history_json = ?
          WHERE id = ?`,
         [
-          input.stage, input.priority, input.project || null,
-          input.title, input.body, actionsJson, metadataJson, now,
+          safeInput.stage, safeInput.priority, safeInput.project,
+          safeInput.title ?? existing.title, safeInput.body, actionsJson, metadataJson, now,
           JSON.stringify({ history }),
           existing.id,
         ],
