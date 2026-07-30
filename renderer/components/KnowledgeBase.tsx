@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  Box, Button, Flex, Input, Select, Heading, Text, Badge, Stack,
+  Box, Button, Flex, Input, InputGroup, InputLeftElement, Select, Heading, Text, Badge, Stack,
   Divider, IconButton, Tag, TagCloseButton, Menu, MenuButton,
   MenuList, MenuItem, Checkbox, HStack, Avatar,
 } from '@chakra-ui/react';
@@ -84,6 +84,9 @@ export default function KnowledgeBase() {
   const [newCategoryColor, setNewCategoryColor] = useState(CATEGORY_COLORS[0]);
   const [newTagName, setNewTagName] = useState('');
 
+  // 加载序列号：丢弃过期响应，避免搜索/筛选快速切换时结果抖动
+  const loadSeq = useRef(0);
+
   // 快捷键支持
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (viewMode !== 'edit') return;
@@ -102,26 +105,44 @@ export default function KnowledgeBase() {
   }, [viewMode, editTitle, editContent, editCategoryId, editTagIds, selectedNote]);
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
   async function loadData() {
+    const seq = ++loadSeq.current;
     try {
+      const keyword = searchKeyword.trim();
+      // 规范化：后端两个接口返回结构不一（数组或 { notes }），统一成数组
+      const normalize = (r: any): KnowledgeNote[] =>
+        Array.isArray(r) ? r : r?.notes || [];
+
+      let notesPromise: Promise<KnowledgeNote[]>;
+      if (keyword) {
+        // 搜索为主，再在客户端按分类/标签叠加过滤（后端 searchNotes 不支持组合条件）
+        notesPromise = window.assistant.searchNotes(searchKeyword).then((r) =>
+          normalize(r).filter(
+            (n) =>
+              (!filterCategoryId || n.categoryId === filterCategoryId) &&
+              (!filterTagId || n.tagIds.includes(filterTagId)),
+          ),
+        );
+      } else if (filterCategoryId || filterTagId) {
+        notesPromise = window.assistant
+          .getNotes(filterCategoryId || undefined, filterTagId || undefined)
+          .then(normalize);
+      } else {
+        notesPromise = window.assistant.getNotes().then(normalize);
+      }
+
       const [notesData, categoriesData, tagsData] = await Promise.all([
-        filterCategoryId || filterTagId
-          ? window.assistant.getNotes(filterCategoryId || undefined, filterTagId || undefined)
-          : searchKeyword.trim()
-            ? window.assistant.searchNotes(searchKeyword)
-            : window.assistant.getNotes(),
+        notesPromise,
         window.assistant.getCategories(),
         window.assistant.getTags(),
       ]);
-      setNotes(Array.isArray(notesData) ? notesData : notesData.notes || []);
+      // 丢弃过期响应：期间又触发了更新的加载
+      if (seq !== loadSeq.current) return;
+      setNotes(notesData);
       setCategories(categoriesData);
       setTags(tagsData);
     } catch (err) {
@@ -208,7 +229,7 @@ export default function KnowledgeBase() {
   function clearFilters() {
     setFilterCategoryId(null);
     setFilterTagId(null);
-    loadData();
+    // 无需手动 loadData：筛选 state 变化会触发统一的防抖 effect 自动刷新
   }
 
   // 创建分类
@@ -275,29 +296,13 @@ export default function KnowledgeBase() {
     setFilterCategoryId(null);
   }
 
-  // 实时搜索
+  // 筛选 / 搜索统一入口：搜索输入防抖 300ms，筛选变化立即刷新；
+  // 单一 effect + loadData 内序列号共同保证过期响应被丢弃，结果不抖动。
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!searchKeyword.trim() && !filterCategoryId && !filterTagId) {
-        loadData();
-      } else if (searchKeyword.trim()) {
-        (async () => {
-          try {
-            const result = await window.assistant.searchNotes(searchKeyword);
-            setNotes(result.notes);
-          } catch (err) {
-            console.error('搜索失败:', err);
-          }
-        })();
-      }
-    }, 300);
+    const delay = searchKeyword.trim() ? 300 : 0;
+    const timer = setTimeout(() => loadData(), delay);
     return () => clearTimeout(timer);
-  }, [searchKeyword]);
-
-  // 重新加载当筛选变化
-  useEffect(() => {
-    loadData();
-  }, [filterCategoryId, filterTagId]);
+  }, [searchKeyword, filterCategoryId, filterTagId]);
 
   // 切换标签选中状态（编辑时）
   function toggleEditTag(tagId: string) {
@@ -592,14 +597,16 @@ export default function KnowledgeBase() {
           </Flex>
 
           <Flex gap={2} align="center">
-            <Input
-              placeholder="搜索标题或内容..."
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              size="sm"
-              maxW="320px"
-              leftElement={<Search size={14} style={{ marginLeft: 8 }} />}
-            />
+            <InputGroup size="sm" maxW="320px">
+              <InputLeftElement pointerEvents="none">
+                <Search size={14} color="#A0AEC0" />
+              </InputLeftElement>
+              <Input
+                placeholder="搜索标题或内容..."
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+              />
+            </InputGroup>
 
             {hasActiveFilter && (
               <Button
