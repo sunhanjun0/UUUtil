@@ -18,5 +18,5 @@
     }
   },
   "include": ["src/main/**/*", "src/cli/**/*", "src/core/**/*", "src/plugins/**/*", "src/shared/**/*", "src/types/**/*"],
-  "exclude": ["node_modules", "dist", "renderer"]
+  "exclude": ["node_modules", "dist", "renderer", "src/**/__tests__/**", "src/**/*.test.ts"]
 }
