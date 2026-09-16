@@ -5,6 +5,7 @@ import type {
   FieResult,
   IngestResult,
   KnowledgeBaseApi,
+  TodoUpdatePayload,
 } from './types';
 
 export interface PluginManifestLike {
@@ -81,6 +82,10 @@ export interface AppEventMap {
   'clipboard:activated': [PluginLifecyclePayload];
   'clipboard:deactivated': [];
   'clipboard:changed': [ClipboardUpdatePayload];
+
+  'todo:activated': [PluginLifecyclePayload];
+  'todo:deactivated': [];
+  'todo:changed': [TodoUpdatePayload];
 }
 
 export type AppEventName = keyof AppEventMap;

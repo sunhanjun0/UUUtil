@@ -15,10 +15,13 @@ import type {
   CliCommandResult,
   ClipboardItem,
   ClipboardUpdatePayload,
+  CreateTodoInput,
+  CreateTodoListInput,
   FieFocus,
   FieResult,
   ListClipboardOptions,
   ListRemindersOptions,
+  ListTodosOptions,
   Reminder,
   ReminderUpdatePayload,
   RespondReminderInput,
@@ -34,7 +37,12 @@ import type {
   PluginStateResult,
   RegisteredPluginInfo,
   TabLayout,
+  Todo,
+  TodoList,
+  TodoUpdatePayload,
   TrendPoint,
+  UpdateTodoInput,
+  UpdateTodoListInput,
 } from './types';
 
 
@@ -123,6 +131,21 @@ export interface AssistantApi {
     respond: (input: RespondReminderInput) => Promise<Reminder>;
     dismiss: (id: string) => Promise<Reminder>;
     onUpdate: (callback: (payload: ReminderUpdatePayload) => void) => () => void;
+  };
+
+  todo: {
+    list: (options?: ListTodosOptions) => Promise<Todo[]>;
+    get: (id: string) => Promise<Todo | null>;
+    create: (input: CreateTodoInput) => Promise<Todo>;
+    update: (id: string, patch: UpdateTodoInput) => Promise<Todo>;
+    remove: (id: string) => Promise<void>;
+    done: (id: string) => Promise<Todo>;
+    reopen: (id: string) => Promise<Todo>;
+    listLists: () => Promise<TodoList[]>;
+    createList: (input: CreateTodoListInput) => Promise<TodoList>;
+    updateList: (id: string, patch: UpdateTodoListInput) => Promise<TodoList>;
+    removeList: (id: string) => Promise<void>;
+    onUpdate: (callback: (payload: TodoUpdatePayload) => void) => () => void;
   };
 
   clipboard: {

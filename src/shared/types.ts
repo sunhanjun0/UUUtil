@@ -545,3 +545,129 @@ export interface ClipboardApi {
   clear(): number;
   count(): number;
 }
+
+// ===== Todo（事项管理）=====
+
+/** 事项状态。 */
+export type TodoStatus = 'todo' | 'doing' | 'done' | 'cancelled';
+
+/** 子任务（整体 JSON 序列化进 todos.subtasks）。 */
+export interface TodoSubtask {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+/** 一条事项（面板 / CLI 读取时返回）。 */
+export interface Todo {
+  id: string;
+  title: string;
+  note: string | null;
+  status: TodoStatus;
+  /** 0 无 / 1 低 / 2 中 / 3 高。 */
+  priority: number;
+  /** ISO 日期或日期时间，可空；date 过滤按 date(due_at) 比较。 */
+  dueAt: string | null;
+  /** 所属清单；null = 收集箱。 */
+  listId: string | null;
+  tags: string[];
+  subtasks: TodoSubtask[];
+  sortOrder: number;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 一个清单；listLists 返回时附带 openCount（未完成任务计数）。 */
+export interface TodoList {
+  id: string;
+  name: string;
+  color: string | null;
+  sortOrder: number;
+  createdAt: string;
+  /** 仅 listLists 返回时填充：status 为 todo/doing 的事项数。 */
+  openCount?: number;
+}
+
+/** 创建事项入参。 */
+export interface CreateTodoInput {
+  title: string;
+  note?: string;
+  priority?: number;
+  dueAt?: string | null;
+  listId?: string | null;
+  tags?: string[];
+  subtasks?: TodoSubtask[];
+}
+
+/** 更新事项入参：undefined = 不动；note/dueAt/listId 传 null = 清空（listId null = 移回收集箱）。 */
+export interface UpdateTodoInput {
+  title?: string;
+  note?: string | null;
+  status?: TodoStatus;
+  priority?: number;
+  dueAt?: string | null;
+  listId?: string | null;
+  tags?: string[];
+  subtasks?: TodoSubtask[];
+  sortOrder?: number;
+}
+
+/** 创建清单入参。 */
+export interface CreateTodoListInput {
+  name: string;
+  color?: string;
+}
+
+/** 更新清单入参：color 传 null = 清空。 */
+export interface UpdateTodoListInput {
+  name?: string;
+  color?: string | null;
+  sortOrder?: number;
+}
+
+/** 事项列表查询选项。 */
+export interface ListTodosOptions {
+  /**
+   * today：未完成且 due_at 不晚于 date（默认今天，含逾期）；
+   * inbox：收集箱（list_id 为空）；all：全部（默认不含 done/cancelled）；done：仅已完成。
+   */
+  view?: 'today' | 'inbox' | 'all' | 'done';
+  /** 指定日筛选（YYYY-MM-DD）；today 视图作为基准日，其余视图按 due_at 当日精确匹配。 */
+  date?: string;
+  /** 按清单过滤。 */
+  listId?: string;
+  /** 默认排除 done/cancelled；为 true 时包含全部状态（done 视图除外）。 */
+  includeDone?: boolean;
+}
+
+/**
+ * todo 数据变更载荷：bus `todo:changed` 与 IPC 广播 `todo:update` 共用同一形状，
+ * 渲染层据此刷新列表；origin=cli 且 reason=create 时触发 COM 灯闪 + 新行滑入动效。
+ */
+export interface TodoUpdatePayload {
+  /** 变更原因；lists = 清单增删改。 */
+  reason: 'create' | 'update' | 'done' | 'reopen' | 'remove' | 'lists';
+  /** 触发来源：panel = 面板 IPC；cli = 外部 CLI 写入。 */
+  origin: 'panel' | 'cli';
+  /** 相关事项 id（remove 为被删 id；lists 为清单 id，可空）。 */
+  id?: string;
+}
+
+/** todo 插件对外 API。 */
+export interface TodoApi {
+  create(input: CreateTodoInput): Todo;
+  get(id: string): Todo | null;
+  update(id: string, patch: UpdateTodoInput): Todo;
+  remove(id: string): void;
+  /** todo/doing → done，写入 completedAt；其他状态抛错。 */
+  done(id: string): Todo;
+  /** done/cancelled → todo，清空 completedAt；其他状态抛错。 */
+  reopen(id: string): Todo;
+  list(options?: ListTodosOptions): Todo[];
+  createList(input: CreateTodoListInput): TodoList;
+  updateList(id: string, patch: UpdateTodoListInput): TodoList;
+  /** 删除清单；清单内事项移回收集箱。 */
+  removeList(id: string): void;
+  listLists(): TodoList[];
+}

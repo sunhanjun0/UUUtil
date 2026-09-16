@@ -77,6 +77,28 @@ const assistantApi: AssistantApi = {
     },
   },
 
+  // ===== 事项管理 Todo API =====
+  todo: {
+    list: (options) => ipcRenderer.invoke('todo:list', options),
+    get: (id) => ipcRenderer.invoke('todo:get', id),
+    create: (input) => ipcRenderer.invoke('todo:create', input),
+    update: (id, patch) => ipcRenderer.invoke('todo:update', id, patch),
+    remove: (id) => ipcRenderer.invoke('todo:remove', id),
+    done: (id) => ipcRenderer.invoke('todo:done', id),
+    reopen: (id) => ipcRenderer.invoke('todo:reopen', id),
+    listLists: () => ipcRenderer.invoke('todo:listLists'),
+    createList: (input) => ipcRenderer.invoke('todo:createList', input),
+    updateList: (id, patch) => ipcRenderer.invoke('todo:updateList', id, patch),
+    removeList: (id) => ipcRenderer.invoke('todo:removeList', id),
+    onUpdate: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        try { callback(payload as any); } catch { /* 忽略消费方异常 */ }
+      };
+      ipcRenderer.on('todo:update', listener);
+      return () => ipcRenderer.removeListener('todo:update', listener);
+    },
+  },
+
   // ===== 剪贴板历史 Clipboard API =====
   clipboard: {
     list: (options) => ipcRenderer.invoke('clipboard:list', options),
