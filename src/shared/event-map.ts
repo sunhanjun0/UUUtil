@@ -5,6 +5,7 @@ import type {
   FieResult,
   IngestResult,
   KnowledgeBaseApi,
+  TodoDueScanPayload,
   TodoUpdatePayload,
 } from './types';
 
@@ -86,6 +87,8 @@ export interface AppEventMap {
   'todo:activated': [PluginLifecyclePayload];
   'todo:deactivated': [];
   'todo:changed': [TodoUpdatePayload];
+  /** 到期巡查全量快照：todo 插件周期广播，reminder 插件订阅并 reconcile 提醒中心。 */
+  'todo:due-scan': [TodoDueScanPayload];
 }
 
 export type AppEventName = keyof AppEventMap;

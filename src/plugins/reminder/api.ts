@@ -4,6 +4,8 @@
  * 铁律：这是 reminder 插件对外暴露的唯一合法访问入口。
  * 阶段 3：新增 ask / respond / dismiss。ask 会写入 actions_json，
  *          respond/dismiss 写入 response_json 并翻转 status。
+ * 阶段 5：新增 syncKeyedReminders——周期巡查类来源（如 todo 到期巡查）
+ *          的全量 reconcile 入口：集合内 upsert、集合外 dismiss。
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -21,6 +23,8 @@ import type {
   ReminderStatus,
   ReminderType,
   RespondReminderInput,
+  SyncReminderItem,
+  SyncRemindersResult,
 } from '../../shared/types';
 
 const VALID_TYPES: ReminderType[] = ['info', 'action'];
@@ -485,6 +489,69 @@ export const api: ReminderApi = {
     if (!row) return 0;
     const n = Number(row[0]);
     return Number.isFinite(n) ? n : 0;
+  },
+
+  syncKeyedReminders(source: string, items: SyncReminderItem[]): SyncRemindersResult {
+    if (typeof source !== 'string' || !source.trim()) throw new Error('source 必填');
+    if (!Array.isArray(items)) throw new Error('items 必须是数组');
+    const src = source.trim();
+    let created = 0;
+    let updated = 0;
+    let dismissed = 0;
+    const seenKeys = new Set<string>();
+
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const key = typeof item.key === 'string' ? item.key.trim() : '';
+      if (!key || seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      const title = typeof item.title === 'string' ? item.title.trim() : '';
+      if (!title) continue;
+      const type: ReminderType = item.type && VALID_TYPES.includes(item.type) ? item.type : 'info';
+      const severity: ReminderSeverity =
+        item.severity && VALID_SEVERITIES.includes(item.severity) ? item.severity : 'info';
+      const body = item.body ?? null;
+
+      // 内容无变化：跳过写入，避免周期巡查反复刷 updated_at（metadata 不参与比较）
+      const existing = findActiveByKey(src, key);
+      if (
+        existing &&
+        existing.type === type &&
+        existing.severity === severity &&
+        existing.title === title &&
+        existing.body === body
+      ) {
+        continue;
+      }
+      const result = this.create({
+        source: src,
+        key,
+        title,
+        type,
+        severity,
+        body: body ?? undefined,
+        metadata: item.metadata,
+      });
+      if (result.deduped) updated += 1;
+      else created += 1;
+    }
+
+    // 反向核对：该 source 下不在本次集合里的 active 提醒（含无 key 的）全部关闭
+    const stale = selectRows(
+      `SELECT id, key FROM plugin_reminder_items WHERE source = ? AND status = 'active'`,
+      [src],
+    );
+    for (const row of stale) {
+      const id = String(row[0]);
+      const key = row[1] === null || row[1] === undefined ? null : String(row[1]);
+      if (key === null || !seenKeys.has(key)) {
+        try {
+          this.dismiss(id);
+          dismissed += 1;
+        } catch { /* 竞态下已被关闭则跳过 */ }
+      }
+    }
+    return { created, updated, dismissed };
   },
 
   // Agent 专属模式内部状态：topic -> waiter

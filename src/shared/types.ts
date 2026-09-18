@@ -418,6 +418,27 @@ export interface CreateReminderResult {
   deduped: boolean;
 }
 
+/** syncKeyedReminders 的单条输入：同一 source 下以 key 去重的一条提醒内容。 */
+export interface SyncReminderItem {
+  /** 同 source 内的去重键，必填；空串 / 重复 key 会被跳过。 */
+  key: string;
+  title: string;
+  type?: ReminderType;
+  severity?: ReminderSeverity;
+  body?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** syncKeyedReminders 的 reconcile 结果计数。 */
+export interface SyncRemindersResult {
+  /** 新建的 active 提醒数。 */
+  created: number;
+  /** 命中去重且内容有变化、被更新的提醒数（内容无变化会跳过写入，不计入）。 */
+  updated: number;
+  /** 反向核对关闭的提醒数（该 source 下不在本次集合里的 active 提醒）。 */
+  dismissed: number;
+}
+
 /** ask 命令入参。type 强制为 action，`actions` 必填。 */
 export interface AskReminderInput {
   source: string;
@@ -478,6 +499,13 @@ export interface ReminderApi {
   list(options?: ListRemindersOptions): Reminder[];
   get(id: string): Reminder | null;
   countActiveActions(): number;
+  /**
+   * 把一个 source 的 keyed 活跃提醒集合 reconcile 成与 items 完全一致：
+   * 集合内的 upsert（按 source+key 去重，内容无变化跳过写入），
+   * 不在集合内的 active 提醒（含无 key 的）全部 dismiss。
+   * 供周期巡查类来源（如 todo 到期巡查）全量同步：重启安全、无内存态依赖。
+   */
+  syncKeyedReminders(source: string, items: SyncReminderItem[]): SyncRemindersResult;
   agentUpdate(input: any): Reminder;
   agentQuery(topic: string): Reminder | null;
   agentClose(topic: string, result: 'done' | 'cancelled' | 'superseded'): Reminder;
@@ -683,6 +711,34 @@ export interface ListTodosOptions {
 }
 
 /**
+ * 到期巡查同步给提醒中心的一条事项快照：bus `todo:due-scan` 的载荷元素。
+ * reminder 插件以 (source='todo', key=id) upsert；title/body/severity 由 todo 侧组装好，
+ * reminder 侧只做落库，不再加工文案。
+ */
+export interface TodoDueReminderItem {
+  /** 事项 id，作为提醒的去重键。 */
+  id: string;
+  /** 提醒标题（含「已逾期：/今日到期：」前缀）。 */
+  title: string;
+  /** 提醒正文（截止时间 + 优先级）。 */
+  body: string;
+  severity: ReminderSeverity;
+  dueAt: string;
+  priority: number;
+  /** true = 截止日早于本地今天（已逾期）；false = 本地今天到期。 */
+  overdue: boolean;
+}
+
+/**
+ * todo 插件到期巡查的全量快照：每次巡查广播当前「已到期且未完成」的完整集合，
+ * reminder 插件据此 reconcile（集合外的本 source active 提醒全部关闭）。
+ */
+export interface TodoDueScanPayload {
+  scannedAt: string;
+  items: TodoDueReminderItem[];
+}
+
+/**
  * todo 数据变更载荷：bus `todo:changed` 与 IPC 广播 `todo:update` 共用同一形状，
  * 渲染层据此刷新列表；origin=cli 且 reason=create 时触发 COM 灯闪 + 新行滑入动效。
  */
@@ -706,6 +762,11 @@ export interface TodoApi {
   /** done/cancelled → todo，清空 completedAt；其他状态抛错。 */
   reopen(id: string): Todo;
   list(options?: ListTodosOptions): Todo[];
+  /**
+   * 已到期且未完成（todo/doing）的事项，按 due_at 升序。
+   * 「到期」以 epoch 比较：date-only（YYYY-MM-DD）按本地零点计，避免 sqlite date() 的 UTC 偏差。
+   */
+  listDue(now: Date): Todo[];
   createList(input: CreateTodoListInput): TodoList;
   updateList(id: string, patch: UpdateTodoListInput): TodoList;
   /** 删除清单；清单内事项移回收集箱。 */

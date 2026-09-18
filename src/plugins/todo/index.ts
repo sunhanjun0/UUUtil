@@ -5,6 +5,9 @@
  * Stage 2：CLI 命令（todo.add / todo.list / todo.done / todo.update），
  *          外部工具（含 Mika）的写入入口；变更经 bus `todo:changed`
  *          （origin=cli）广播，IPC 侧转发为 `todo:update` 推给面板。
+ * Stage 5：到期巡查——core:ready 后启动 due-scanner（首扫 + 60s 周期 +
+ *          todo:changed 即时核对），全量到期集经 bus `todo:due-scan` 广播，
+ *          由 reminder 插件 reconcile 进提醒中心；deactivate 停止并广播空集清场。
  * 定位：面板内的「瞬态」事项工具——快速捕捉、今日一瞥、随手勾掉。
  */
 
@@ -12,6 +15,7 @@ import { bus } from '../../core/event-bus';
 import { registerCommand } from '../../core/command-registry';
 import type { PluginManifest } from '../../core/plugin-loader';
 import { api, ensureTodoTables } from './api';
+import { startDueScanner, stopDueScanner } from './due-scanner';
 import type {
   CreateTodoInput,
   ListTodosOptions,
@@ -22,8 +26,8 @@ import type {
 export const manifest: PluginManifest = {
   id: 'todo',
   name: '事项管理',
-  version: '0.2.0',
-  description: '面板内的瞬态事项工具：快速捕捉、今日一瞥、随手勾掉',
+  version: '0.3.0',
+  description: '面板内的瞬态事项工具：快速捕捉、今日一瞥、随手勾掉；到期自动进提醒中心',
 };
 
 /** CLI 侧变更统一经此发出，origin 固定 cli（面板据此区分外部写入）。 */
@@ -40,13 +44,18 @@ function pickListId(args: Record<string, unknown>): string | null | undefined {
   return s ? s : undefined;
 }
 
+/** core:ready 处理（具名以便 deactivate 解除订阅）。 */
+function onCoreReady(): void {
+  ensureTodoTables();
+  // 到期巡查：首扫（延后一个 tick）+ 60s 周期 + todo:changed 即时核对
+  startDueScanner();
+  console.log('[todo] 事项表已就绪，到期巡查已启动');
+}
+
 export function activate(): void {
   console.log('[todo] 插件已激活');
 
-  bus.on('core:ready', () => {
-    ensureTodoTables();
-    console.log('[todo] 事项表已就绪');
-  });
+  bus.on('core:ready', onCoreReady);
 
   // todo.add —— 新建事项（外部工具写入入口）
   registerCommand({
@@ -149,5 +158,9 @@ export function activate(): void {
 
 export function deactivate(): void {
   console.log('[todo] 插件已停用');
+  stopDueScanner();
+  bus.off('core:ready', onCoreReady);
+  // 清场：广播空到期集，让 reminder 关掉所有 todo 来源的活跃提醒
+  bus.emit('todo:due-scan', { scannedAt: new Date().toISOString(), items: [] });
   bus.emit('todo:deactivated');
 }

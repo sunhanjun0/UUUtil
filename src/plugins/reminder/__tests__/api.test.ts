@@ -277,3 +277,124 @@ describe('respond / dismiss 状态流转', () => {
     expect(() => api.dismiss('rem_missing')).toThrow();
   });
 });
+
+describe('syncKeyedReminders 全量 reconcile（todo 到期巡查）', () => {
+  const item = (key: string, title = `事项${key}`, severity: 'info' | 'warning' | 'error' = 'warning') => ({
+    key,
+    title,
+    body: `截止 2026-09-18 · P2`,
+    severity,
+    type: 'info' as const,
+    metadata: { todoId: key },
+  });
+
+  it('首次同步全部新建，source/key/内容落库正确', () => {
+    const result = api.syncKeyedReminders('todo', [item('todo_1'), item('todo_2')]);
+    expect(result).toEqual({ created: 2, updated: 0, dismissed: 0 });
+
+    const list = api.list({ status: 'active', limit: 10 });
+    expect(list).toHaveLength(2);
+    const r1 = list.find((r) => r.key === 'todo_1')!;
+    expect(r1.source).toBe('todo');
+    expect(r1.type).toBe('info');
+    expect(r1.severity).toBe('warning');
+    expect(r1.title).toBe('事项todo_1');
+    expect(r1.metadata).toEqual({ todoId: 'todo_1' });
+  });
+
+  it('内容无变化的重复同步完全跳过写入（updated_at 不刷、不计数）', () => {
+    api.syncKeyedReminders('todo', [item('todo_1')]);
+    const before = api.list({ status: 'active', limit: 10 })[0];
+
+    const result = api.syncKeyedReminders('todo', [item('todo_1')]);
+    expect(result).toEqual({ created: 0, updated: 0, dismissed: 0 });
+    const after = api.list({ status: 'active', limit: 10 })[0];
+    expect(after.id).toBe(before.id);
+    expect(after.updatedAt).toBe(before.updatedAt);
+  });
+
+  it('内容有变化命中去重更新：同一条记录改 severity/title，不新增', () => {
+    api.syncKeyedReminders('todo', [item('todo_1')]);
+    const before = api.list({ status: 'active', limit: 10 })[0];
+
+    const result = api.syncKeyedReminders('todo', [
+      { ...item('todo_1', '事项todo_1（已升级）', 'error') },
+    ]);
+    expect(result).toEqual({ created: 0, updated: 1, dismissed: 0 });
+
+    const list = api.list({ status: 'active', limit: 10 });
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe(before.id);
+    expect(list[0].severity).toBe('error');
+    expect(list[0].title).toBe('事项todo_1（已升级）');
+  });
+
+  it('反向核对：集合外的本 source active 提醒被 dismiss，集合内保留', () => {
+    api.syncKeyedReminders('todo', [item('todo_1'), item('todo_2'), item('todo_3')]);
+
+    const result = api.syncKeyedReminders('todo', [item('todo_2')]);
+    expect(result).toEqual({ created: 0, updated: 0, dismissed: 2 });
+
+    const active = api.list({ status: 'active', limit: 10 });
+    expect(active.map((r) => r.key)).toEqual(['todo_2']);
+    const dismissedList = api.list({ status: 'dismissed', limit: 10 });
+    expect(dismissedList.map((r) => r.key).sort()).toEqual(['todo_1', 'todo_3']);
+  });
+
+  it('空集合同步 = 清空该 source 全部 active 提醒（含无 key 的）', () => {
+    api.syncKeyedReminders('todo', [item('todo_1')]);
+    api.create({ source: 'todo', title: '无 key 的历史提醒' });
+
+    const result = api.syncKeyedReminders('todo', []);
+    expect(result).toEqual({ created: 0, updated: 0, dismissed: 2 });
+    expect(api.list({ status: 'active', limit: 10 })).toHaveLength(0);
+  });
+
+  it('其他 source 的提醒不受影响', () => {
+    api.create({ source: 'codex', key: 'build-1', title: '构建完成' });
+    api.syncKeyedReminders('todo', [item('todo_1')]);
+
+    const result = api.syncKeyedReminders('todo', []);
+    expect(result.dismissed).toBe(1);
+    const active = api.list({ status: 'active', limit: 10 });
+    expect(active).toHaveLength(1);
+    expect(active[0].source).toBe('codex');
+  });
+
+  it('已 dismiss 的 key 重新出现时会新建一条（不复活旧记录）', () => {
+    api.syncKeyedReminders('todo', [item('todo_1')]);
+    api.syncKeyedReminders('todo', []); // dismiss
+    const before = api.list({ limit: 10 });
+    expect(before[0].status).toBe('dismissed');
+
+    const result = api.syncKeyedReminders('todo', [item('todo_1')]);
+    expect(result).toEqual({ created: 1, updated: 0, dismissed: 0 });
+    const active = api.list({ status: 'active', limit: 10 });
+    expect(active).toHaveLength(1);
+    expect(active[0].id).not.toBe(before[0].id);
+  });
+
+  it('空 key / 重复 key / 空 title 的条目被跳过', () => {
+    const result = api.syncKeyedReminders('todo', [
+      { key: '  ', title: '空 key' },
+      item('todo_1'),
+      item('todo_1', '重复 key 的第二条'),
+      { key: 'todo_2', title: '  ' },
+    ]);
+    expect(result).toEqual({ created: 1, updated: 0, dismissed: 0 });
+    const active = api.list({ status: 'active', limit: 10 });
+    expect(active.map((r) => r.key)).toEqual(['todo_1']);
+  });
+
+  it('非法 severity/type 回落 info；source 为空抛错', () => {
+    const result = api.syncKeyedReminders('todo', [
+      { key: 'todo_1', title: 't', severity: 'critical' as any, type: 'weird' as any },
+    ]);
+    expect(result.created).toBe(1);
+    const r = api.list({ status: 'active', limit: 10 })[0];
+    expect(r.severity).toBe('info');
+    expect(r.type).toBe('info');
+
+    expect(() => api.syncKeyedReminders('  ', [])).toThrow('source');
+  });
+});

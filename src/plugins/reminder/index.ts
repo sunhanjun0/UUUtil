@@ -5,6 +5,8 @@
  * 阶段 2：source+key 去重 + 两色悬浮球光点 + 实时事件通道。
  * 阶段 3：reminder.ask 阻塞式确认 + reminder.respond。
  * 阶段 4：Agent 专属模式（agent.update / agent.wait / agent.query / agent.close）。
+ * 阶段 5：订阅 todo 插件的 bus `todo:due-scan` 全量快照，把到期事项 reconcile
+ *          进提醒中心（跨插件只走 bus，不 import todo 的任何代码）。
  */
 
 import { bus } from '../../core/event-bus';
@@ -19,6 +21,7 @@ import type {
   ListRemindersOptions,
   ReminderAction,
   RespondReminderInput,
+  TodoDueScanPayload,
 } from '../../shared/types';
 
 const DEFAULT_ASK_TIMEOUT_SEC = 300;
@@ -27,12 +30,50 @@ const MAX_ASK_TIMEOUT_SEC = 3600;
 export const manifest: PluginManifest = {
   id: 'reminder',
   name: 'Reminder 提醒框架',
-  version: '0.4.0',
-  description: '外部工具通过 CLI 推送提醒 / 阻塞式确认，支持 Agent 专属模式',
+  version: '0.5.0',
+  description: '外部工具通过 CLI 推送提醒 / 阻塞式确认，支持 Agent 专属模式；todo 到期事项自动接入',
 };
+
+/**
+ * todo 到期巡查快照 → 提醒中心（具名以便 deactivate 解除订阅）。
+ * 快照是全量到期集：upsert + 反向核对都在 api.syncKeyedReminders 内完成；
+ * 只有实际发生新建/更新/关闭时才转发 reminder:changed，避免周期空扫刷屏。
+ */
+function onTodoDueScan(payload: TodoDueScanPayload): void {
+  try {
+    const result = api.syncKeyedReminders(
+      'todo',
+      payload.items.map((item) => ({
+        key: item.id,
+        title: item.title,
+        body: item.body,
+        severity: item.severity,
+        type: 'info' as const,
+        metadata: {
+          todoId: item.id,
+          dueAt: item.dueAt,
+          priority: item.priority,
+          overdue: item.overdue,
+        },
+      })),
+    );
+    if (result.created > 0 || result.updated > 0 || result.dismissed > 0) {
+      bus.emit('reminder:changed', {
+        reason: result.created > 0 || result.updated > 0 ? 'notify' : 'dismiss',
+        type: 'info',
+        deduped: true,
+      });
+    }
+  } catch (err) {
+    console.error('[reminder] 同步 todo 到期提醒失败:', err);
+  }
+}
 
 export function activate(): void {
   console.log('[reminder] 插件已激活');
+
+  // todo 到期巡查快照 → 提醒中心（deactivate 时解除）
+  bus.on('todo:due-scan', onTodoDueScan);
 
   bus.on('core:ready', () => {
     ensureRemindersTable();
@@ -359,5 +400,6 @@ function clampTimeout(raw: unknown): number {
 
 export function deactivate(): void {
   console.log('[reminder] 插件已停用');
+  bus.off('todo:due-scan', onTodoDueScan);
   bus.emit('reminder:deactivated');
 }

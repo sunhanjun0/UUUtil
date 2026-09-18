@@ -5,6 +5,7 @@
  * Stage 1：todos / todo_lists 两表 + CRUD + done/reopen + 视图过滤 + 清单计数，
  *          不注册 CLI 命令、不含 UI。错误在插件内部抛出，由上层（CLI / IPC 边界）
  *          包装为 { success, error }，不传播到核心层。
+ * Stage 5：listDue（到期巡查数据源）+ parseDueAtMs（date-only 按本地零点解析）。
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -156,6 +157,23 @@ function normalizeDueAt(raw: unknown): string | null {
     throw new Error(`dueAt 格式非法: ${s}`);
   }
   return s;
+}
+
+const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * dueAt 解析为 epoch 毫秒：date-only（YYYY-MM-DD）按本地零点计
+ * （与面板「DUE 今天」语义一致，避免 `new Date('YYYY-MM-DD')` 的 UTC 零点偏差）；
+ * 其余交给 Date 解析。非法输入返回 null。
+ */
+export function parseDueAtMs(dueAt: string): number | null {
+  const s = dueAt.trim();
+  const m = DATE_ONLY_RE.exec(s);
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+  }
+  const t = new Date(s).getTime();
+  return Number.isNaN(t) ? null : t;
 }
 
 function normalizeTags(raw: unknown): string[] {
@@ -386,6 +404,21 @@ export const api: TodoApi = {
 
     const sql = `SELECT ${SELECT_COLS} FROM todos${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${orderBy}`;
     return selectRows(sql, params).map(mapRow);
+  },
+
+  listDue(now: Date): Todo[] {
+    const rows = selectRows(
+      `SELECT ${SELECT_COLS} FROM todos
+       WHERE status IN ('todo','doing') AND due_at IS NOT NULL
+       ORDER BY due_at ASC, priority DESC, sort_order ASC, created_at ASC`,
+    );
+    const nowMs = now.getTime();
+    return rows
+      .map(mapRow)
+      .filter((t) => {
+        const dueMs = t.dueAt ? parseDueAtMs(t.dueAt) : null;
+        return dueMs !== null && dueMs <= nowMs;
+      });
   },
 
   createList(input: CreateTodoListInput): TodoList {
