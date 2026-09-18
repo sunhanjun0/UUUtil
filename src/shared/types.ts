@@ -487,16 +487,45 @@ export interface ReminderApi {
 
 // ===== Clipboard（剪贴板历史）=====
 
-/** 剪贴板条目类型。阶段 1 仅文本，后续可扩展图片。 */
-export type ClipboardKind = 'text';
+/** 剪贴板条目类型。文本 / 富文本(HTML) / 图片 / 文件引用。 */
+export type ClipboardKind = 'text' | 'richtext' | 'image' | 'file';
+
+/**
+ * 剪贴板条目按类型携带的附加元数据（仅 richtext/image/file 有，text 为 undefined）。
+ * 不入库为独立列，整体 JSON 序列化进 `meta_json`。
+ */
+export interface ClipboardItemMeta {
+  /** richtext：原始 HTML（截断保护），回贴富文本编辑器时使用。 */
+  html?: string;
+  /** image：落盘图片的元数据（文件名 + 缩略图 + 尺寸 + 字节数 + mime）。 */
+  image?: {
+    filename: string;
+    thumbFilename: string;
+    width: number;
+    height: number;
+    sizeBytes: number;
+    /** 图片 MIME，目前固定 image/png（Electron toPNG 统一编码）。 */
+    mime: string;
+  };
+  /** file：单文件引用元数据（路径 + 名 + 大小 + 是否目录）。不复制文件内容。 */
+  file?: {
+    path: string;
+    name: string;
+    sizeBytes: number;
+    isDir: boolean;
+  };
+}
 
 /** 一条剪贴板历史记录（面板 / CLI 读取时返回）。 */
 export interface ClipboardItem {
   id: string;
-  /** 文本内容。 */
+  /**
+   * 文本表示，口径随 kind 变化：
+   * text → 纯文本；richtext → 去格式纯文本（供搜索/预览）；image → 空串；file → 文件名（预览用）。
+   */
   content: string;
   kind: ClipboardKind;
-  /** 内容字符长度。 */
+  /** 长度口径随 kind 变化：text/richtext=字符数；image=字节数；file=1。 */
   length: number;
   /** 是否置顶/收藏（置顶项不受上限清理影响）。 */
   pinned: boolean;
@@ -506,6 +535,8 @@ export interface ClipboardItem {
   createdAt: string;
   /** 最近一次被复制/复用的时间（ISO），用于排序。 */
   lastUsedAt: string;
+  /** 按 kind 携带的附加元数据；text 为 undefined。 */
+  meta?: ClipboardItemMeta;
 }
 
 /** 列表查询选项。 */
@@ -514,6 +545,8 @@ export interface ListClipboardOptions {
   keyword?: string;
   /** 仅返回置顶项。 */
   pinnedOnly?: boolean;
+  /** 按类型筛选。 */
+  kind?: ClipboardKind;
   /** 返回条数上限，默认 100，最大 500。 */
   limit?: number;
 }
@@ -533,15 +566,23 @@ export interface ClipboardUpdatePayload {
 
 /** clipboard 插件对外 API。 */
 export interface ClipboardApi {
-  /** 记录一段文本（内部去重 + 上限清理 + 敏感过滤）。返回 null 表示被过滤/为空。 */
+  /** 记录一段纯文本（内部去重 + 上限清理 + 敏感过滤）。返回 null 表示被过滤/为空。 */
   record(content: string): RecordClipboardResult | null;
+  /** 记录富文本（纯文本 + HTML），回贴时同时写 text+html。 */
+  recordRichText(plain: string, html: string): RecordClipboardResult | null;
+  /** 记录图片（NativeImage），落盘 + 缩略图。 */
+  recordImage(image: import('electron').NativeImage): RecordClipboardResult | null;
+  /** 记录单文件引用（不复制内容）。 */
+  recordFile(filePath: string): RecordClipboardResult | null;
   list(options?: ListClipboardOptions): ClipboardItem[];
   get(id: string): ClipboardItem | null;
-  /** 把某条内容写回系统剪贴板，并刷新 copyCount / lastUsedAt。 */
+  /** 把某条内容写回系统剪贴板（按 kind 分支），并刷新 copyCount / lastUsedAt。 */
   copyToClipboard(id: string): ClipboardItem;
+  /** 读取图片历史项的缩略图 data URL，非图片项返回 null。 */
+  readThumbnail(id: string): string | null;
   togglePin(id: string): ClipboardItem;
   remove(id: string): void;
-  /** 清空非置顶历史。 */
+  /** 清空非置顶历史（含落盘图片文件清理）。 */
   clear(): number;
   count(): number;
 }

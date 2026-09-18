@@ -1,23 +1,27 @@
 /**
  * clipboard 插件 —— 剪贴板历史
  *
- * 阶段 1：监听系统剪贴板变化（主进程 Electron clipboard + 定时轮询，无原生事件），
- *          文本历史记录到 SQLite，面板支持搜索 / 时间排序 / 点击复制回剪贴板 / 置顶 / 清理。
+ * 监听系统剪贴板变化（主进程 Electron clipboard + 定时轮询，无原生事件），
+ * 支持四类内容：文本 / 富文本(HTML) / 图片 / 文件引用，记录到 SQLite，
+ * 面板支持搜索 / 时间排序 / 点击复制回剪贴板 / 置顶 / 清理。
  *
  * 运行进程：主进程（plugin-loader 通过 require 加载，Node 上下文），
- *           因此可直接使用 Electron 的 clipboard 模块读写系统剪贴板。
+ * 因此可直接使用 Electron 的 clipboard 模块读写系统剪贴板。
+ *
+ * 检测优先级：files > image > richtext > text（复制文件/图片时 OS 也会附带文本，
+ * 必须让最具体者胜出，避免把文件路径当文本记录）。
  */
 
-import { clipboard } from 'electron';
 import { bus } from '../../core/event-bus';
 import { registerCommand } from '../../core/command-registry';
 import { info, error } from '../../core/logger';
 import type { PluginManifest } from '../../core/plugin-loader';
 import {
   api,
+  detectClipboard,
   ensureClipboardTable,
-  getLastSeenText,
-  setLastSeenText,
+  getLastSig,
+  setLastSig,
 } from './api';
 import type { ListClipboardOptions } from '../../shared/types';
 
@@ -32,8 +36,8 @@ let coreReadyHandler: (() => void) | null = null;
 export const manifest: PluginManifest = {
   id: 'clipboard',
   name: '剪贴板历史',
-  version: '0.1.0',
-  description: '监听系统剪贴板变化，记录文本复制历史，支持搜索 / 一键复制回剪贴板 / 置顶',
+  version: '0.2.0',
+  description: '监听系统剪贴板，记录文本 / 富文本 / 图片 / 文件引用历史，支持搜索 / 一键复制回剪贴板 / 置顶',
 };
 
 export function activate(): void {
@@ -68,6 +72,7 @@ export function activate(): void {
     params: [
       { name: 'keyword', type: 'string', required: false, description: '关键字模糊搜索' },
       { name: 'pinnedOnly', type: 'boolean', required: false, description: '仅返回置顶项' },
+      { name: 'kind', type: 'string', required: false, description: '按类型筛选：text/richtext/image/file' },
       { name: 'limit', type: 'number', required: false, description: '返回条数上限，默认 100，最大 500' },
     ],
     example: { keyword: '', limit: 50 },
@@ -75,6 +80,7 @@ export function activate(): void {
       const options: ListClipboardOptions = {};
       if (typeof args.keyword === 'string') options.keyword = args.keyword;
       if (args.pinnedOnly === true) options.pinnedOnly = true;
+      if (typeof args.kind === 'string' && args.kind) options.kind = args.kind as ListClipboardOptions['kind'];
       if (args.limit !== undefined && args.limit !== null) {
         const n = Number(args.limit);
         if (Number.isFinite(n)) options.limit = Math.trunc(n);
@@ -97,7 +103,7 @@ export function activate(): void {
 
   registerCommand({
     command: 'clipboard.copy',
-    description: '把某条历史内容写回系统剪贴板',
+    description: '把某条历史内容写回系统剪贴板（按类型回写：文本/富文本/图片/文件）',
     params: [{ name: 'id', type: 'string', required: true, description: '记录 id' }],
     example: { id: 'clip_xxxxxxxx' },
     handler: (args) => {
@@ -121,7 +127,7 @@ export function activate(): void {
 
   registerCommand({
     command: 'clipboard.remove',
-    description: '删除一条剪贴板历史',
+    description: '删除一条剪贴板历史（图片项同时清理落盘文件）',
     params: [{ name: 'id', type: 'string', required: true, description: '记录 id' }],
     example: { id: 'clip_xxxxxxxx' },
     handler: (args) => {
@@ -133,7 +139,7 @@ export function activate(): void {
 
   registerCommand({
     command: 'clipboard.clear',
-    description: '清空所有非置顶的剪贴板历史',
+    description: '清空所有非置顶的剪贴板历史（图片项同时清理落盘文件）',
     params: [],
     example: {},
     handler: () => {
@@ -149,28 +155,34 @@ export function activate(): void {
 /** 启动系统剪贴板轮询监听。 */
 function startMonitor(): void {
   if (pollTimer) return;
-  // 以当前剪贴板内容作为基线，避免把启动前就已存在的内容当成新复制记录下来
+  // 以当前剪贴板签名作为基线，避免把启动前就已存在的内容当成新复制记录下来
   try {
-    setLastSeenText(clipboard.readText() || null);
+    setLastSig(detectClipboard().sig);
   } catch (err) {
     error('clipboard', '读取初始剪贴板失败', { error: err instanceof Error ? err.message : String(err) });
+    setLastSig(null);
   }
 
   pollTimer = setInterval(() => {
     try {
-      const text = clipboard.readText();
-      if (!text || text === getLastSeenText()) return;
-      setLastSeenText(text);
-      const result = api.record(text);
-      if (result) {
-        bus.emit('clipboard:changed', { reason: 'record', total: api.count() });
+      const d = detectClipboard();
+      if (!d.sig || d.sig === getLastSig()) return;
+      setLastSig(d.sig);
+      let result = null;
+      switch (d.kind) {
+        case 'text': result = api.record(d.text); break;
+        case 'richtext': result = api.recordRichText(d.text, d.html); break;
+        case 'image': result = api.recordImage(d.image); break;
+        case 'file': result = api.recordFile(d.filePath); break;
+        default: break; // empty
       }
+      if (result) bus.emit('clipboard:changed', { reason: 'record', total: api.count() });
     } catch (err) {
       error('clipboard', '轮询剪贴板失败', { error: err instanceof Error ? err.message : String(err) });
     }
   }, POLL_INTERVAL_MS);
 
-  info('clipboard', '剪贴板监听已启动（轮询间隔 1s）');
+  info('clipboard', '剪贴板监听已启动（轮询间隔 1s，支持 文本/富文本/图片/文件）');
 }
 
 function stopMonitor(): void {

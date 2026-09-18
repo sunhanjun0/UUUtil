@@ -5,7 +5,7 @@
  * 与 reminder.ipc.ts 同构：主进程直接引用插件 api.ts（唯一对外接口），符合插件隔离铁律。
  */
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import { defineInvoke } from './types';
 import type { IpcModule } from './types';
 import { api as clipboardApi } from '../../plugins/clipboard/api';
@@ -38,6 +38,7 @@ export const clipboardIpc: IpcModule = {
   defs: [
     defineInvoke('clipboard:list', (_event, options?: ListClipboardOptions) => clipboardApi.list(options)),
     defineInvoke('clipboard:get', (_event, id: string) => clipboardApi.get(id)),
+    defineInvoke('clipboard:thumbnail', (_event, id: string) => clipboardApi.readThumbnail(id)),
     defineInvoke('clipboard:copy', (_event, id: string) => {
       const item = clipboardApi.copyToClipboard(id);
       bus.emit('clipboard:changed', { reason: 'copy', total: clipboardApi.count() });
@@ -57,6 +58,19 @@ export const clipboardIpc: IpcModule = {
       const cleared = clipboardApi.clear();
       bus.emit('clipboard:changed', { reason: 'clear', total: clipboardApi.count() });
       return { cleared };
+    }),
+    defineInvoke('clipboard:openFile', async (_event, id: string) => {
+      const item = clipboardApi.get(id);
+      if (!item?.meta?.file) throw new Error('Not a file item');
+      const result = await shell.openPath(item.meta.file.path);
+      if (result) throw new Error(`Failed to open: ${result}`);
+      return { opened: true };
+    }),
+    defineInvoke('clipboard:showInFolder', async (_event, id: string) => {
+      const item = clipboardApi.get(id);
+      if (!item?.meta?.file) throw new Error('Not a file item');
+      shell.showItemInFolder(item.meta.file.path);
+      return { showed: true };
     }),
   ],
 };
