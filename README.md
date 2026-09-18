@@ -6,20 +6,26 @@
 
 ## 当前功能
 
-- 悬浮球入口：桌面悬浮球点击展开/收起右侧工具面板。
-- 全局快捷键：支持 `Control + Shift + U` 切换面板，`Option + Space` 作为备用快捷键。
+- 悬浮球入口：桌面常驻悬浮球，单击展开环形菜单（便签/剪贴板/截图/提醒/助手/设置），双击展开/收起右侧工具面板，背面每隔一分钟翻转为时钟。
+- 全局快捷键：支持 `Control + Shift + U` 切换面板，`Alt + Space` 作为备用快捷键。
 - 系统托盘：支持从 macOS 托盘展开/关闭面板、退出应用。
-- 面板动效：导航切换时内容区横向滑入/滑出，多卡片按顺序错峰进入。
+- 面板动效：导航切换时内容区横向滑入/滑出，多卡片按顺序错峰进入；前台/后台双面 3D 翻转。
 - 多功能白板：首页提供多画布临时记录，支持便签、文本框、图片、附件、粘贴导入、拖拽缩放、本地持久化、撤销和 SVG 涂鸦绘图。
-- 插件系统：通过 `manifest` + `activate/deactivate` 注册插件，通过事件总线通信。
-- 本地数据库：基于 sql.js 的 SQLite 文件，默认保存到 `.data/assistant.db`。
+- 插件系统：通过 `manifest` + `activate/deactivate` 注册插件，通过事件总线通信，支持运行时启用/禁用。
+- 本地数据库：基于 sql.js 的 SQLite 文件，默认保存到 Electron `userData/assistant.db`。
 - 知识库：支持笔记、分类、标签、搜索、创建、编辑和删除。
 - 计算器：支持鼠标与键盘输入、连续计算和最多 10 条历史记录。
 - 开发工具：支持 JSON、SQL、Base64、时间戳、正则测试、UUID 生成。
+- 剪贴板历史：监听系统剪贴板，记录文本/富文本/图片/文件四类内容，支持搜索、置顶、一键回贴、图片缩略图与文件打开/定位。
+- 提醒中心：外部工具经 CLI 推送提醒或阻塞式确认（ask），支持 Agent 专属模式（update/wait/query/close）。
+- 事项管理：面板内瞬态事项工具，支持清单、优先级、截止日、标签、子任务与多视图过滤。
+- 终端：基于 node-pty 的交互式终端，tmux 作为持久化后端，标签会话可跨重启恢复。
 - 配色研究页：用于沉淀 UI 色彩方案实验。
 - AI 核心框架：提供可配置 Provider、默认模型参数、统一 Chat/Streaming 调用接口和独立助手页，便于后续接入翻译、白板 Agent、知识库问答等能力。
 - AI 助手：支持流式输出、Markdown 渲染、停止生成、耗时/Token 页脚、会话历史、新对话侧边栏和图片/音频等多模态附件输入。
 - 焦点看板：以注意力观察为目标，展示由助手、Skill 或外部系统上报并由 FIE 归因的关注对象、检视记录、健康度、权重和告警，不作为手动 TODO 使用。
+- CLI 外部接入：`uuutil call <plugin.action>` 经 loopback HTTP 向本机外部工具暴露能力（list/help/ping/call）。
+- 界面设置：TAB 栏显隐与排序可配置并持久化。
 - 日志框架：主进程提供 JSON Lines 结构化日志、日志轮转、渲染进程日志上报 IPC，并内置日志管理页用于查看、过滤、打开目录和清空日志。
 
 ## 技术栈
@@ -31,6 +37,10 @@
 - Chakra UI
 - sql.js
 - react-router-dom
+- node-pty / xterm.js（终端）
+- assistant-ui（AI 助手界面）
+- framer-motion（动效）
+- Vitest（单元测试）
 
 ## 快速开始
 
@@ -53,35 +63,50 @@ npm run start        # 运行已构建的 Electron 应用
 npm run dev:main     # 仅编译并运行主进程
 npm run dev:renderer # 仅启动 Vite 开发服务器
 npm run pack         # 使用 electron-builder 打包目录版 macOS 应用
+npm test             # 运行单元测试（Vitest）
+npm run verify:plugins # 校验插件启用状态
 ```
 
 ## 目录结构
 
 ```text
 src/
-├── core/                 # 内核能力：事件总线、插件加载、数据库、AI、日志
-│   ├── ai.ts
-│   ├── db.ts
-│   ├── event-bus.ts
-│   ├── logger.ts
-│   └── plugin-loader.ts
-├── main/                 # Electron 主进程与 preload
-│   ├── index.ts
-│   └── preload.ts
-├── plugins/              # 插件目录
+├── core/                 # 内核：事件总线、插件加载、数据库、日志、AI、命令注册表
+│   ├── ai.ts             # AI 兼容入口（转发到 ai-runtime）
+│   ├── command-registry.ts # CLI 命令声明式注册表
+│   ├── db.ts             # sql.js 内存库 + autoSave
+│   ├── event-bus.ts      # 全局单例 bus
+│   ├── logger.ts         # JSON Lines 结构化日志
+│   ├── plugin-loader.ts  # 插件扫描/加载/开关
+│   ├── ui-settings.ts    # TAB 栏布局持久化
+│   └── ai-runtime/       # AI 运行时（provider/connector/chat-runtime）
+├── main/                 # Electron 主进程
+│   ├── index.ts          # bootstrap 调度
+│   ├── windows.ts        # 悬浮球 + 面板双窗口 + 托盘
+│   ├── cli.ts / cli-server.ts # 沙箱命令执行 + loopback HTTP
+│   ├── terminal.ts       # node-pty + tmux 终端
+│   ├── whiteboard.ts     # 白板状态/附件
+│   ├── plugin-bridge.ts  # bus 请求/响应桥接
+│   ├── preload.ts        # contextBridge 暴露 window.assistant
+│   └── ipc/              # 声明式 IPC 模块
+├── cli/                  # uuutil CLI 薄转发器
+├── plugins/              # 插件目录（8 个）
 │   ├── calculator/
+│   ├── clipboard/
 │   ├── dev-utils/
 │   ├── focus/
-│   ├── hello-world/
-│   └── knowledge-base/
-├── shared/               # 共享类型
+│   ├── hello-world/      # 示例插件（默认禁用）
+│   ├── knowledge-base/
+│   ├── reminder/
+│   └── todo/
+├── shared/               # 共享类型与 API 契约
 └── types/                # 第三方类型补充
 
 renderer/
 ├── components/           # 功能组件
 ├── pages/                # 页面
-├── App.tsx               # 悬浮球/面板入口
-├── router.tsx            # 面板路由配置
+├── App.tsx               # 悬浮球/面板入口 + 环形菜单
+├── router.tsx            # 面板路由配置（前台 12 + 后台 3）
 └── theme.ts              # Chakra 主题
 ```
 
@@ -95,6 +120,8 @@ renderer/
 4. 数据写入后必须调用 `autoSave()` 持久化。
 5. `core:*` 为内核事件，插件使用 `plugin-id:*` 命名空间。
 6. 日志统一走 `src/core/logger.ts` 与主进程 IPC，禁止新增散落的文件日志实现；错误日志应避免写入 API Key、完整用户输入和大体积附件内容。
+7. IPC 统一经 `src/main/ipc/*.ipc.ts` 声明并在 `ipc/index.ts` 聚合注册；`window.assistant` 类型合同维护在 `src/shared/assistant-api.ts`。
+8. CLI 面向外部工具，命令由插件经 `command-registry` 声明式注册；终端 PTY 仅供用户手动操作，禁止接入 AI。
 
 ## 插件开发
 
