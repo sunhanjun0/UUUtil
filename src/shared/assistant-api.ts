@@ -44,6 +44,7 @@ import type {
   UpdateTodoInput,
   UpdateTodoListInput,
 } from './types';
+import type { BallMenuGeometry } from './ball-menu';
 
 
 export interface WhiteboardAttachmentInput {
@@ -79,6 +80,10 @@ export interface TerminalPersistedSession {
 export interface AssistantApi {
   expandBall: () => void;
   collapseBall: () => void;
+  /** 打开/关闭悬浮球环形菜单；打开时返回菜单几何信息，关闭返回 null */
+  setBallMenuOpen: (open: boolean) => Promise<BallMenuGeometry | null>;
+  /** 主进程因窗口失焦自动收起环形菜单时通知渲染层同步状态；返回取消订阅函数 */
+  onBallMenuClosed: (callback: () => void) => () => void;
   togglePanelMaximize: () => Promise<boolean>;
   showBallContextMenu: () => void;
   quitBall: () => void;
@@ -151,10 +156,13 @@ export interface AssistantApi {
   clipboard: {
     list: (options?: ListClipboardOptions) => Promise<ClipboardItem[]>;
     get: (id: string) => Promise<ClipboardItem | null>;
+    thumbnail: (id: string) => Promise<string | null>;
     copy: (id: string) => Promise<ClipboardItem>;
     togglePin: (id: string) => Promise<ClipboardItem>;
     remove: (id: string) => Promise<{ removed: number }>;
     clear: () => Promise<{ cleared: number }>;
+    openFile: (id: string) => Promise<{ opened: boolean }>;
+    showInFolder: (id: string) => Promise<{ showed: boolean }>;
     onUpdate: (callback: (payload: ClipboardUpdatePayload) => void) => () => void;
   };
 

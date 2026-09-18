@@ -16,6 +16,12 @@ const assistantApi: AssistantApi = {
   // ===== 窗口控制 =====
   expandBall: () => ipcRenderer.send('ball:expand'),
   collapseBall: () => ipcRenderer.send('ball:collapse'),
+  setBallMenuOpen: (open: boolean) => ipcRenderer.invoke('ball:menu-set-open', open),
+  onBallMenuClosed: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('ball:menu-closed', listener);
+    return () => ipcRenderer.removeListener('ball:menu-closed', listener);
+  },
   togglePanelMaximize: (): Promise<boolean> => ipcRenderer.invoke('panel:toggle-maximize'),
   showBallContextMenu: () => ipcRenderer.send('ball:context-menu'),
   quitBall: () => ipcRenderer.send('ball:quit'),
@@ -103,10 +109,13 @@ const assistantApi: AssistantApi = {
   clipboard: {
     list: (options) => ipcRenderer.invoke('clipboard:list', options),
     get: (id) => ipcRenderer.invoke('clipboard:get', id),
+    thumbnail: (id) => ipcRenderer.invoke('clipboard:thumbnail', id),
     copy: (id) => ipcRenderer.invoke('clipboard:copy', id),
     togglePin: (id) => ipcRenderer.invoke('clipboard:toggle-pin', id),
     remove: (id) => ipcRenderer.invoke('clipboard:remove', id),
     clear: () => ipcRenderer.invoke('clipboard:clear'),
+    openFile: (id) => ipcRenderer.invoke('clipboard:openFile', id),
+    showInFolder: (id) => ipcRenderer.invoke('clipboard:showInFolder', id),
     onUpdate: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         try { callback(payload as any); } catch { /* 忽略消费方异常 */ }
