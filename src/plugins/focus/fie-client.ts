@@ -7,9 +7,17 @@
  *
  * 所有方法返回结构化 FieResult，网络不可达时以 offline=true 标记，供 UI 优雅降级。
  * 客户端只负责传输，不落地任何请求/响应正文（脱敏由 FIE 侧保证）。
+ *
+ * 连接目标与鉴权按以下优先级解析（高 → 低）：
+ *   1. 环境变量：UUUTIL_FIE_URL / UUUTIL_FIE_AUTH（或 UUUTIL_FIE_USER + UUUTIL_FIE_PASSWORD）
+ *   2. 配置文件：~/.uuutil/fie.json（见 FieFileConfig，GUI 启动时也能读到）
+ *   3. 默认值：http://127.0.0.1:17879
  */
 
 import http from 'http';
+import fs from 'fs';
+import os from 'os';
+import nodePath from 'path';
 import type {
   AttentionEvent,
   FieFocus,
@@ -23,12 +31,64 @@ import type {
 
 const DEFAULT_TIMEOUT = 8000;
 
-function resolveBaseUrl(): string {
-  const explicit = process.env.UUUTIL_FIE_URL;
-  if (explicit) return explicit.replace(/\/+$/, '');
-  const host = process.env.FIE_HOST || '127.0.0.1';
-  const port = process.env.FIE_PORT || '17879';
-  return `http://${host}:${port}`;
+/** 用户级配置文件路径（不随代码走，改地址/凭据无需重新编译）。 */
+const CONFIG_FILE = nodePath.join(os.homedir(), '.uuutil', 'fie.json');
+
+interface FieFileConfig {
+  url?: string;
+  host?: string;
+  port?: string | number;
+  /** 完整 Authorization 头值，例如 "Basic xxx" / "Bearer xxx"。 */
+  auth?: string;
+  /** 与 password 配对，自动编码成 Basic 认证。 */
+  user?: string;
+  password?: string;
+}
+
+interface FieConnection {
+  base: string;
+  /** 已就绪的 Authorization 头值，未配置时为 undefined。 */
+  authorization?: string;
+}
+
+/** 读取用户级配置文件，缺失或非法时返回空对象（不抛错，避免启动崩溃）。 */
+function readFileConfig(): FieFileConfig {
+  try {
+    if (!fs.existsSync(CONFIG_FILE)) return {};
+    const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed as FieFileConfig;
+  } catch {
+    return {};
+  }
+}
+
+function basicAuth(user: string, password: string): string {
+  return `Basic ${Buffer.from(`${user}:${password}`, 'utf8').toString('base64')}`;
+}
+
+/** 解析连接目标 + 鉴权头。 */
+function resolveConnection(): FieConnection {
+  const file = readFileConfig();
+
+  const url =
+    process.env.UUUTIL_FIE_URL ||
+    file.url ||
+    `http://${process.env.FIE_HOST || file.host || '127.0.0.1'}:${process.env.FIE_PORT || file.port || '17879'}`;
+
+  const envUser = process.env.UUUTIL_FIE_USER;
+  const envPassword = process.env.UUUTIL_FIE_PASSWORD;
+  const fileUser = file.user;
+  const filePassword = file.password;
+
+  let authorization = process.env.UUUTIL_FIE_AUTH || file.auth;
+  if (!authorization) {
+    if (envUser && envPassword) authorization = basicAuth(envUser, envPassword);
+    else if (fileUser && filePassword) authorization = basicAuth(fileUser, filePassword);
+  }
+
+  return { base: url.replace(/\/+$/, ''), authorization: authorization || undefined };
 }
 
 interface RequestOptions {
@@ -44,9 +104,15 @@ interface FieErrorBody {
 
 /** 发起一次 FIE HTTP 请求，统一转换为 FieResult。 */
 function request<T>({ method, path, body, timeoutMs = DEFAULT_TIMEOUT }: RequestOptions): Promise<FieResult<T>> {
-  const base = resolveBaseUrl();
+  const { base, authorization } = resolveConnection();
   const url = new URL(`${base}${path}`);
   const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body), 'utf8');
+  const headers: Record<string, string | number> = {};
+  if (authorization) headers.authorization = authorization;
+  if (payload) {
+    headers['content-type'] = 'application/json';
+    headers['content-length'] = payload.length;
+  }
 
   return new Promise((resolve) => {
     let settled = false;
@@ -63,9 +129,7 @@ function request<T>({ method, path, body, timeoutMs = DEFAULT_TIMEOUT }: Request
         port: url.port,
         path: `${url.pathname}${url.search}`,
         method,
-        headers: payload
-          ? { 'content-type': 'application/json', 'content-length': payload.length }
-          : undefined,
+        headers: Object.keys(headers).length ? headers : undefined,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -73,6 +137,16 @@ function request<T>({ method, path, body, timeoutMs = DEFAULT_TIMEOUT }: Request
         res.on('end', () => {
           const raw = Buffer.concat(chunks).toString('utf8');
           const status = res.statusCode ?? 0;
+          // 网关层（nginx Basic Auth）返回的 401/403 正文是 HTML，先拦截给出可操作的提示
+          if (status === 401 || status === 403) {
+            finish({
+              ok: false,
+              error: authorization
+                ? `FIE 鉴权失败（HTTP ${status}）：凭据不正确或已失效`
+                : `FIE 要求鉴权（HTTP ${status}）：请配置 UUUTIL_FIE_AUTH 或 ~/.uuutil/fie.json`,
+            });
+            return;
+          }
           let parsed: unknown = undefined;
           if (raw.trim()) {
             try { parsed = JSON.parse(raw); }

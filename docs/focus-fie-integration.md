@@ -58,15 +58,33 @@ curl http://127.0.0.1:17879/health
 # → {"ok":true,"service":"focus-ingestion-engine"}
 ```
 
-可配置环境变量（UUUtil 侧的 fie-client 读取）：
+连接目标与鉴权由 `src/plugins/focus/fie-client.ts` 解析，优先级 **环境变量 > 配置文件 > 默认值**。
+
+环境变量：
 
 ```bash
 UUUTIL_FIE_URL=http://127.0.0.1:17879   # 完整地址，优先级最高
 FIE_HOST=127.0.0.1                      # 未设置 URL 时使用
 FIE_PORT=17879
+UUUTIL_FIE_AUTH="Basic xxx"             # 完整 Authorization 头值
+UUUTIL_FIE_USER / UUUTIL_FIE_PASSWORD   # 或成对提供，自动编码为 Basic
 ```
 
 若设置了 `UUUTIL_FIE_URL`，则忽略 `FIE_HOST` / `FIE_PORT`。
+
+配置文件 `~/.uuutil/fie.json`（**推荐**：GUI 启动时读不到 shell 环境变量，改地址也无需重新编译）：
+
+```json
+{
+  "url": "http://example.com:30801",
+  "user": "focus",
+  "password": "xxx"
+}
+```
+
+支持字段：`url`（或 `host` + `port`）、`auth`（完整头值）、`user` + `password`。文件缺失或非法时静默回落到默认值，不会导致启动失败。
+
+鉴权失败时客户端会返回明确提示：已配置凭据 → `FIE 鉴权失败（HTTP 401）：凭据不正确或已失效`；未配置 → `FIE 要求鉴权（HTTP 401）：请配置 UUUTIL_FIE_AUTH 或 ~/.uuutil/fie.json`。
 
 ## FIE HTTP 接口
 
