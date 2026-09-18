@@ -158,3 +158,8 @@ button:active {
     transform: scale(1.5);
   }
 }
+
+/* 悬浮球环形菜单项 hover 反馈 */
+.ball-menu-item:hover {
+  filter: brightness(0.94);
+}

@@ -11,12 +11,14 @@ import {
   hidePanelWindow,
   togglePanelMaximize,
   showBallContextMenu,
+  setBallMenuOpen,
 } from '../windows';
 
 export const windowIpc: IpcModule = {
   namespace: 'window',
   defs: [
-    defineSend('ball:expand', () => { logInfo('window', 'ball_expand_received'); togglePanelWindow(); }),
+    defineSend('ball:expand', () => { logInfo('window', 'ball_expand_received'); setBallMenuOpen(false); togglePanelWindow(); }),
+    defineInvoke('ball:menu-set-open', (_event, open: boolean) => setBallMenuOpen(Boolean(open))),
     defineSend('ball:collapse', () => { logInfo('window', 'ball_collapse_received'); hidePanelWindow(); }),
     defineInvoke('panel:toggle-maximize', () => togglePanelMaximize()),
     defineSend('panel:open-devtools', (event) => {

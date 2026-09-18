@@ -9,10 +9,15 @@ import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, nativeImage,
 import fs from 'fs';
 import path from 'path';
 import { closeDatabase, info as logInfo, warn as logWarn } from '../core';
+import {
+  BALL_MENU_ITEM_RADIUS,
+  BALL_MENU_RING_RADIUS,
+  BALL_MENU_SIZE,
+} from '../shared/ball-menu';
+import type { BallMenuGeometry } from '../shared/ball-menu';
 
 // ---------- 尺寸常量 ----------
 const BALL_SIZE = 96;
-const BALL_CIRCLE_RADIUS = 22; // 视觉球半径 (44/2)，setShape 只裁切球体区域，光晕超出部分可见
 const PANEL_RADIUS = 3;
 
 // ---------- 窗口状态 ----------
@@ -20,6 +25,19 @@ let ballWindow: BrowserWindow | null = null;
 let panelWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let savedBallPos: { x: number; y: number } | null = null;
+// 悬浮球环形菜单状态。球窗口恒为 BALL_MENU_SIZE、不做 resize（避免透明窗口缩放的旧帧残影）。
+// 命中测试不依赖 setShape / mousemove forward（均在透明窗口上不可靠，electron#30808）：
+// 菜单关闭时整窗 setIgnoreMouseEvents(true) 点击穿透，主进程轮询屏幕光标，
+// 接近球心 BALL_HOVER_ENTER px 内切回可交互，离开 BALL_HOVER_LEAVE px 恢复穿透；菜单打开时整窗可交互。
+let ballMenuOpen = false;
+let ballMouseIgnored = false;
+let ballMenuBlurTimer: NodeJS.Timeout | null = null;
+let ballCursorTimer: NodeJS.Timeout | null = null;
+const BALL_HOVER_ENTER = 30;
+const BALL_HOVER_LEAVE = 36;
+const BALL_CURSOR_POLL_MS = 50;
+// 球窗口左上角与「球的视觉位置」（旧 96 窗口左上角）的固定偏移
+const BALL_WINDOW_OFFSET = (BALL_MENU_SIZE - BALL_SIZE) / 2;
 let savedPanelPos: { x: number; y: number } | null = null;
 let savedPanelSize: { width: number; height: number } | null = null;
 let panelAnimating = false;
@@ -67,19 +85,8 @@ function getPanelSize(): { width: number; height: number } {
 }
 
 // ---------- 窗口形状 ----------
-// 预计算圆形窗口 shape（一组水平矩形条近似圆形）
-function makeCircleShape(): Electron.Rectangle[] {
-  const rects: Electron.Rectangle[] = [];
-  for (let y = 0; y < BALL_SIZE; y++) {
-    const dy = y - BALL_SIZE / 2 + 0.5;
-    const halfWidth = Math.sqrt(Math.max(0, BALL_CIRCLE_RADIUS * BALL_CIRCLE_RADIUS - dy * dy));
-    const x = Math.floor(BALL_SIZE / 2 - halfWidth);
-    const w = Math.floor(halfWidth * 2);
-    if (w > 0) rects.push({ x, y, width: w, height: 1 });
-  }
-  return rects;
-}
-const CIRCLE_SHAPE = makeCircleShape();
+// 球窗口恒为 BALL_MENU_SIZE，球心永远位于窗口中心
+const BALL_WINDOW_CENTER = BALL_MENU_SIZE / 2;
 
 function makeRoundedRectShape(width: number, height: number, radius: number): Electron.Rectangle[] {
   const rects: Electron.Rectangle[] = [];
@@ -107,18 +114,19 @@ function updatePanelShape(): void {
 export function createBallWindow(): void {
   const { workAreaSize } = screen.getPrimaryDisplay();
 
-  let x = savedBallPos?.x ?? Math.round(workAreaSize.width / 2 - BALL_SIZE / 2);
-  let y = savedBallPos?.y ?? Math.round(workAreaSize.height / 2 - BALL_SIZE / 2);
+  // savedBallPos 记录的是「球的视觉位置」（旧 96 窗口左上角），窗口需向前偏移固定量
+  let x = (savedBallPos?.x ?? Math.round(workAreaSize.width / 2 - BALL_SIZE / 2)) - BALL_WINDOW_OFFSET;
+  let y = (savedBallPos?.y ?? Math.round(workAreaSize.height / 2 - BALL_SIZE / 2)) - BALL_WINDOW_OFFSET;
 
   // 确保悬浮球始终在屏幕可见区域内
-  if (x + BALL_SIZE > workAreaSize.width) x = workAreaSize.width - BALL_SIZE - 8;
-  if (y + BALL_SIZE > workAreaSize.height) y = workAreaSize.height - BALL_SIZE - 8;
+  if (x + BALL_MENU_SIZE > workAreaSize.width) x = workAreaSize.width - BALL_MENU_SIZE - 8;
+  if (y + BALL_MENU_SIZE > workAreaSize.height) y = workAreaSize.height - BALL_MENU_SIZE - 8;
   if (x < 0) x = 8;
   if (y < 0) y = 8;
 
   ballWindow = new BrowserWindow({
-    width: BALL_SIZE,
-    height: BALL_SIZE,
+    width: BALL_MENU_SIZE,
+    height: BALL_MENU_SIZE,
     x,
     y,
     frame: false,
@@ -136,7 +144,9 @@ export function createBallWindow(): void {
   });
 
   ballWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  ballWindow.setShape(CIRCLE_SHAPE);
+  // 菜单关闭时整窗点击穿透，光标轮询负责在光标接近球体时切回可交互
+  setBallMouseIgnored(true);
+  startBallCursorWatch();
   // floating 级别高于普通 alwaysOnTop，确保始终不会被面板或其他应用窗口覆盖
   ballWindow.setAlwaysOnTop(true, 'screen-saver');
   loadWindow(ballWindow, 'ball');
@@ -144,16 +154,102 @@ export function createBallWindow(): void {
   ballWindow.on('move', () => {
     if (!ballWindow) return;
     const [x, y] = ballWindow.getPosition();
-    savedBallPos = { x, y };
+    savedBallPos = { x: x + BALL_WINDOW_OFFSET, y: y + BALL_WINDOW_OFFSET };
+  });
+
+  // 失焦（点击窗口外任意处）收起环形菜单。
+  // 先通知渲染层收拢隐藏，由它回调 setBallMenuOpen(false) 恢复穿透；500ms 无响应兜底。
+  ballWindow.on('blur', () => {
+    if (!ballMenuOpen) return;
+    ballWindow?.webContents.send('ball:menu-closed');
+    if (ballMenuBlurTimer) clearTimeout(ballMenuBlurTimer);
+    ballMenuBlurTimer = setTimeout(() => {
+      ballMenuBlurTimer = null;
+      setBallMenuOpen(false);
+    }, 500);
   });
 
   ballWindow.on('closed', () => {
     ballWindow = null;
+    ballMenuOpen = false;
+    ballMouseIgnored = false;
+    stopBallCursorWatch();
+    if (ballMenuBlurTimer) {
+      clearTimeout(ballMenuBlurTimer);
+      ballMenuBlurTimer = null;
+    }
   });
+}
+
+/**
+ * 切换球窗口点击穿透。菜单打开时强制可交互；关闭时由光标轮询驱动。
+ */
+function setBallMouseIgnored(ignore: boolean): void {
+  if (!ballWindow || ballWindow.isDestroyed()) return;
+  const effective = ballMenuOpen ? false : ignore;
+  if (effective === ballMouseIgnored) return;
+  ballMouseIgnored = effective;
+  ballWindow.setIgnoreMouseEvents(effective);
+}
+
+// 主进程光标轮询：穿透状态下不依赖渲染层事件，直接读屏幕光标位置决定激活/穿透。
+// 球拖拽时会跟随光标，距离始终小于 BALL_HOVER_LEAVE，不会拖到一半变穿透。
+function startBallCursorWatch(): void {
+  if (ballCursorTimer) return;
+  ballCursorTimer = setInterval(() => {
+    if (!ballWindow || ballWindow.isDestroyed() || ballMenuOpen) return;
+    const cursor = screen.getCursorScreenPoint();
+    const [wx, wy] = ballWindow.getPosition();
+    const dist = Math.hypot(cursor.x - (wx + BALL_WINDOW_CENTER), cursor.y - (wy + BALL_WINDOW_CENTER));
+    if (dist <= BALL_HOVER_ENTER) setBallMouseIgnored(false);
+    else if (dist >= BALL_HOVER_LEAVE) setBallMouseIgnored(true);
+  }, BALL_CURSOR_POLL_MS);
+}
+
+function stopBallCursorWatch(): void {
+  if (!ballCursorTimer) return;
+  clearInterval(ballCursorTimer);
+  ballCursorTimer = null;
 }
 
 export function isBallWindowAlive(): boolean {
   return ballWindow !== null;
+}
+
+// ---------- 悬浮球环形菜单 ----------
+/**
+ * 打开/关闭环形菜单。窗口尺寸恒定，只切换命中状态：
+ * 打开时整窗可交互（点空白可收起菜单），关闭时恢复点击穿透（光标接近球体由渲染层动态激活）。
+ * 返回固定菜单几何信息给渲染层摆放菜单项。幂等：重复打开/关闭直接返回当前状态。
+ */
+export function setBallMenuOpen(open: boolean): BallMenuGeometry | null {
+  if (!ballWindow || ballWindow.isDestroyed()) return null;
+
+  if (ballMenuBlurTimer) {
+    clearTimeout(ballMenuBlurTimer);
+    ballMenuBlurTimer = null;
+  }
+
+  if (open) {
+    if (!ballMenuOpen) {
+      ballMenuOpen = true;
+      setBallMouseIgnored(false);
+      logInfo('window', 'ball_menu_open');
+    }
+    return {
+      size: BALL_MENU_SIZE,
+      centerX: BALL_WINDOW_CENTER,
+      centerY: BALL_WINDOW_CENTER,
+      ringRadius: BALL_MENU_RING_RADIUS,
+      itemRadius: BALL_MENU_ITEM_RADIUS,
+    };
+  }
+
+  if (!ballMenuOpen) return null;
+  ballMenuOpen = false;
+  setBallMouseIgnored(true);
+  logInfo('window', 'ball_menu_close');
+  return null;
 }
 
 // ---------- 面板窗口 ----------

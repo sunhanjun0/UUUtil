@@ -5,12 +5,29 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Flex, Tabs, TabList, Tab, IconButton, Tooltip } from '@chakra-ui/react';
-import { Bug, Camera, Droplets, Maximize2, Minimize2, Settings, X } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Bell, Bug, Camera, ClipboardList, Droplets, Maximize2, MessageSquare, Minimize2, Settings, StickyNote, X } from 'lucide-react';
 import { applyTabLayout, backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
 import type { RouteConfig } from './router';
 import type { TabLayout } from '../src/shared/types';
+import { BALL_MENU_ITEM_VISUAL_RADIUS, ballMenuItemCenters } from '../src/shared/ball-menu';
+import type { BallMenuGeometry } from '../src/shared/ball-menu';
 import '../src/shared/assistant-api';
 import ballIconUrl from './assets/ball-icon.png';
+
+// 悬浮球环形菜单项配置：顺序与 shared/ball-menu 的 ballMenuItemCenters 一致（从正上方顺时针）。
+// bg 为渐变起止色、color 为图标色（iOS 快捷指令式浅彩底+饱和图标）；点击动作目前统一走占位。
+const BALL_MENU_ITEMS = [
+  { id: 'notes', label: '便签', Icon: StickyNote, bg: ['#FEF3C7', '#FDE68A'], color: '#B45309' },
+  { id: 'clipboard', label: '剪贴板', Icon: ClipboardList, bg: ['#DBEAFE', '#BFDBFE'], color: '#1D4ED8' },
+  { id: 'screenshot', label: '截图', Icon: Camera, bg: ['#EDE9FE', '#DDD6FE'], color: '#6D28D9' },
+  { id: 'reminder', label: '提醒', Icon: Bell, bg: ['#FFE4E6', '#FECDD3'], color: '#BE123C' },
+  { id: 'assistant', label: '助手', Icon: MessageSquare, bg: ['#D1FAE5', '#A7F3D0'], color: '#047857' },
+  { id: 'settings', label: '设置', Icon: Settings, bg: ['#E2E8F0', '#CBD5E1'], color: '#475569' },
+] as const;
+
+/** 单击/双击判定窗口：单击延迟此时间无第二次点击才触发菜单 */
+const BALL_CLICK_DELAY_MS = 280;
 
 interface Props {
   role: 'ball' | 'panel';
@@ -45,6 +62,13 @@ export default function App({ role }: Props) {
   const lastPos = useRef({ x: 0, y: 0 });
   const infoFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastInfoAtRef = useRef<string | null>(null);
+  // 环形菜单：geometry 来自主进程（球心在窗口内的坐标，恒为窗口中心），visible 驱动入场/退场动画，
+  // closing 区分"待绽放"与"关闭中"两种不可见状态（关闭原地淡出，不再飞回球心）
+  const [ballMenu, setBallMenu] = useState<BallMenuGeometry | null>(null);
+  const [ballMenuVisible, setBallMenuVisible] = useState(false);
+  const [ballMenuClosing, setBallMenuClosing] = useState(false);
+  const ballClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ballMenuAnimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     localStorage.setItem('uuutil:frosted-panel', frostedPanel ? '1' : '0');
@@ -146,6 +170,8 @@ export default function App({ role }: Props) {
   // 拖拽处理（球和面板共用）
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    // 菜单打开时先收起（窗口同步缩回球尺寸），再继续正常拖拽
+    closeBallMenuRef.current();
     dragging.current = true;
     didDrag.current = false;
     lastPos.current = { x: e.screenX, y: e.screenY };
@@ -175,6 +201,87 @@ export default function App({ role }: Props) {
       try { window.assistant.panelReady(); } catch { /* browser */ }
     }
   }, [role]);
+
+  // ========== 悬浮球环形菜单 ==========
+  const BALL_MENU_CLOSE_MS = 140; // 关闭时菜单项收拢动画时长（之后再通知主进程切回圆形 shape）
+
+  async function openBallMenu() {
+    if (ballMenuAnimTimer.current) {
+      clearTimeout(ballMenuAnimTimer.current);
+      ballMenuAnimTimer.current = null;
+    }
+    // 窗口尺寸恒定、无 resize，主进程切为整窗可交互后直接绽放菜单项
+    try {
+      const geometry = await window.assistant.setBallMenuOpen(true);
+      if (!geometry) return;
+      setBallMenu(geometry);
+      // 下一帧再置 visible，让菜单项从球心向外绽放
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        setBallMenuClosing(false);
+        setBallMenuVisible(true);
+      }));
+    } catch { /* browser */ }
+  }
+
+  function closeBallMenu() {
+    if (ballMenuAnimTimer.current) {
+      clearTimeout(ballMenuAnimTimer.current);
+      ballMenuAnimTimer.current = null;
+    }
+    setBallMenu((prev) => {
+      if (!prev) return null;
+      // 先原地隐藏（快速淡出+微缩，不飞回球心，避免图标叠在球上形成残影），
+      // 卸载后通知主进程恢复点击穿透（光标轮询会按实际位置自动重新激活）
+      setBallMenuClosing(true);
+      setBallMenuVisible(false);
+      ballMenuAnimTimer.current = setTimeout(() => {
+        ballMenuAnimTimer.current = null;
+        setBallMenu(null);
+        setBallMenuClosing(false);
+        try { void window.assistant.setBallMenuOpen(false); } catch { /* browser */ }
+      }, BALL_MENU_CLOSE_MS);
+      return prev;
+    });
+  }
+
+  // 供 useCallback（handleMouseDown）稳定引用最新的 closeBallMenu
+  const closeBallMenuRef = useRef(closeBallMenu);
+  closeBallMenuRef.current = closeBallMenu;
+
+  function toggleBallMenu() {
+    if (ballMenu) {
+      closeBallMenu();
+    } else {
+      void openBallMenu();
+    }
+  }
+
+  // 单击：延迟判定，双击会取消；拖拽后不触发
+  function handleBallClick() {
+    if (didDrag.current) return;
+    if (ballClickTimer.current) clearTimeout(ballClickTimer.current);
+    ballClickTimer.current = setTimeout(() => {
+      ballClickTimer.current = null;
+      toggleBallMenu();
+    }, BALL_CLICK_DELAY_MS);
+  }
+
+  // 双击：取消单击定时器，收起菜单并展开面板
+  function handleBallDoubleClick() {
+    if (didDrag.current) return;
+    if (ballClickTimer.current) {
+      clearTimeout(ballClickTimer.current);
+      ballClickTimer.current = null;
+    }
+    closeBallMenu();
+    handleExpand();
+  }
+
+  // 菜单项点击：占位实现，后续逐项接入真实功能
+  function handleBallMenuItem(id: string) {
+    try { void window.assistant.log('info', 'ball-menu', 'item_click', { id }); } catch { /* browser */ }
+    closeBallMenu();
+  }
 
   function handleExpand() {
     if (didDrag.current) return;
@@ -222,10 +329,27 @@ export default function App({ role }: Props) {
 
   function handleBallContextMenu(e: React.MouseEvent) {
     e.preventDefault();
+    closeBallMenuRef.current();
     try {
       window.assistant.showBallContextMenu();
     } catch { /* browser */ }
   }
+
+  // 卸载时清理单击判定与菜单动画定时器
+  useEffect(() => {
+    return () => {
+      if (ballClickTimer.current) clearTimeout(ballClickTimer.current);
+      if (ballMenuAnimTimer.current) clearTimeout(ballMenuAnimTimer.current);
+    };
+  }, []);
+
+  // 主进程通知失焦收起：走与主动关闭相同的收拢→清屏→裁切流程，避免留下残影帧
+  useEffect(() => {
+    if (role !== 'ball') return;
+    try {
+      return window.assistant.onBallMenuClosed(() => closeBallMenuRef.current());
+    } catch { /* browser */ }
+  }, [role]);
 
   async function handleScreenshot() {
     try {
@@ -235,24 +359,101 @@ export default function App({ role }: Props) {
 
   // ========== 悬浮球视图 ==========
   if (role === 'ball') {
+    const menuItems = ballMenu
+      ? ballMenuItemCenters(ballMenu.centerX, ballMenu.centerY, BALL_MENU_ITEMS.length, ballMenu.ringRadius)
+      : [];
     return (
       <div
-        style={ballStyles.wrapper}
+        style={{
+          ...ballStyles.wrapper,
+          // 菜单打开时放开 app-region drag，让空白区域点击可以正常触发"点击空白收起菜单"
+          ...(ballMenu ? { WebkitAppRegion: 'no-drag' } : {}),
+        }}
         onContextMenu={handleBallContextMenu}
         onMouseEnter={() => setShowToolbar(true)}
         onMouseLeave={() => setShowToolbar(false)}
+        onClick={() => { if (ballMenu) closeBallMenu(); }}
       >
-        {/* 工具栏 */}
-        <div style={{
-          ...ballStyles.toolbar,
-          opacity: showToolbar ? 1 : 0,
-          transform: showToolbar ? 'translateX(0)' : 'translateX(10px)',
-        }}>
-          <Tooltip label="截图" placement="left" hasArrow>
-            <IconButton aria-label="截图" icon={<Camera size={16} />} size="xs" variant="ghost" borderRadius="full" onClick={handleScreenshot} />
-          </Tooltip>
-        </div>
+        {/* 工具栏（菜单打开时隐藏） */}
+        {!ballMenu && (
+          <div style={{
+            ...ballStyles.toolbar,
+            opacity: showToolbar ? 1 : 0,
+            transform: showToolbar ? 'translateX(0)' : 'translateX(10px)',
+          }}>
+            <Tooltip label="截图" placement="left" hasArrow>
+              <IconButton aria-label="截图" icon={<Camera size={16} />} size="xs" variant="ghost" borderRadius="full" onClick={handleScreenshot} />
+            </Tooltip>
+          </div>
+        )}
 
+        {/* 环形菜单项：framer-motion 弹簧驱动物理，6 个一起从球心射出（Path 经典效果） */}
+        {ballMenu && BALL_MENU_ITEMS.map((item, i) => {
+          const center = menuItems[i];
+          if (!center) return null;
+          const { Icon } = item;
+          return (
+            <motion.div
+              key={item.id}
+              className="ball-menu-item"
+              title={item.label}
+              initial={{
+                x: ballMenu.centerX - center.x,
+                y: ballMenu.centerY - center.y,
+                scale: 0.3,
+                opacity: 0,
+                rotate: -24,
+              }}
+              animate={
+                ballMenuVisible
+                  ? {
+                      x: 0, y: 0, scale: 1, opacity: 1, rotate: 0,
+                      transition: { type: 'spring', stiffness: 520, damping: 31, mass: 0.9 },
+                    }
+                  : ballMenuClosing
+                    ? { scale: 0.6, opacity: 0, transition: { duration: 0.12, ease: 'easeIn' } }
+                    : {
+                        x: ballMenu.centerX - center.x,
+                        y: ballMenu.centerY - center.y,
+                        scale: 0.3, opacity: 0, rotate: -24,
+                      }
+              }
+              style={{
+                position: 'absolute',
+                left: center.x - ballMenu.itemRadius,
+                top: center.y - ballMenu.itemRadius,
+                width: ballMenu.itemRadius * 2,
+                height: ballMenu.itemRadius * 2,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                WebkitAppRegion: 'no-drag',
+              } as React.CSSProperties}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleBallMenuItem(item.id);
+              }}
+            >
+              <div style={{
+                ...ballStyles.menuItemVisual,
+                width: BALL_MENU_ITEM_VISUAL_RADIUS * 2,
+                height: BALL_MENU_ITEM_VISUAL_RADIUS * 2,
+                background: `linear-gradient(135deg, ${item.bg[0]}, ${item.bg[1]})`,
+              }}>
+                <Icon size={15} color={item.color} />
+              </div>
+            </motion.div>
+          );
+        })}
+
+        {/* 球的锚点：始终绝对定位（关闭时窗口中心，打开时为菜单几何中心），避免 flex/absolute 布局切换造成跳动 */}
+        <div style={{
+          position: 'absolute',
+          left: ballMenu ? ballMenu.centerX : '50%',
+          top: ballMenu ? ballMenu.centerY : '50%',
+          transform: 'translate(-50%, -50%)',
+        }}>
         <div
           className={
             reminderVisual === 'action'
@@ -263,13 +464,14 @@ export default function App({ role }: Props) {
           }
           style={ballStyles.glowRing}
           onMouseDown={handleMouseDown}
-          onClick={handleExpand}
+          onClick={(e) => { e.stopPropagation(); handleBallClick(); }}
+          onDoubleClick={(e) => { e.stopPropagation(); handleBallDoubleClick(); }}
           title={
             reminderVisual === 'action'
-              ? '有待处理提醒，点击查看'
+              ? '有待处理提醒，双击查看'
               : reminderVisual === 'info'
                 ? '收到新提醒'
-                : '展开面板'
+                : '单击打开菜单，双击展开面板'
           }
         >
           <div style={{
@@ -284,6 +486,7 @@ export default function App({ role }: Props) {
           <div style={ballStyles.ballBack}>
             <span style={ballStyles.timeText}>{timeStr}</span>
           </div>
+        </div>
         </div>
         </div>
       </div>
@@ -742,6 +945,14 @@ const ballStyles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     fontFamily: 'monospace',
     letterSpacing: '0.5px',
+  },
+  menuItemVisual: {
+    borderRadius: '50%',
+    background: 'rgba(255, 255, 255, 0.96)',
+    boxShadow: '0 1px 6px rgba(0, 0, 0, 0.14)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   toolbar: {
     position: 'absolute',
