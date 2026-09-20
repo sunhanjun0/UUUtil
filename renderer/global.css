@@ -163,3 +163,145 @@ button:active {
 .ball-menu-item:hover {
   filter: brightness(0.94);
 }
+
+/* ============ 驾驶舱主题全局罩层 ============ */
+[data-uu-theme="cockpit"] body {
+  color: #d7ecf5;
+  font-variant-numeric: tabular-nums;
+}
+[data-uu-theme="cockpit"] ::selection {
+  background: rgba(103, 232, 249, 0.28);
+  color: #eaf6fc;
+}
+/* 驾驶舱下显示细窄 phosphor 原生滚动条（浅色主题保持隐藏） */
+[data-uu-theme="cockpit"] ::-webkit-scrollbar { display: block; width: 8px; height: 8px; }
+[data-uu-theme="cockpit"] ::-webkit-scrollbar-track { background: transparent; }
+[data-uu-theme="cockpit"] ::-webkit-scrollbar-thumb { background: rgba(103, 232, 249, 0.18); border-radius: 4px; }
+[data-uu-theme="cockpit"] ::-webkit-scrollbar-thumb:hover { background: rgba(103, 232, 249, 0.32); }
+/* 焦点环改 phosphor，覆盖 global.css 顶部 *:focus 的清除 */
+[data-uu-theme="cockpit"] *:focus-visible {
+  outline: 1px solid rgba(103, 232, 249, 0.5);
+  outline-offset: 1px;
+}
+/* 原生输入占位符换暗色 */
+[data-uu-theme="cockpit"] input::placeholder,
+[data-uu-theme="cockpit"] textarea::placeholder {
+  color: #5f8098;
+}
+
+/* ============ 主题变量（页面 inline 色引用，浅色/驾驶舱双值） ============ */
+:root {
+  --uu-bg: #ffffff;
+  --uu-surface: #f9fafb;
+  --uu-surface-2: #f3f4f6;
+  --uu-border: #e5e7eb;
+  --uu-text: #1f2937;
+  --uu-text-2: #6b7280;
+  --uu-grid: #edf2f7;
+  --uu-blue: #3182ce;
+  --uu-brand: #2563eb;
+  --uu-note-yellow: #fff7cc;
+  --uu-note-blue: #e6f4ff;
+  --uu-note-green: #eaffea;
+  --uu-note-pink: #fff0f6;
+  --uu-note-purple: #f3e8ff;
+  --uu-icon-muted: #a0aec0;
+  --uu-ball-bg: #ffffff;
+  --uu-ball-menu-bg: rgba(255, 255, 255, 0.96);
+  --uu-ball-text: #4a5568;
+}
+[data-uu-theme="cockpit"] {
+  --uu-bg: #0b1424;
+  --uu-surface: #0d1b2e;
+  --uu-surface-2: #13253b;
+  --uu-border: rgba(103, 232, 249, 0.14);
+  --uu-text: #d7ecf5;
+  --uu-text-2: #8fb3c7;
+  --uu-grid: rgba(103, 232, 249, 0.03);
+  --uu-blue: #67e8f9;
+  --uu-brand: #67e8f9;
+  --uu-note-yellow: #242010;
+  --uu-note-blue: #101f30;
+  --uu-note-green: #11291c;
+  --uu-note-pink: #281220;
+  --uu-note-purple: #1c1430;
+  --uu-icon-muted: #5f8098;
+  --uu-ball-bg: #0b1424;
+  --uu-ball-menu-bg: rgba(13, 27, 46, 0.96);
+  --uu-ball-text: #8fb3c7;
+}
+
+/* 悬浮球环形菜单项：6 项 × (渐变双色 + 图标墨色) */
+:root {
+  --uu-ball-notes-a: #FEF3C7; --uu-ball-notes-b: #FDE68A; --uu-ball-notes-ink: #B45309;
+  --uu-ball-clip-a: #DBEAFE; --uu-ball-clip-b: #BFDBFE; --uu-ball-clip-ink: #1D4ED8;
+  --uu-ball-shot-a: #EDE9FE; --uu-ball-shot-b: #DDD6FE; --uu-ball-shot-ink: #6D28D9;
+  --uu-ball-rem-a: #FFE4E6; --uu-ball-rem-b: #FECDD3; --uu-ball-rem-ink: #BE123C;
+  --uu-ball-ast-a: #D1FAE5; --uu-ball-ast-b: #A7F3D0; --uu-ball-ast-ink: #047857;
+  --uu-ball-set-a: #E2E8F0; --uu-ball-set-b: #CBD5E1; --uu-ball-set-ink: #475569;
+}
+[data-uu-theme="cockpit"] {
+  --uu-ball-notes-a: #2a2115; --uu-ball-notes-b: #33240f; --uu-ball-notes-ink: #fbbf24;
+  --uu-ball-clip-a: #0e1e35; --uu-ball-clip-b: #0f2650; --uu-ball-clip-ink: #67e8f9;
+  --uu-ball-shot-a: #1c1433; --uu-ball-shot-b: #251947; --uu-ball-shot-ink: #c4b5fd;
+  --uu-ball-rem-a: #2a1220; --uu-ball-rem-b: #331424; --uu-ball-rem-ink: #f87171;
+  --uu-ball-ast-a: #0e2418; --uu-ball-ast-b: #113521; --uu-ball-ast-ink: #34d399;
+  --uu-ball-set-a: #13253b; --uu-ball-set-b: #1a3146; --uu-ball-set-ink: #8fb3c7;
+}
+
+/* ========== cockpit 顶栏（HUD 制式，对齐 cockpit-prototype.html） ========== */
+.ck-topbar {
+  flex: 1; display: flex; align-items: center; gap: 14px; min-width: 0;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, "PingFang SC", monospace;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 2px 4px;
+}
+.ck-brand {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.22em;
+  color: #67e8f9; text-shadow: 0 0 12px rgba(103,232,249,0.45);
+  white-space: nowrap; user-select: none;
+}
+.ck-brand-zh { font-size: 10px; letter-spacing: 0.4em; color: #5f8098; text-shadow: none; margin-left: 8px; font-weight: 400; }
+.ck-top-tabs {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.ck-top-tabs::-webkit-scrollbar { display: none; }
+.ck-top-tab {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; letter-spacing: 0.08em;
+  color: #5f8098; padding: 4px 10px;
+  border: 1px solid transparent; border-radius: 3px;
+  cursor: pointer; transition: all .15s ease;
+  user-select: none; white-space: nowrap;
+}
+.ck-top-tab:hover { color: #8fb3c7; border-color: rgba(103,232,249,0.14); }
+.ck-top-tab.on {
+  color: #67e8f9; border-color: rgba(103,232,249,0.35);
+  background: rgba(103, 232, 249, 0.07);
+  box-shadow: 0 0 12px rgba(103,232,249,0.12) inset, 0 0 8px rgba(103,232,249,0.12);
+}
+.ck-top-divider { width: 1px; height: 14px; background: rgba(103,232,249,0.35); margin: 0 6px; flex-shrink: 0; }
+.ck-top-tab.flip {
+  color: #fbbf24; border-color: rgba(103,232,249,0.35);
+  background: rgba(251,191,36,0.05);
+  box-shadow: 0 0 8px rgba(251,191,36,0.12) inset;
+}
+.ck-top-tab.flip:hover { color: #fbbf24; border-color: #fbbf24; }
+.ck-top-sys { display: flex; align-items: center; gap: 12px; white-space: nowrap; flex-shrink: 0; }
+.ck-top-leds { display: flex; gap: 8px; }
+.ck-top-led { display: flex; align-items: center; gap: 4px; font-size: 9px; letter-spacing: 0.12em; color: #5f8098; }
+.ck-top-led i { width: 6px; height: 6px; border-radius: 50%; }
+.ck-top-led.ok i { background: #34d399; box-shadow: 0 0 6px #34d399; }
+.ck-top-led.nav i { background: #67e8f9; box-shadow: 0 0 6px #67e8f9; }
+.ck-top-sd { font-size: 10.5px; color: #8fb3c7; letter-spacing: 0.06em; }
+.ck-top-sd b { color: #67e8f9; font-weight: 600; }
+.ck-top-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.ck-top-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 3px; border: 1px solid transparent;
+  color: #5f8098; background: transparent; cursor: pointer; transition: all .15s ease;
+}
+.ck-top-ico:hover { color: #67e8f9; border-color: rgba(103,232,249,0.35); background: rgba(103,232,249,0.07); }
+.ck-top-ico.on { color: #fbbf24; }
+.ck-top-ico.danger:hover { color: #f87171; border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.06); }

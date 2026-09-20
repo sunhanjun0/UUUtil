@@ -6,24 +6,25 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Flex, Tabs, TabList, Tab, IconButton, Tooltip } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
-import { Bell, Bug, Camera, ClipboardList, Droplets, Maximize2, MessageSquare, Minimize2, Settings, StickyNote, X } from 'lucide-react';
+import { Bell, Bug, Camera, ClipboardList, Droplets, Maximize2, MessageSquare, Minimize2, Moon, Repeat, Settings, StickyNote, X } from 'lucide-react';
 import { applyTabLayout, backgroundRoutes, foregroundRoutes, routes, RouteRenderer } from './router';
 import type { RouteConfig } from './router';
 import type { TabLayout } from '../src/shared/types';
 import { BALL_MENU_ITEM_VISUAL_RADIUS, ballMenuItemCenters } from '../src/shared/ball-menu';
 import type { BallMenuGeometry } from '../src/shared/ball-menu';
 import '../src/shared/assistant-api';
+import { useThemeMode } from './theme';
 import ballIconUrl from './assets/ball-icon.png';
 
 // 悬浮球环形菜单项配置：顺序与 shared/ball-menu 的 ballMenuItemCenters 一致（从正上方顺时针）。
-// bg 为渐变起止色、color 为图标色（iOS 快捷指令式浅彩底+饱和图标）；点击动作目前统一走占位。
+// bg 为渐变起止色、color 为图标色，均走 --uu-ball-* 主题变量（浅彩底 → 驾驶舱暗彩底）。
 const BALL_MENU_ITEMS = [
-  { id: 'notes', label: '便签', Icon: StickyNote, bg: ['#FEF3C7', '#FDE68A'], color: '#B45309' },
-  { id: 'clipboard', label: '剪贴板', Icon: ClipboardList, bg: ['#DBEAFE', '#BFDBFE'], color: '#1D4ED8' },
-  { id: 'screenshot', label: '截图', Icon: Camera, bg: ['#EDE9FE', '#DDD6FE'], color: '#6D28D9' },
-  { id: 'reminder', label: '提醒', Icon: Bell, bg: ['#FFE4E6', '#FECDD3'], color: '#BE123C' },
-  { id: 'assistant', label: '助手', Icon: MessageSquare, bg: ['#D1FAE5', '#A7F3D0'], color: '#047857' },
-  { id: 'settings', label: '设置', Icon: Settings, bg: ['#E2E8F0', '#CBD5E1'], color: '#475569' },
+  { id: 'notes', label: '便签', Icon: StickyNote, bg: ['var(--uu-ball-notes-a)', 'var(--uu-ball-notes-b)'], color: 'var(--uu-ball-notes-ink)' },
+  { id: 'clipboard', label: '剪贴板', Icon: ClipboardList, bg: ['var(--uu-ball-clip-a)', 'var(--uu-ball-clip-b)'], color: 'var(--uu-ball-clip-ink)' },
+  { id: 'screenshot', label: '截图', Icon: Camera, bg: ['var(--uu-ball-shot-a)', 'var(--uu-ball-shot-b)'], color: 'var(--uu-ball-shot-ink)' },
+  { id: 'reminder', label: '提醒', Icon: Bell, bg: ['var(--uu-ball-rem-a)', 'var(--uu-ball-rem-b)'], color: 'var(--uu-ball-rem-ink)' },
+  { id: 'assistant', label: '助手', Icon: MessageSquare, bg: ['var(--uu-ball-ast-a)', 'var(--uu-ball-ast-b)'], color: 'var(--uu-ball-ast-ink)' },
+  { id: 'settings', label: '设置', Icon: Settings, bg: ['var(--uu-ball-set-a)', 'var(--uu-ball-set-b)'], color: 'var(--uu-ball-set-ink)' },
 ] as const;
 
 /** 单击/双击判定窗口：单击延迟此时间无第二次点击才触发菜单 */
@@ -34,6 +35,8 @@ interface Props {
 }
 
 export default function App({ role }: Props) {
+  const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
+  const cockpit = themeMode === 'cockpit';
   const [panelSide, setPanelSide] = useState<'front' | 'back'>('front');
   const [panelMaximized, setPanelMaximized] = useState(false);
   const [frostedPanel, setFrostedPanel] = useState(() => localStorage.getItem('uuutil:frosted-panel') === '1');
@@ -55,6 +58,22 @@ export default function App({ role }: Props) {
   const activePath = panelSide === 'front' ? frontPath : backPath;
   const [flipped, setFlipped] = useState(false);
   const [timeStr, setTimeStr] = useState('');
+  const [stardate, setStardate] = useState('');
+
+  // 星历读数（cockpit 顶栏）：年.年内日 // 月-日 星期
+  useEffect(() => {
+    function update() {
+      const now = new Date();
+      const doy = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
+      const wd = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][now.getDay()];
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      setStardate(`${now.getFullYear()}.${String(doy).padStart(3, '0')} // ${mm}-${dd} ${wd}`);
+    }
+    update();
+    const timer = setInterval(update, 60000);
+    return () => clearInterval(timer);
+  }, []);
   const [showToolbar, setShowToolbar] = useState(false);
   const [reminderVisual, setReminderVisual] = useState<'idle' | 'info' | 'action'>('idle');
   const dragging = useRef(false);
@@ -499,17 +518,23 @@ export default function App({ role }: Props) {
       direction="column"
       w="100vw"
       h="100vh"
-      bg={frostedPanel ? 'rgba(248, 250, 252, 0.68)' : 'transparent'}
+      bg={cockpit
+        ? (frostedPanel ? 'rgba(6, 13, 24, 0.86)' : 'rgba(6, 13, 24, 0.97)')
+        : (frostedPanel ? 'rgba(248, 250, 252, 0.68)' : 'transparent')}
       borderRadius="4px"
       overflow="hidden"
       position="relative"
-      border={frostedPanel ? '1px solid rgba(255, 255, 255, 0.45)' : 'none'}
-      boxShadow={frostedPanel ? '0 18px 60px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255,255,255,0.38)' : 'none'}
+      border={cockpit
+        ? '1px solid rgba(103, 232, 249, 0.14)'
+        : (frostedPanel ? '1px solid rgba(255, 255, 255, 0.45)' : 'none')}
+      boxShadow={cockpit
+        ? (frostedPanel ? '0 18px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(103,232,249,0.10)' : 'none')
+        : (frostedPanel ? '0 18px 60px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255,255,255,0.38)' : 'none')}
       backdropFilter={frostedPanel ? 'blur(22px) saturate(1.35)' : 'none'}
       p={2}
       sx={panelTransitionStyles}
     >
-      {/* 导航栏 */}
+      {/* 导航栏：cockpit 模式为 HUD 制式顶栏（对齐 cockpit-prototype），chakra 模式保持原样 */}
       <Flex
         as="nav"
         align="center"
@@ -520,6 +545,64 @@ export default function App({ role }: Props) {
         sx={{ WebkitAppRegion: 'drag' } as any}
         onMouseDown={handleMouseDown}
       >
+        {cockpit ? (
+          <div className="ck-topbar">
+            <div className="ck-brand">UUUTIL<span className="ck-brand-zh">个人辅助</span></div>
+            <div className="ck-top-tabs" style={{ WebkitAppRegion: 'no-drag' } as any}>
+              {activeRoutes.map((r) => (
+                <div
+                  key={r.path}
+                  className={'ck-top-tab' + (r.path === activePath ? ' on' : '')}
+                  onClick={() => navigateTo(r.path)}
+                >
+                  {r.label}
+                </div>
+              ))}
+              <div className="ck-top-divider" />
+              <div className="ck-top-tab flip" onClick={flipPanelSide} title={panelSide === 'front' ? '切换到后台配置' : '切换到前台工具'}>
+                <Repeat size={10} /> {panelSide === 'front' ? '后台' : '前台'}
+              </div>
+            </div>
+            <div className="ck-top-sys">
+              <div className="ck-top-leds">
+                <span className="ck-top-led ok"><i />PWR</span>
+                <span className="ck-top-led nav"><i />NAV</span>
+                <span className="ck-top-led ok"><i />COM</span>
+              </div>
+              <span className="ck-top-sd">SD <b>{stardate}</b></span>
+            </div>
+            <div className="ck-top-actions" style={{ WebkitAppRegion: 'no-drag' } as any}>
+              <button
+                className={'ck-top-ico' + (frostedPanel ? ' on' : '')}
+                title={frostedPanel ? '关闭磨砂背景' : '开启磨砂背景'}
+                onClick={() => setFrostedPanel((enabled) => !enabled)}
+              >
+                <Droplets size={14} />
+              </button>
+              <button className="ck-top-ico" title="切换到 Chakra 浅色主题" onClick={() => setThemeMode('chakra')}>
+                <Moon size={14} />
+              </button>
+              <button
+                className="ck-top-ico"
+                title="打开控制台"
+                onClick={() => { try { window.assistant.openDevTools(); } catch { /* browser */ } }}
+              >
+                <Bug size={14} />
+              </button>
+              <button
+                className="ck-top-ico"
+                title={panelMaximized ? '还原窗口' : '最大化窗口'}
+                onClick={handleToggleMaximize}
+              >
+                {panelMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+              <button className="ck-top-ico danger" title="关闭面板" onClick={handleCollapse}>
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        ) : (
+        <>
         <Box flex={1} sx={{ WebkitAppRegion: 'no-drag' } as any} className="panel-nav-flip-scene">
           <Box className="panel-nav-flip-card" transform={panelSide === 'back' ? 'rotateY(180deg)' : 'rotateY(0deg)'}>
             <Box className="panel-nav-flip-face panel-nav-flip-front">
@@ -564,6 +647,17 @@ export default function App({ role }: Props) {
           <IconButton
             size="xs"
             variant="ghost"
+            color={cockpit ? 'cyan.300' : 'gray.800'}
+            borderRadius="sm"
+            _hover={{ bg: 'whiteAlpha.500', color: cockpit ? 'cyan.200' : 'gray.900' }}
+            aria-label={cockpit ? '切换到 Chakra 浅色主题' : '切换到驾驶舱暗色主题'}
+            title={cockpit ? '切换到 Chakra 浅色主题' : '切换到驾驶舱暗色主题'}
+            icon={<Moon size={15} strokeWidth={1.8} />}
+            onClick={() => setThemeMode(cockpit ? 'chakra' : 'cockpit')}
+          />
+          <IconButton
+            size="xs"
+            variant="ghost"
             color="gray.800"
             borderRadius="sm"
             _hover={{ bg: 'whiteAlpha.500', color: 'gray.900' }}
@@ -593,6 +687,8 @@ export default function App({ role }: Props) {
             onClick={handleCollapse}
           />
         </Flex>
+        </>
+        )}
       </Flex>
 
       {/* 内容区 —— 前台 / 后台双面翻转 */}
@@ -940,7 +1036,7 @@ const ballStyles: Record<string, React.CSSProperties> = {
     objectFit: 'contain',
   },
   timeText: {
-    color: '#4a5568',
+    color: 'var(--uu-ball-text)',
     fontSize: 10,
     fontWeight: 800,
     fontFamily: 'monospace',
@@ -948,7 +1044,7 @@ const ballStyles: Record<string, React.CSSProperties> = {
   },
   menuItemVisual: {
     borderRadius: '50%',
-    background: 'rgba(255, 255, 255, 0.96)',
+    background: 'var(--uu-ball-menu-bg)',
     boxShadow: '0 1px 6px rgba(0, 0, 0, 0.14)',
     display: 'flex',
     alignItems: 'center',
@@ -962,7 +1058,7 @@ const ballStyles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 8,
     padding: '8px 12px',
-    background: 'rgba(255, 255, 255, 0.95)',
+    background: 'var(--uu-ball-menu-bg)',
     borderRadius: 20,
     boxShadow: '0 2px 12px rgba(0, 0, 0, 0.15)',
     backdropFilter: 'blur(10px)',

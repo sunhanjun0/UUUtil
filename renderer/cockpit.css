@@ -1,0 +1,265 @@
+/* ============================================================================
+   UUUtil 驾驶舱 HUD · 舱室共享样式
+   来源：cockpit-prototype.html（全船暗色母舰）
+   用法：插件 tab 根节点挂 `ck` 类，内部用 .ck-head / .ck-hairline / .ck-chip /
+         .ck-input / .ck-row / .ck-btn / .ck-panel / .ck-msg / .ck-term 等原语。
+   命名刻意与原型里的 --phos / --line / --ink 保持一致，便于对照。
+   ============================================================================ */
+
+/* —— token（scoped 在 .ck 下，不影响其它 tab / 浅色主题）—— */
+.ck {
+  --bg: #060d18;
+  --bg2: #0a1424;
+  --line: rgba(103, 232, 249, 0.14);
+  --line-strong: rgba(103, 232, 249, 0.35);
+  --phos: #67e8f9;
+  --phos-dim: #3b7d8c;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --green: #34d399;
+  --ink: #d7ecf5;
+  --ink-2: #8fb3c7;
+  --ink-3: #5f8098;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, "PingFang SC", monospace;
+
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(120% 90% at 50% -10%, #0d1c33 0%, #060d18 55%),
+    #060d18;
+}
+
+/* 扫描线 + 弱网格（跟原型一致） */
+.ck::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.016) 0 1px, transparent 1px 3px);
+}
+.ck::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    linear-gradient(rgba(103,232,249,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103,232,249,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(80% 70% at 50% 40%, transparent 30%, #000 100%);
+  -webkit-mask-image: radial-gradient(80% 70% at 50% 40%, transparent 30%, #000 100%);
+}
+
+.ck ::selection { background: rgba(103, 232, 249, 0.28); color: var(--ink); }
+
+/* 内容区放在扫描线之上 */
+.ck > * { position: relative; z-index: 1; }
+
+/* —— 滚动条 —— */
+.ck ::-webkit-scrollbar { width: 8px; height: 8px; }
+.ck ::-webkit-scrollbar-track { background: transparent; }
+.ck ::-webkit-scrollbar-thumb { background: rgba(103,232,249,0.18); border-radius: 4px; }
+.ck ::-webkit-scrollbar-thumb:hover { background: rgba(103,232,249,0.32); }
+
+/* —— 页面头：代号 + 中文 + 右侧副标题 —— */
+.ck-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; flex-shrink: 0; }
+.ck-head .code {
+  font-size: 15px; font-weight: 700; letter-spacing: 0.22em;
+  color: var(--phos); text-shadow: 0 0 12px rgba(103,232,249,0.45);
+  white-space: nowrap;
+}
+.ck-head .zh { font-size: 11px; letter-spacing: 0.4em; color: var(--ink-3); font-weight: 400; white-space: nowrap; }
+.ck-head .sub { margin-left: auto; font-size: 10px; letter-spacing: 0.08em; color: var(--ink-3); white-space: nowrap; }
+
+/* —— 发丝线分组标题 —— */
+.ck-hairline {
+  display: flex; align-items: center; gap: 10px;
+  margin: 16px 0 6px; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.28em; color: var(--ink-3); flex-shrink: 0;
+}
+.ck-hairline::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.ck-hairline.danger { color: var(--red); }
+.ck-hairline.danger::after { background: rgba(248,113,113,0.25); }
+.ck-hairline.phos { color: var(--phos); }
+.ck-hairline .n { font-variant-numeric: tabular-nums; }
+
+/* —— chip（筛选/分类标签） —— */
+.ck-chip {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  font-size: 10.5px; padding: 3px 10px; border-radius: 3px;
+  border: 1px solid var(--line); background: transparent; color: var(--ink-3);
+  cursor: pointer; transition: all .15s ease; letter-spacing: 0.04em; white-space: nowrap;
+  user-select: none;
+}
+.ck-chip:hover { color: var(--ink-2); border-color: var(--line-strong); }
+.ck-chip.on {
+  color: var(--phos); border-color: var(--phos);
+  background: rgba(103,232,249,0.1); box-shadow: 0 0 10px rgba(103,232,249,0.18);
+}
+
+/* —— HUD 输入框（带四角括号） —— */
+.ck-input {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(103,232,249,0.05); border: 1px solid var(--line-strong);
+  border-radius: 4px; padding: 9px 14px; position: relative; cursor: text;
+  box-shadow: 0 0 20px rgba(103,232,249,0.08), 0 0 0 1px rgba(103,232,249,0.04) inset;
+}
+.ck-input::before, .ck-input::after {
+  content: ''; position: absolute; width: 10px; height: 10px;
+  border: 1.5px solid var(--phos); pointer-events: none;
+}
+.ck-input::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+.ck-input::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+.ck-input .prompt { color: var(--phos); font-weight: 700; text-shadow: 0 0 8px rgba(103,232,249,.5); flex-shrink: 0; }
+.ck-input .ph { color: var(--ink-3); flex: 1; }
+.ck-input kbd {
+  font-family: inherit; font-size: 10px; letter-spacing: 0.1em; color: var(--phos-dim);
+  border: 1px solid var(--line); border-radius: 3px; padding: 2px 7px; flex-shrink: 0;
+}
+.ck-caret {
+  width: 7px; height: 15px; background: var(--phos); box-shadow: 0 0 8px var(--phos);
+  flex-shrink: 0; animation: ck-blink 1.1s steps(1) infinite;
+}
+@keyframes ck-blink { 50% { opacity: 0; } }
+
+/* —— 行（列表通用） —— */
+.ck-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 6px;
+  border-bottom: 1px solid var(--line); transition: background .15s ease;
+}
+.ck-row:hover { background: rgba(103,232,249,0.04); }
+.ck-row .check {
+  width: 16px; height: 16px; flex-shrink: 0; border: 1.5px solid var(--ink-3);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .18s ease; color: transparent;
+}
+.ck-row .check::after { content: '✓'; color: #060d18; font-size: 9px; font-weight: 700; }
+.ck-row .check.p1 { border-color: var(--red); box-shadow: 0 0 6px rgba(248,113,113,.35); }
+.ck-row .check.p2 { border-color: var(--amber); box-shadow: 0 0 6px rgba(251,191,36,.3); }
+.ck-row .check.p3 { border-color: var(--phos); box-shadow: 0 0 6px rgba(103,232,249,.3); }
+.ck-row .check.done { background: var(--green); border-color: var(--green); box-shadow: 0 0 10px rgba(52,211,153,.55); }
+.ck-row .title { flex: 1; min-width: 0; color: var(--ink); word-break: break-all; }
+.ck-row.done .title { color: var(--ink-3); text-decoration: line-through; }
+.ck-row .meta { flex-shrink: 0; display: flex; align-items: center; gap: 10px; font-size: 10px; color: var(--ink-3); }
+.ck-row .tag { color: var(--ink-3); border: 1px solid var(--line); border-radius: 2px; padding: 1px 5px; font-size: 9px; letter-spacing: 0.05em; }
+.ck-util { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* —— HUD 按钮 —— */
+.ck-btn {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  font-size: 11px; letter-spacing: 0.08em; padding: 5px 12px; border-radius: 3px;
+  border: 1px solid var(--line-strong); background: rgba(103,232,249,0.05);
+  color: var(--ink-2); cursor: pointer; transition: all .15s ease;
+  font-family: inherit; user-select: none; white-space: nowrap;
+}
+.ck-btn:hover { color: var(--phos); border-color: var(--phos); box-shadow: 0 0 10px rgba(103,232,249,0.18); }
+.ck-btn.primary { color: var(--phos); background: rgba(103,232,249,0.1); }
+.ck-btn.danger { color: var(--red); border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.05); }
+.ck-btn.danger:hover { border-color: var(--red); box-shadow: 0 0 10px rgba(248,113,113,0.2); }
+
+/* —— 面板（带四角括号可选 .brackets） —— */
+.ck-panel {
+  position: relative; border: 1px solid var(--line); border-radius: 4px;
+  background: rgba(103,232,249,0.02); padding: 12px 14px;
+}
+.ck-panel.brackets::before, .ck-panel.brackets::after {
+  content: ''; position: absolute; width: 10px; height: 10px; border: 1.5px solid var(--phos); pointer-events: none;
+}
+.ck-panel.brackets::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+.ck-panel.brackets::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+/* —— 键值小卡片（舰桥指标） —— */
+.ck-kv { border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; background: rgba(103,232,249,0.02); }
+.ck-kv .k { font-size: 9px; letter-spacing: 0.24em; color: var(--ink-3); }
+.ck-kv .v { font-size: 22px; font-weight: 700; color: var(--phos); margin-top: 6px; text-shadow: 0 0 14px rgba(103,232,249,0.35); }
+.ck-kv .v.green { color: var(--green); text-shadow: 0 0 14px rgba(52,211,153,0.35); }
+.ck-kv .v.amber { color: var(--amber); text-shadow: 0 0 14px rgba(251,191,36,0.3); }
+.ck-kv .v.red { color: var(--red); text-shadow: 0 0 14px rgba(248,113,113,0.35); }
+.ck-kv .d { font-size: 9.5px; color: var(--ink-3); margin-top: 4px; letter-spacing: 0.05em; }
+
+/* —— 消息（助手上行链路） —— */
+.ck-msg { display: flex; gap: 12px; margin-bottom: 14px; }
+.ck-msg .who { flex-shrink: 0; font-size: 9px; letter-spacing: 0.2em; color: var(--ink-3); padding-top: 3px; width: 52px; }
+.ck-msg.user .who { color: var(--phos); }
+.ck-msg .bubble {
+  padding: 9px 12px; border-radius: 4px; font-size: 12.5px; line-height: 1.6;
+  border: 1px solid var(--line); background: rgba(103,232,249,0.03); color: var(--ink); max-width: 74%;
+  word-break: break-word;
+}
+.ck-msg.user .bubble { background: rgba(103,232,249,0.08); border-color: var(--line-strong); }
+.ck-msg .bubble a { color: var(--phos); text-decoration: underline; }
+.ck-msg .bubble pre { background: rgba(4,9,18,0.7); border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; overflow-x: auto; }
+.ck-msg .bubble code { color: var(--amber); font-family: inherit; }
+
+/* —— 终端块 —— */
+.ck-term {
+  background: rgba(4,9,18,0.7); border: 1px solid var(--line); border-radius: 4px;
+  padding: 12px 14px; font-size: 12px; line-height: 1.7; color: var(--ink-2);
+  white-space: pre-wrap; word-break: break-all;
+}
+.ck-term .ps { color: var(--green); }
+.ck-term .cmd { color: var(--ink); }
+.ck-term .out { color: var(--ink-2); }
+
+/* —— 占位舱室 —— */
+.ck-placeholder {
+  border: 1px solid var(--line); border-radius: 4px; padding: 46px 20px; text-align: center;
+  color: var(--ink-3); letter-spacing: 0.15em; font-size: 11px;
+}
+.ck-placeholder .code { color: var(--phos-dim); letter-spacing: 0.32em; font-weight: 700; margin-bottom: 8px; }
+
+/* —— 侧栏块（LEFT CONSOLE） —— */
+.ck-aside { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+
+/* —— 原生输入（塞进 .ck-input 里） —— */
+.ck-input input {
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+  color: var(--ink); font-family: inherit; font-size: 12.5px;
+}
+.ck-input input::placeholder { color: var(--ink-3); }
+
+/* —— 图标按钮（列表行内操作） —— */
+.ck-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 3px; border: 1px solid transparent;
+  color: var(--ink-3); background: transparent; cursor: pointer; transition: all .15s ease;
+  flex-shrink: 0;
+}
+.ck-ico:hover { color: var(--phos); border-color: var(--line-strong); background: rgba(103,232,249,0.07); }
+.ck-ico.on { color: var(--amber); }
+.ck-ico.danger:hover { color: var(--red); border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.06); }
+
+/* —— 工具行 / 筛选行 / 空态 —— */
+.ck-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+.ck-chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+.ck-spacer { flex: 1; }
+.ck-list { flex: 1; min-height: 0; overflow-y: auto; }
+.ck-empty {
+  padding: 40px 20px; text-align: center; color: var(--ink-3);
+  letter-spacing: .15em; font-size: 11px;
+  border: 1px dashed var(--line); border-radius: 4px;
+}
+.ck-empty .code { color: var(--phos-dim); letter-spacing: .32em; font-weight: 700; margin-bottom: 8px; }
+
+/* —— 数字/谁是副文本 —— */
+.ck-dim { color: var(--ink-3); }
+.ck-sub { color: var(--ink-2); }
+.ck-warn { color: var(--amber); }
+.ck-err { color: var(--red); }
+.ck-ok { color: var(--green); }
+.ck-phos { color: var(--phos); }
+
+/* —— 列表条目（剪贴板/知识库等） —— */
+.ck-item { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.ck-item-ico { color: var(--phos); flex-shrink: 0; display: flex; align-items: center; }
+.ck-item-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ck-item-title {
+  font-size: 12.5px; color: var(--ink); word-break: break-all; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+
+/* —— 静态小徽标（分类/标签） —— */
+.ck-badge { display: inline-block; color: var(--ink-3); border: 1px solid var(--line); border-radius: 2px; padding: 1px 6px; font-size: 10px; letter-spacing: 0.05em; }
+.ck-badge.phos { color: var(--phos); border-color: var(--line-strong); }

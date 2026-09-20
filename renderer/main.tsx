@@ -1,11 +1,20 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { ChakraProvider, extendTheme } from '@chakra-ui/react';
 import App from './App';
 import './global.css';
-import { chakraThemeConfig } from './theme';
+import './cockpit.css';
+import {
+  chakraThemeConfig,
+  cockpitThemeConfig,
+  readThemeMode,
+  ThemeModeContext,
+  THEME_MODE_KEY,
+  type ThemeMode,
+} from './theme';
 
-const theme = extendTheme(chakraThemeConfig);
+const chakraTheme = extendTheme(chakraThemeConfig);
+const cockpitTheme = extendTheme(cockpitThemeConfig);
 const originalConsoleError = console.error.bind(console);
 let reportingGlobalError = false;
 
@@ -212,10 +221,29 @@ if (!window.assistant) {
   };
 }
 
+function ThemedRoot() {
+  const [mode, setMode] = useState<ThemeMode>(readThemeMode);
+
+  useEffect(() => {
+    document.documentElement.dataset.uuTheme = mode;
+    try {
+      localStorage.setItem(THEME_MODE_KEY, mode);
+    } catch { /* 忽略持久化失败 */ }
+  }, [mode]);
+
+  const value = useMemo(() => ({ mode, setMode }), [mode]);
+
+  return (
+    <ThemeModeContext.Provider value={value}>
+      <ChakraProvider key={mode} theme={mode === 'cockpit' ? cockpitTheme : chakraTheme}>
+        <App role={role} />
+      </ChakraProvider>
+    </ThemeModeContext.Provider>
+  );
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ChakraProvider theme={theme}>
-      <App role={role} />
-    </ChakraProvider>
+    <ThemedRoot />
   </React.StrictMode>
 );
