@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, Collapse, Flex, Heading, IconButton, Text, Textarea, useDisclosure, useToast } from '@chakra-ui/react';
+import { useThemeMode } from '../theme';
+import { useToast } from '@chakra-ui/react';
 import MarkdownPreview from '@uiw/react-markdown-preview';
 import '@uiw/react-markdown-preview/markdown.css';
-import { Bot, Brain, ChevronDown, ChevronRight, FileAudio, FileText, Image as ImageIcon, Paperclip, Plus, Send, Square, Trash2, User, X } from 'lucide-react';
+import { Brain, ChevronDown, ChevronRight, FileAudio, FileText, Image as ImageIcon, Paperclip, Plus, Send, Square, Trash2, X } from 'lucide-react';
 import type { AiChatResponse, AiMessage, AiMessageContentPart, CliCommandResult } from '../../src/shared/types';
 
 interface ChatAttachment {
@@ -42,6 +43,7 @@ interface ChatSession {
 
 const SESSIONS_KEY = 'uuutil:assistant:sessions';
 const ACTIVE_SESSION_KEY = 'uuutil:assistant:active-session';
+const ASIDE_WIDTH_KEY = 'uuutil:assistant:aside-width';
 const MAX_ATTACHMENT_SIZE = 8 * 1024 * 1024;
 const CLI_TOOL_BLOCK_PATTERN = /```uuutil-cli\s*([\s\S]*?)```/i;
 const ASSISTANT_SYSTEM_PROMPT = `你是 UUUtil 的桌面助手。请直接回答用户问题。若用户提供图片，请结合图片内容回答；若用户提供音频或文件，而当前模型不支持直接解析，请说明可处理的信息边界。
@@ -172,174 +174,81 @@ function formatCliResultForModel(result: CliCommandResult): string {
 }
 
 function ReasoningBlock({ reasoning }: { reasoning: string }) {
-  const { isOpen, onToggle } = useDisclosure({ defaultIsOpen: false });
+  const [open, setOpen] = useState(false);
   return (
-    <Box mb={2} border="1px solid" borderColor="gray.200" borderRadius="md" bg="gray.50" overflow="hidden">
-      <Flex
-        as="button"
-        type="button"
-        onClick={onToggle}
-        align="center"
-        gap={1}
-        w="100%"
-        px={2}
-        py={1.5}
-        color="gray.500"
-        fontSize="xs"
-        fontWeight="medium"
-        _hover={{ color: 'gray.700', bg: 'gray.100' }}
-      >
-        <Brain size={13} />
-        <Text>思考过程</Text>
-        <Box ml="auto">
-          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </Box>
-      </Flex>
-      <Collapse in={isOpen} animateOpacity>
-        <Box px={2} pb={2} pt={1} borderTop="1px solid" borderColor="gray.200">
-          <Text whiteSpace="pre-wrap" fontSize="xs" color="gray.500" lineHeight="1.6">
-            {reasoning}
-          </Text>
-        </Box>
-      </Collapse>
-    </Box>
+    <div className="ck-reason">
+      <button type="button" className="ck-reason-head" onClick={() => setOpen((prev) => !prev)}>
+        <Brain size={12} />
+        <span>思考过程</span>
+        <span style={{ marginLeft: 'auto', display: 'flex' }}>{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+      </button>
+      {open && <div className="ck-reason-body">{reasoning}</div>}
+    </div>
   );
 }
 
-function MessageBubble({ message, onConfirmCliCall, onRejectCliCall }: { message: ChatMessage; onConfirmCliCall?: (messageId: string) => void; onRejectCliCall?: (messageId: string) => void }) {
+function MessageBubble({ message, streaming, onConfirmCliCall, onRejectCliCall }: { message: ChatMessage; streaming?: boolean; onConfirmCliCall?: (messageId: string) => void; onRejectCliCall?: (messageId: string) => void }) {
   const isUser = message.role === 'user';
+  const { mode: themeMode } = useThemeMode();
   return (
-    <Flex justify={isUser ? 'flex-end' : 'flex-start'} mb={3} gap={2}>
-      {!isUser && (
-        <Flex w="28px" h="28px" borderRadius="full" bg="blue.50" color="blue.600" align="center" justify="center" flexShrink={0}>
-          <Bot size={15} />
-        </Flex>
-      )}
-      <Box
-        maxW={isUser ? '78%' : '88%'}
-        minW={0}
-        bg={isUser ? 'blue.500' : 'white'}
-        color={isUser ? 'white' : 'gray.800'}
-        border="1px solid"
-        borderColor={isUser ? 'blue.500' : 'gray.100'}
-        borderRadius="lg"
-        px={3}
-        py={2}
-        boxShadow={isUser ? '0 8px 20px rgba(37, 99, 235, 0.18)' : '0 8px 22px rgba(15, 23, 42, 0.06)'}
-        wordBreak="break-word"
-        overflowWrap="anywhere"
-        fontSize="sm"
-        lineHeight="1.7"
-        sx={{
-          '.wmde-markdown': {
-            bg: 'transparent',
-            color: 'inherit',
-            fontSize: 'inherit',
-            lineHeight: '1.7',
-            fontFamily: 'inherit',
-          },
-          '.wmde-markdown h1, .wmde-markdown h2, .wmde-markdown h3': {
-            borderBottom: '0',
-            mt: 2,
-            mb: 2,
-            pb: 0,
-            fontWeight: 700,
-          },
-          '.wmde-markdown h1': { fontSize: '1.15em' },
-          '.wmde-markdown h2': { fontSize: '1.08em' },
-          '.wmde-markdown h3': { fontSize: '1em' },
-          '.wmde-markdown p, .wmde-markdown ul, .wmde-markdown ol, .wmde-markdown blockquote, .wmde-markdown pre': {
-            mb: 2,
-          },
-          '.wmde-markdown ul, .wmde-markdown ol': {
-            pl: 5,
-          },
-          '.wmde-markdown li + li': {
-            mt: 1,
-          },
-          '.wmde-markdown hr': {
-            my: 3,
-            borderColor: 'gray.200',
-          },
-          '.wmde-markdown code': {
-            whiteSpace: 'pre-wrap',
-          },
-          '.wmde-markdown pre': {
-            borderRadius: 'md',
-            overflowX: 'auto',
-          },
-          '.wmde-markdown > :last-child': {
-            mb: 0,
-          },
-        }}
-      >
+    <div className={'ck-msg' + (isUser ? ' user' : '')}>
+      <div className="who">{isUser ? 'YOU ›' : 'SYS ›'}</div>
+      <div className="bubble">
         {message.attachments && message.attachments.length > 0 && (
-          <Flex gap={2} wrap="wrap" mb={message.content ? 2 : 0}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: message.content ? 8 : 0 }}>
             {message.attachments.map((attachment) => {
               const Icon = attachmentIcon(attachment.kind);
               return (
-                <Box key={attachment.id} border="1px solid" borderColor={isUser ? 'whiteAlpha.400' : 'gray.200'} borderRadius="md" overflow="hidden" bg={isUser ? 'whiteAlpha.200' : 'gray.50'} maxW="160px">
+                <div key={attachment.id} className="ck-att">
                   {attachment.kind === 'image' ? (
-                    <Box as="img" src={attachment.dataUrl} alt={attachment.name} maxH="110px" maxW="160px" objectFit="cover" />
+                    <img src={attachment.dataUrl} alt={attachment.name} style={{ maxHeight: 60, maxWidth: 140, objectFit: 'cover', borderRadius: 2 }} />
                   ) : (
-                    <Flex align="center" gap={2} px={2} py={2}>
-                      <Icon size={16} />
-                      <Box minW={0}>
-                        <Text fontSize="xs" noOfLines={1}>{attachment.name}</Text>
-                        <Text fontSize="10px" opacity={0.75}>{formatFileSize(attachment.size)}</Text>
-                      </Box>
-                    </Flex>
+                    <>
+                      <Icon size={12} />
+                      <span className="ck-att-name">{attachment.name}</span>
+                      <span className="ck-dim" style={{ fontSize: 9 }}>{formatFileSize(attachment.size)}</span>
+                    </>
                   )}
-                </Box>
+                </div>
               );
             })}
-          </Flex>
+          </div>
         )}
         {isUser ? (
-          <Text whiteSpace="pre-wrap">{message.content}</Text>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
         ) : (
           <>
             {message.reasoning && <ReasoningBlock reasoning={message.reasoning} />}
-            <MarkdownPreview source={message.content} skipHtml wrapperElement={{ 'data-color-mode': 'light' }} />
+            {message.content && <MarkdownPreview source={message.content} skipHtml wrapperElement={{ 'data-color-mode': themeMode === 'cockpit' ? 'dark' : 'light' }} />}
           </>
         )}
+        {streaming && <span className="ck-caret" style={{ height: 13, display: 'inline-block', verticalAlign: -2, marginLeft: 2 }} />}
         {message.cliCall && (
-          <Box mt={3} p={3} border="1px solid" borderColor="orange.200" borderRadius="md" bg="orange.50">
-            <Text fontSize="xs" fontWeight="bold" color="orange.700" mb={1}>待确认 CLI 工具调用</Text>
-            {message.cliCall.reason && <Text fontSize="xs" color="gray.600" mb={2}>{message.cliCall.reason}</Text>}
-            <Box as="pre" p={2} bg="gray.900" color="gray.50" borderRadius="md" overflowX="auto" fontSize="xs" whiteSpace="pre-wrap">
-              {message.cliCall.command}
-            </Box>
-            {message.cliCall.cwd && <Text fontSize="xs" color="gray.500" mt={1}>cwd: {message.cliCall.cwd}</Text>}
-            {message.cliCall.result && (
-              <Box as="pre" mt={2} p={2} bg="white" border="1px solid" borderColor="gray.200" borderRadius="md" overflowX="auto" fontSize="xs" whiteSpace="pre-wrap" color="gray.700">
-                {formatCliResultForModel(message.cliCall.result)}
-              </Box>
-            )}
+          <div className="ck-panel brackets ck-cli">
+            <div className="ck-warn" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', marginBottom: 4 }}>待确认 CLI 工具调用</div>
+            {message.cliCall.reason && <div className="ck-sub" style={{ fontSize: 11, marginBottom: 6 }}>{message.cliCall.reason}</div>}
+            <div className="ck-term">{message.cliCall.command}</div>
+            {message.cliCall.cwd && <div className="ck-dim" style={{ fontSize: 10, marginTop: 4 }}>cwd: {message.cliCall.cwd}</div>}
+            {message.cliCall.result && <div className="ck-term" style={{ marginTop: 8 }}>{formatCliResultForModel(message.cliCall.result)}</div>}
             {message.cliCall.status === 'pending' && (
-              <Flex gap={2} mt={2}>
-                <Button size="xs" colorScheme="orange" onClick={() => onConfirmCliCall?.(message.id)}>确认执行</Button>
-                <Button size="xs" variant="outline" onClick={() => onRejectCliCall?.(message.id)}>拒绝</Button>
-              </Flex>
+              <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+                <button className="ck-btn" style={{ color: 'var(--green)', borderColor: 'rgba(52,211,153,0.45)', background: 'rgba(52,211,153,0.06)' }} onClick={() => onConfirmCliCall?.(message.id)}>确认执行</button>
+                <button className="ck-btn danger" onClick={() => onRejectCliCall?.(message.id)}>拒绝</button>
+              </div>
             )}
-            {message.cliCall.status === 'running' && <Text fontSize="xs" color="orange.700" mt={2}>命令执行中...</Text>}
-            {message.cliCall.status === 'rejected' && <Text fontSize="xs" color="gray.500" mt={2}>已拒绝执行。</Text>}
-            {message.cliCall.status === 'failed' && <Text fontSize="xs" color="red.600" mt={2}>执行失败。</Text>}
-            {message.cliCall.status === 'completed' && <Text fontSize="xs" color="green.600" mt={2}>执行完成，已将结果回传给助手。</Text>}
-          </Box>
+            {message.cliCall.status === 'running' && <div className="ck-warn" style={{ fontSize: 11, marginTop: 6 }}>命令执行中...</div>}
+            {message.cliCall.status === 'rejected' && <div className="ck-dim" style={{ fontSize: 11, marginTop: 6 }}>已拒绝执行。</div>}
+            {message.cliCall.status === 'failed' && <div className="ck-err" style={{ fontSize: 11, marginTop: 6 }}>执行失败。</div>}
+            {message.cliCall.status === 'completed' && <div className="ck-ok" style={{ fontSize: 11, marginTop: 6 }}>执行完成，已将结果回传给助手。</div>}
+          </div>
         )}
         {message.meta && (
-          <Text mt={2} pt={2} borderTop="1px solid" borderColor={isUser ? 'whiteAlpha.300' : 'gray.100'} fontSize="xs" color={isUser ? 'whiteAlpha.800' : 'gray.500'} whiteSpace="pre-wrap">
+          <div className="ck-dim" style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid var(--line)', fontSize: 10, letterSpacing: '0.05em', whiteSpace: 'pre-wrap' }}>
             {message.meta}
-          </Text>
+          </div>
         )}
-      </Box>
-      {isUser && (
-        <Flex w="28px" h="28px" borderRadius="full" bg="gray.100" color="gray.600" align="center" justify="center" flexShrink={0}>
-          <User size={15} />
-        </Flex>
-      )}
-    </Flex>
+      </div>
+    </div>
   );
 }
 
@@ -356,9 +265,15 @@ export default function AssistantPage() {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [asideWidth, setAsideWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(ASIDE_WIDTH_KEY));
+    return saved >= 160 && saved <= 360 ? saved : 220;
+  });
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeStreamRef = useRef<{ cancel: () => Promise<any>; assistantId: string } | null>(null);
+  const asideResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const toast = useToast();
   const activeSession = sessions.find((session) => session.id === activeSessionId) || sessions[0];
   const messages = activeSession?.messages || [];
@@ -420,6 +335,28 @@ export default function AssistantPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isSending]);
+
+  // 会话侧栏拖拽调宽（160–360px，localStorage 持久化）
+  function startAsideResize(e: React.MouseEvent) {
+    e.preventDefault();
+    asideResizeRef.current = { startX: e.clientX, startWidth: asideWidth };
+    function onMove(ev: MouseEvent) {
+      if (!asideResizeRef.current) return;
+      const next = Math.min(360, Math.max(160, asideResizeRef.current.startWidth + ev.clientX - asideResizeRef.current.startX));
+      setAsideWidth(next);
+    }
+    function onUp() {
+      asideResizeRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setAsideWidth((width) => {
+        localStorage.setItem(ASIDE_WIDTH_KEY, String(width));
+        return width;
+      });
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
 
   async function fileToAttachment(file: File): Promise<ChatAttachment> {
     return new Promise((resolve, reject) => {
@@ -488,10 +425,11 @@ export default function AssistantPage() {
     stream.cancel();
     updateActiveSessionMessages((prev) => prev.map((message) => (
       message.id === stream.assistantId
-        ? { ...message, content: message.content === '正在生成...' ? '已停止生成。' : message.content, meta: message.meta ? `${message.meta}\n已手动停止。` : '已手动停止。' }
+        ? { ...message, content: message.content === '' ? '已停止生成。' : message.content, meta: message.meta ? `${message.meta}\n已手动停止。` : '已手动停止。' }
         : message
     )));
     activeStreamRef.current = null;
+    setStreamingId(null);
     setIsSending(false);
   }
 
@@ -513,7 +451,8 @@ export default function AssistantPage() {
 
     const assistantId = makeId();
     try {
-      updateActiveSessionMessages(() => [...nextMessages, { id: assistantId, role: 'assistant', content: '正在生成...' }]);
+      updateActiveSessionMessages(() => [...nextMessages, { id: assistantId, role: 'assistant', content: '' }]);
+      setStreamingId(assistantId);
 
       const stream = window.assistant.ai.chatStream({
         messages: createAiMessages(nextMessages),
@@ -522,7 +461,7 @@ export default function AssistantPage() {
       }, (chunk: string) => {
         updateActiveSessionMessages((prev) => prev.map((message) => (
           message.id === assistantId
-            ? { ...message, content: message.content === '正在生成...' ? chunk : message.content + chunk }
+            ? { ...message, content: message.content + chunk }
             : message
         )));
         scrollToBottom();
@@ -543,7 +482,7 @@ export default function AssistantPage() {
       }
       updateActiveSessionMessages((prev) => prev.map((message) => {
         if (message.id !== assistantId) return message;
-        const finalContent = response.content || (message.content === '正在生成...' ? '' : message.content);
+        const finalContent = response.content || message.content;
         const parsed = parsePendingCliCall(finalContent);
         return {
           ...message,
@@ -560,12 +499,13 @@ export default function AssistantPage() {
       toast({ title: '发送失败', description, status: 'error', duration: 3000 });
       updateActiveSessionMessages((prev) => prev.map((message) => (
         message.id === assistantId
-          ? { ...message, content: message.content === '正在生成...' ? `调用失败：${description}` : `${message.content}\n\n调用失败：${description}` }
+          ? { ...message, content: message.content === '' ? `调用失败：${description}` : `${message.content}\n\n调用失败：${description}` }
           : message
       )));
       scrollToBottom();
     } finally {
       if (activeStreamRef.current?.assistantId === assistantId) activeStreamRef.current = null;
+      setStreamingId(null);
       setIsSending(false);
     }
   }
@@ -638,72 +578,78 @@ export default function AssistantPage() {
   }
 
   return (
-    <Box h="calc(100vh - 132px)" minH="520px" bg="gray.50" borderRadius="lg" overflow="hidden" border="1px solid" borderColor="gray.100">
-      <Flex h="100%" minH={0}>
-        <Flex w="220px" minW="220px" direction="column" borderRight="1px solid" borderColor="gray.100" bg="white" minH={0}>
-          <Box px={3} py={3} borderBottom="1px solid" borderColor="gray.100">
-            <Flex align="center" gap={2} mb={3}>
-              <Flex w="28px" h="28px" borderRadius="full" bg="blue.500" color="white" align="center" justify="center" flexShrink={0}>
-                <Bot size={16} />
-              </Flex>
-              <Box minW={0}>
-                <Heading size="xs">AI Assistant</Heading>
-                <Text fontSize="10px" color="gray.500">会话历史</Text>
-              </Box>
-            </Flex>
-            <Button w="100%" size="sm" colorScheme="blue" leftIcon={<Plus size={14} />} onClick={createSession} isDisabled={isSending}>新对话</Button>
-          </Box>
-
-          <Box flex={1} minH={0} overflowY="auto" p={2}>
+    <div className="ck" style={{ padding: '14px 16px 14px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head" style={{ marginBottom: 0 }}>
+        <span className="code">UPLINK</span>
+        <span className="zh">助手</span>
+        <span className="sub">COMMS // 流式会话</span>
+      </div>
+      <style>{`
+        .ck-msg .bubble .wmde-markdown{background:transparent;color:inherit;font-size:inherit;line-height:1.7;font-family:inherit}
+        .ck-msg .bubble .wmde-markdown h1,.ck-msg .bubble .wmde-markdown h2,.ck-msg .bubble .wmde-markdown h3{border-bottom:0;margin:8px 0;padding:0;font-weight:700}
+        .ck-msg .bubble .wmde-markdown h1{font-size:1.15em}.ck-msg .bubble .wmde-markdown h2{font-size:1.08em}.ck-msg .bubble .wmde-markdown h3{font-size:1em}
+        .ck-msg .bubble .wmde-markdown p,.ck-msg .bubble .wmde-markdown ul,.ck-msg .bubble .wmde-markdown ol,.ck-msg .bubble .wmde-markdown blockquote,.ck-msg .bubble .wmde-markdown pre{margin-bottom:8px}
+        .ck-msg .bubble .wmde-markdown ul,.ck-msg .bubble .wmde-markdown ol{padding-left:20px}
+        .ck-msg .bubble .wmde-markdown li+li{margin-top:4px}
+        .ck-msg .bubble .wmde-markdown hr{margin:12px 0;border-color:var(--line)}
+        .ck-msg .bubble .wmde-markdown pre{border-radius:3px;overflow-x:auto}
+        .ck-msg .bubble .wmde-markdown>:last-child{margin-bottom:0}
+        /* 思考过程块（ck 面板样式） */
+        .ck-reason{margin-bottom:8px;border:1px solid var(--line);border-radius:3px;background:rgba(4,9,18,0.5);overflow:hidden;font-size:11px}
+        .ck-reason-head{display:flex;align-items:center;gap:6px;width:100%;padding:5px 9px;color:var(--ink-3);letter-spacing:0.1em;background:none;border:none;font-family:inherit;font-size:10px;cursor:pointer}
+        .ck-reason-head:hover{color:var(--ink-2)}
+        .ck-reason-body{padding:6px 9px 8px;border-top:1px solid var(--line);color:var(--ink-3);line-height:1.6;white-space:pre-wrap}
+        /* 附件 chip */
+        .ck-att{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:3px;padding:3px 8px;font-size:10px;color:var(--ink-2);max-width:190px}
+        .ck-att-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        /* CLI 确认块（琥珀角括号面板） */
+        .ck-cli{margin-top:10px;border-color:rgba(251,191,36,0.35);background:rgba(251,191,36,0.04)}
+        .ck-cli::before,.ck-cli::after{border-color:var(--amber)}
+        /* 侧栏拖拽手柄 */
+        .uplink-resizer{width:5px;flex-shrink:0;cursor:col-resize;position:relative}
+        .uplink-resizer::after{content:'';position:absolute;top:0;bottom:0;left:2px;width:1px;background:var(--line);transition:all .15s ease}
+        .uplink-resizer:hover::after,.uplink-resizer.active::after{left:1px;width:3px;background:var(--line-strong);box-shadow:0 0 8px rgba(103,232,249,0.35)}
+      `}</style>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <div className="ck-aside" style={{ width: asideWidth, minWidth: asideWidth, borderRight: 'none', padding: '4px 2px 0 0' }}>
+          <div className="ck-hairline" style={{ marginTop: 0 }}>SESSIONS</div>
+          <button className="ck-btn primary" style={{ justifyContent: 'center' }} onClick={createSession} disabled={isSending}>
+            <Plus size={13} /> 新对话
+          </button>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
             {sessions.map((session) => (
-              <Button
+              <div
                 key={session.id}
-                w="100%"
-                justifyContent="flex-start"
-                size="sm"
-                variant={session.id === activeSession?.id ? 'solid' : 'ghost'}
-                colorScheme={session.id === activeSession?.id ? 'blue' : 'gray'}
+                className={'ck-chip' + (session.id === activeSession?.id ? ' on' : '')}
+                style={{ display: 'flex', alignItems: 'flex-start', flexDirection: 'column', gap: 2, width: '100%' }}
                 onClick={() => switchSession(session.id)}
-                isDisabled={isSending}
-                mb={1}
-                px={2}
               >
-                <Box minW={0} textAlign="left">
-                  <Text fontSize="xs" noOfLines={1}>{session.title}</Text>
-                  <Text fontSize="10px" opacity={0.7}>{session.messages.length} 条消息</Text>
-                </Box>
-              </Button>
+                <span style={{ fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{session.title}</span>
+                <span className="ck-dim" style={{ fontSize: 9 }}>{session.messages.length} MSGS</span>
+              </div>
             ))}
-          </Box>
+          </div>
+          <button className="ck-btn danger" style={{ justifyContent: 'center' }} onClick={clearCurrentSession} disabled={isSending || messages.length === 0}>
+            <Trash2 size={12} /> 清空当前
+          </button>
+        </div>
+        <div className="uplink-resizer" onMouseDown={startAsideResize} title="拖拽调整侧栏宽度" />
 
-          <Box p={2} borderTop="1px solid" borderColor="gray.100">
-            <Button w="100%" size="xs" variant="ghost" leftIcon={<Trash2 size={13} />} onClick={clearCurrentSession} isDisabled={isSending || messages.length === 0}>清空当前对话</Button>
-          </Box>
-        </Flex>
-
-        <Flex direction="column" flex={1} minW={0} minH={0}>
-          <Box px={4} py={3} borderBottom="1px solid" borderColor="gray.100" bg="white">
-            <Flex align="center" gap={2} minW={0}>
-              <Heading size="sm" noOfLines={1}>{activeSession?.title || '新对话'}</Heading>
-              <Text fontSize="xs" color="gray.500" flexShrink={0}>支持流式输出、图片/音频/文件附件</Text>
-            </Flex>
-          </Box>
-
-          <Box ref={viewportRef} flex={1} minH={0} overflowY="auto" overflowX="hidden" p={4} css={{ scrollbarGutter: 'stable' }}>
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', paddingLeft: 12 }}>
+          <div ref={viewportRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '4px 8px 4px 2px' }}>
           {messages.length === 0 ? (
-            <Flex direction="column" align="center" justify="center" minH="260px" color="gray.500" textAlign="center" gap={2}>
-              <Flex w="48px" h="48px" borderRadius="full" bg="blue.50" color="blue.500" align="center" justify="center">
-                <Bot size={24} />
-              </Flex>
-              <Heading size="sm" color="gray.700">开始一次新的 AI 对话</Heading>
-              <Text fontSize="xs" maxW="320px">可以先用于通用问答、改写、总结和方案讨论。后续会逐步接入 assistant-ui、白板与知识库上下文。</Text>
-            </Flex>
+            <div className="ck-empty" style={{ margin: '48px 24px' }}>
+              <div className="code">COMMS STANDBY</div>
+              等待上行链路 · 通用问答 / 改写 / 总结 / 方案讨论
+            </div>
           ) : (
-            messages.filter((message) => !message.hidden).map((message) => <MessageBubble key={message.id} message={message} onConfirmCliCall={confirmCliCall} onRejectCliCall={rejectCliCall} />)
+            messages.filter((message) => !message.hidden).map((message) => (
+              <MessageBubble key={message.id} message={message} streaming={message.id === streamingId} onConfirmCliCall={confirmCliCall} onRejectCliCall={rejectCliCall} />
+            ))
           )}
-        </Box>
+        </div>
 
-        <Box p={3} borderTop="1px solid" borderColor="gray.100" bg="white">
+        <div style={{ padding: '10px 0 0', borderTop: '1px solid var(--line)', flexShrink: 0 }}>
           <input
             ref={fileInputRef}
             type="file"
@@ -713,50 +659,43 @@ export default function AssistantPage() {
             onChange={handleFilesSelected}
           />
           {attachments.length > 0 && (
-            <Flex gap={2} wrap="wrap" mb={2}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
               {attachments.map((attachment) => {
                 const Icon = attachmentIcon(attachment.kind);
                 return (
-                  <Flex key={attachment.id} align="center" gap={2} bg="gray.50" border="1px solid" borderColor="gray.200" borderRadius="md" px={2} py={1} maxW="190px">
-                    <Icon size={14} />
-                    <Box minW={0} flex={1}>
-                      <Text fontSize="xs" noOfLines={1}>{attachment.name}</Text>
-                      <Text fontSize="10px" color="gray.500">{formatFileSize(attachment.size)}</Text>
-                    </Box>
-                    <IconButton aria-label="移除附件" icon={<X size={12} />} size="xs" variant="ghost" onClick={() => removeAttachment(attachment.id)} />
-                  </Flex>
+                  <div key={attachment.id} className="ck-att">
+                    <Icon size={12} />
+                    <span className="ck-att-name" style={{ flex: 1, minWidth: 0 }}>{attachment.name}</span>
+                    <span className="ck-dim" style={{ fontSize: 9 }}>{formatFileSize(attachment.size)}</span>
+                    <button className="ck-ico" style={{ width: 16, height: 16 }} title="移除附件" onClick={() => removeAttachment(attachment.id)}><X size={11} /></button>
+                  </div>
                 );
               })}
-            </Flex>
+            </div>
           )}
-          <Flex gap={2} align="flex-end">
-            <IconButton aria-label="添加附件" icon={<Paperclip size={16} />} h="44px" onClick={() => fileInputRef.current?.click()} isDisabled={isSending} />
-            <Textarea
+          <div className="ck-input" style={{ alignItems: 'flex-end' }}>
+            <span className="prompt">›</span>
+            <button className="ck-ico" title="添加附件" onClick={() => fileInputRef.current?.click()} disabled={isSending}><Paperclip size={15} /></button>
+            <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder="输入问题，Enter 发送，Shift + Enter 换行；支持粘贴或上传图片、音频和文件"
-              minH="44px"
-              maxH="140px"
-              resize="none"
-              bg="gray.50"
-              fontSize="sm"
-              isDisabled={isSending}
+              placeholder="向助手提问…（Enter 发送，Shift+Enter 换行，可粘贴附件）"
+              rows={2}
+              style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 12.5, resize: 'none', maxHeight: 140 }}
+              disabled={isSending}
             />
+            <kbd>↵</kbd>
             {isSending ? (
-              <Button colorScheme="red" h="44px" px={4} leftIcon={<Square size={14} />} onClick={stopGeneration}>
-                停止
-              </Button>
+              <button className="ck-btn danger" onClick={stopGeneration}><Square size={13} /> 停止</button>
             ) : (
-              <Button colorScheme="blue" h="44px" px={4} leftIcon={<Send size={15} />} onClick={sendMessage} isDisabled={!input.trim() && attachments.length === 0}>
-                发送
-              </Button>
+              <button className="ck-btn primary" onClick={() => void sendMessage()} disabled={!input.trim() && attachments.length === 0}><Send size={14} /> 发送</button>
             )}
-          </Flex>
-        </Box>
-        </Flex>
-      </Flex>
-    </Box>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
   );
 }
