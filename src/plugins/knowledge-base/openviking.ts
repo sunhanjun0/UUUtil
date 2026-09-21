@@ -130,7 +130,17 @@ export async function syncNoteUpsert(note: KnowledgeNote, resolver: NoteMetaReso
       await getClient().mkdir(`${cfg.rootUri}/notes`, 'UUUtil 知识库笔记');
     } catch { /* 目录已存在 */ }
     const markdown = noteMarkdown(note, resolver.categoryName(note.categoryId), resolver.tagNames(note.tagIds));
-    await getClient().write(noteUri(cfg.rootUri, note.id), markdown);
+    // upsert：先 create（新建要求文件不存在），已存在则 replace（服务端 mode 语义见 OpenViking 文档）
+    const uri = noteUri(cfg.rootUri, note.id);
+    try {
+      await getClient().write(uri, markdown, { mode: 'create' });
+    } catch (err) {
+      if (String(err).includes('ALREADY_EXISTS') || String(err).includes('already exists')) {
+        await getClient().write(uri, markdown, { mode: 'replace' });
+      } else {
+        throw err;
+      }
+    }
     return true;
   } catch (err) {
     healthCache = { ok: false, at: Date.now() };

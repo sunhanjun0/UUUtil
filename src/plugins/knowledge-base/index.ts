@@ -7,7 +7,7 @@ import { getDatabase, autoSave } from '../../core/db';
 import { registerCommand } from '../../core/command-registry';
 import type { PluginManifest } from '../../core/plugin-loader';
 import { api, ovMetaResolver } from './api';
-import { ensureOvConfigTable, getOvConfig, isOvAvailable, syncAllNotes } from './openviking';
+import { ensureOvConfigTable, getOvConfig, isOvAvailable, resetOvClient, setOvConfigValue, syncAllNotes } from './openviking';
 
 export const manifest: PluginManifest = {
   id: 'knowledge-base',
@@ -45,6 +45,36 @@ export function activate(): void {
       }
       const result = await syncAllNotes(api.getNotes(), ovMetaResolver);
       return { ...result, baseUrl: cfg.baseUrl, rootUri: cfg.rootUri };
+    },
+  });
+
+  // kb.config —— 查看/修改 OpenViking 连接配置（apiKey 只写不回显）
+  registerCommand({
+    command: 'kb.config',
+    description: '查看或修改知识库 OpenViking 连接配置（baseUrl / apiKey / rootUri / enabled）',
+    params: [
+      { name: 'baseUrl', type: 'string', required: false, description: 'OpenViking 服务地址，如 http://101.43.70.89:31933' },
+      { name: 'apiKey', type: 'string', required: false, description: 'user key（HANJUN account 下），只写入不回显' },
+      { name: 'rootUri', type: 'string', required: false, description: '资源根 URI，默认 viking://resources/uuutil-kb' },
+      { name: 'enabled', type: 'string', required: false, description: '"1" 启用 / "0" 停用 OpenViking 集成' },
+    ],
+    example: { baseUrl: 'http://101.43.70.89:31933', apiKey: '<user key>' },
+    handler: (args) => {
+      const keys = ['baseUrl', 'apiKey', 'rootUri', 'enabled'] as const;
+      const updated: string[] = [];
+      for (const key of keys) {
+        const value = args[key];
+        if (typeof value === 'string' && value !== '') {
+          setOvConfigValue(key, value);
+          updated.push(key);
+        }
+      }
+      if (updated.length > 0) resetOvClient();
+      const cfg = getOvConfig();
+      return {
+        updated,
+        config: { baseUrl: cfg.baseUrl, rootUri: cfg.rootUri, enabled: cfg.enabled, apiKey: cfg.apiKey ? '***' : '' },
+      };
     },
   });
 
