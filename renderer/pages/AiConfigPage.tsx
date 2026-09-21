@@ -1,23 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Badge,
-  Box,
-  Button,
-  Divider,
-  Flex,
-  FormControl,
-  FormLabel,
-  Heading,
-  Input,
-  NumberInput,
-  NumberInputField,
-  Select,
-  Stack,
-  Switch,
-  Text,
-  Textarea,
-  useToast,
-} from '@chakra-ui/react';
+import { Select, useToast } from '@chakra-ui/react';
 import type { AiChatResponse, AiProviderConfig, AiRuntimeConfig } from '../../src/shared/types';
 
 type ProviderDraft = Omit<AiProviderConfig, 'createdAt' | 'updatedAt'>;
@@ -184,142 +166,213 @@ export default function AiConfigPage() {
   }
 
   return (
-    <Box w="100%">
-      <Box bg="white" borderRadius="sm" p={4} mb={1.5}>
-        <Flex justify="space-between" align="center" mb={3}>
-          <Box>
-            <Heading size="sm">AI 配置</Heading>
-            <Text fontSize="xs" color="gray.500" mt={1}>统一管理模型 Provider，后续翻译、助理等插件会复用这里的配置。</Text>
-          </Box>
-          <Badge colorScheme={activeProvider ? 'green' : 'gray'}>{activeProvider ? '已配置' : '未配置'}</Badge>
-        </Flex>
+    <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head">
+        <span className="code">AI CORE</span>
+        <span className="zh">AI 配置</span>
+        <span className="sub">PROVIDERS // 模型供应商</span>
+      </div>
 
-        <Flex gap={2} wrap="wrap">
-          {providerPresets.map((preset) => (
-            <Button key={preset.name} size="xs" variant="outline" onClick={() => applyPreset(preset)}>
-              使用 {preset.name} 模板
-            </Button>
-          ))}
-        </Flex>
-      </Box>
+      <div className="ck-list" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="ck-panel">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span className="ck-sub" style={{ fontSize: 12 }}>统一管理模型 Provider，后续翻译 / 助理等插件复用配置</span>
+            <div className="ck-spacer" />
+            <span className={'ck-chip' + (activeProvider ? ' on' : '')}>{activeProvider ? '● 已配置' : '○ 未配置'}</span>
+          </div>
+          <div className="ck-chips" style={{ marginTop: 8 }}>
+            {providerPresets.map((preset) => (
+              <button key={preset.name} className="ck-chip" onClick={() => applyPreset(preset)}>
+                使用 {preset.name} 模板
+              </button>
+            ))}
+          </div>
+        </div>
 
-      <Flex gap={1.5} align="stretch" wrap="wrap">
-        <Box bg="white" borderRadius="sm" p={4} flex="1 1 320px">
-          <Heading size="xs" mb={3}>Provider</Heading>
-          <Stack gap={3}>
-            <FormControl>
-              <FormLabel fontSize="xs">名称</FormLabel>
-              <Input size="sm" value={providerDraft.name} placeholder="例如 DeepSeek" onChange={(e) => updateProviderDraft({ name: e.target.value })} />
-            </FormControl>
-            <FormControl>
-              <FormLabel fontSize="xs">ID</FormLabel>
-              <Input size="sm" value={providerDraft.id} placeholder="deepseek" onChange={(e) => updateProviderDraft({ id: e.target.value })} />
-            </FormControl>
-            <FormControl>
-              <FormLabel fontSize="xs">类型</FormLabel>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'stretch' }}>
+          <div className="ck-panel" style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="ck-hairline" style={{ marginTop: 0 }}>PROVIDER // 编辑</div>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>NAME 名称</span>
+              <div className="ck-input" style={{ padding: '7px 12px' }}>
+                <input value={providerDraft.name} placeholder="例如 DeepSeek" onChange={(e) => updateProviderDraft({ name: e.target.value })} />
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>ID 标识</span>
+              <div className="ck-input" style={{ padding: '7px 12px' }}>
+                <input value={providerDraft.id} placeholder="deepseek" onChange={(e) => updateProviderDraft({ id: e.target.value })} />
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>TYPE 类型</span>
               <Select size="sm" value={providerDraft.type} onChange={(e) => updateProviderDraft({ type: e.target.value as ProviderDraft['type'] })}>
                 <option value="openai-compatible">OpenAI Compatible</option>
                 <option value="custom">Custom</option>
               </Select>
-            </FormControl>
-            <FormControl>
-              <FormLabel fontSize="xs">Base URL</FormLabel>
-              <Input size="sm" value={providerDraft.baseUrl} placeholder="https://api.deepseek.com/v1" onChange={(e) => updateProviderDraft({ baseUrl: e.target.value })} />
-            </FormControl>
-            <FormControl>
-              <FormLabel fontSize="xs">API Key</FormLabel>
-              <Input size="sm" type="password" value={providerDraft.apiKey || ''} placeholder="sk-..." onChange={(e) => updateProviderDraft({ apiKey: e.target.value })} />
-            </FormControl>
-            <Flex justify="space-between" align="center">
-              <Text fontSize="sm">启用</Text>
-              <Switch isChecked={providerDraft.enabled} onChange={(e) => updateProviderDraft({ enabled: e.target.checked })} />
-            </Flex>
-            <Flex gap={2}>
-              <Button size="sm" colorScheme="blue" onClick={saveProvider} isLoading={savingProvider}>保存 Provider</Button>
-              <Button size="sm" variant="outline" onClick={() => setProviderDraft(emptyProvider)}>清空</Button>
-            </Flex>
-          </Stack>
-        </Box>
+            </label>
 
-        <Box bg="white" borderRadius="sm" p={4} flex="1 1 320px">
-          <Heading size="xs" mb={3}>运行配置</Heading>
-          <Stack gap={3}>
-            <FormControl>
-              <FormLabel fontSize="xs">默认 Provider</FormLabel>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>BASE URL 地址</span>
+              <div className="ck-input" style={{ padding: '7px 12px' }}>
+                <input value={providerDraft.baseUrl} placeholder="https://api.deepseek.com/v1" onChange={(e) => updateProviderDraft({ baseUrl: e.target.value })} />
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>API KEY 密钥</span>
+              <div className="ck-input" style={{ padding: '7px 12px' }}>
+                <input type="password" value={providerDraft.apiKey || ''} placeholder="sk-..." onChange={(e) => updateProviderDraft({ apiKey: e.target.value })} />
+              </div>
+            </label>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>ENABLED 启用</span>
+              <div className="ck-spacer" />
+              <button className={'ck-chip' + (providerDraft.enabled ? ' on' : '')} onClick={() => updateProviderDraft({ enabled: !providerDraft.enabled })}>
+                {providerDraft.enabled ? '● 启用' : '○ 停用'}
+              </button>
+            </div>
+
+            <div className="ck-tools">
+              <button className="ck-btn primary" onClick={saveProvider}>{savingProvider ? '保存中…' : '保存 Provider'}</button>
+              <button className="ck-btn" onClick={() => setProviderDraft(emptyProvider)}>清空</button>
+            </div>
+          </div>
+
+          <div className="ck-panel" style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="ck-hairline" style={{ marginTop: 0 }}>RUNTIME // 运行配置</div>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>PROVIDER 默认供应商</span>
               <Select size="sm" value={runtimeConfig.defaultProviderId || ''} onChange={(e) => setRuntimeConfig({ ...runtimeConfig, defaultProviderId: e.target.value || undefined })}>
                 <option value="">自动选择第一个启用 Provider</option>
                 {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
               </Select>
-            </FormControl>
-            <FormControl>
-              <FormLabel fontSize="xs">默认模型</FormLabel>
-              <Input size="sm" value={runtimeConfig.defaultModel || ''} placeholder="deepseek-chat / gpt-4o-mini" onChange={(e) => setRuntimeConfig({ ...runtimeConfig, defaultModel: e.target.value })} />
-            </FormControl>
-            <Flex gap={3}>
-              <FormControl>
-                <FormLabel fontSize="xs">Temperature</FormLabel>
-                <NumberInput size="sm" min={0} max={2} step={0.1} value={runtimeConfig.temperature ?? ''} onChange={(_, value) => setRuntimeConfig({ ...runtimeConfig, temperature: Number.isNaN(value) ? undefined : value })}>
-                  <NumberInputField placeholder="0.7" />
-                </NumberInput>
-              </FormControl>
-              <FormControl>
-                <FormLabel fontSize="xs">Max Tokens</FormLabel>
-                <NumberInput size="sm" min={1} value={runtimeConfig.maxTokens ?? ''} onChange={(_, value) => setRuntimeConfig({ ...runtimeConfig, maxTokens: Number.isNaN(value) ? undefined : value })}>
-                  <NumberInputField placeholder="1024" />
-                </NumberInput>
-              </FormControl>
-            </Flex>
-            <FormControl>
-              <FormLabel fontSize="xs">超时时间 ms</FormLabel>
-              <NumberInput size="sm" min={1000} value={runtimeConfig.timeoutMs ?? ''} onChange={(_, value) => setRuntimeConfig({ ...runtimeConfig, timeoutMs: Number.isNaN(value) ? undefined : value })}>
-                <NumberInputField placeholder="30000" />
-              </NumberInput>
-            </FormControl>
-            <Button size="sm" colorScheme="blue" onClick={saveRuntimeConfig} isLoading={savingRuntime}>保存运行配置</Button>
-          </Stack>
-        </Box>
-      </Flex>
+            </label>
 
-      <Box bg="white" borderRadius="sm" p={4} mt={1.5}>
-        <Flex justify="space-between" align="center" mb={3}>
-          <Heading size="xs">已保存 Provider</Heading>
-          <Text fontSize="xs" color="gray.500">{providers.length} 个</Text>
-        </Flex>
-        <Stack gap={2}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>MODEL 默认模型</span>
+              <div className="ck-input" style={{ padding: '7px 12px' }}>
+                <input value={runtimeConfig.defaultModel || ''} placeholder="deepseek-chat / gpt-4o-mini" onChange={(e) => setRuntimeConfig({ ...runtimeConfig, defaultModel: e.target.value })} />
+              </div>
+            </label>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>TEMP Temperature</span>
+                <div className="ck-input" style={{ padding: '7px 12px' }}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={2}
+                    step={0.1}
+                    placeholder="0.7"
+                    value={runtimeConfig.temperature ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const num = value === '' ? Number.NaN : Number(value);
+                      setRuntimeConfig({ ...runtimeConfig, temperature: Number.isNaN(num) ? undefined : num });
+                    }}
+                  />
+                </div>
+              </label>
+              <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>TOKENS Max Tokens</span>
+                <div className="ck-input" style={{ padding: '7px 12px' }}>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="1024"
+                    value={runtimeConfig.maxTokens ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const num = value === '' ? Number.NaN : Number(value);
+                      setRuntimeConfig({ ...runtimeConfig, maxTokens: Number.isNaN(num) ? undefined : num });
+                    }}
+                  />
+                </div>
+              </label>
+            </div>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.18em' }}>TIMEOUT 超时 ms</span>
+              <div className="ck-input" style={{ padding: '7px 12px' }}>
+                <input
+                  type="number"
+                  min={1000}
+                  placeholder="30000"
+                  value={runtimeConfig.timeoutMs ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const num = value === '' ? Number.NaN : Number(value);
+                    setRuntimeConfig({ ...runtimeConfig, timeoutMs: Number.isNaN(num) ? undefined : num });
+                  }}
+                />
+              </div>
+            </label>
+
+            <div className="ck-tools">
+              <button className="ck-btn primary" onClick={saveRuntimeConfig}>{savingRuntime ? '保存中…' : '保存运行配置'}</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="ck-panel">
+          <div className="ck-hairline" style={{ marginTop: 0 }}>SAVED // 已保存 Provider <span className="n">{providers.length}</span></div>
           {providers.length === 0 ? (
-            <Text fontSize="sm" color="gray.500">还没有 Provider，建议先使用上方模板创建。</Text>
+            <div className="ck-empty">
+              <div className="code">NO PROVIDER</div>
+              还没有 Provider，建议先使用上方模板创建
+            </div>
           ) : providers.map((provider) => (
-            <Flex key={provider.id} justify="space-between" align="center" p={2} bg="gray.50" borderRadius="md" gap={3}>
-              <Box minW={0}>
-                <Flex gap={2} align="center" wrap="wrap">
-                  <Text fontSize="sm" fontWeight="semibold">{provider.name}</Text>
-                  <Badge size="sm" colorScheme={provider.enabled ? 'green' : 'gray'}>{provider.enabled ? '启用' : '停用'}</Badge>
-                  {runtimeConfig.defaultProviderId === provider.id && <Badge colorScheme="blue">默认</Badge>}
-                </Flex>
-                <Text fontSize="xs" color="gray.500" noOfLines={1}>{provider.id} · {provider.baseUrl}</Text>
-              </Box>
-              <Flex gap={2} shrink={0}>
-                <Button size="xs" variant="outline" onClick={() => editProvider(provider)}>编辑</Button>
-                <Button size="xs" colorScheme="red" variant="ghost" onClick={() => deleteProvider(provider.id)} isLoading={deletingProviderId === provider.id}>删除</Button>
-              </Flex>
-            </Flex>
+            <div key={provider.id} className="ck-row">
+              <div className="ck-item">
+                <div className="ck-item-main" style={{ flex: 1 }}>
+                  <div className="ck-item-title">
+                    {provider.name}
+                    {runtimeConfig.defaultProviderId === provider.id && <span className="ck-phos"> · 默认</span>}
+                  </div>
+                  <div className="ck-dim" style={{ fontSize: 11 }}>{provider.id} · {provider.baseUrl}</div>
+                </div>
+              </div>
+              <span className="tag">{provider.enabled ? '启用' : '停用'}</span>
+              <button className="ck-btn" onClick={() => editProvider(provider)}>编辑</button>
+              <button className="ck-btn danger" onClick={() => deleteProvider(provider.id)}>{deletingProviderId === provider.id ? '删除中…' : '删除'}</button>
+            </div>
           ))}
-        </Stack>
-      </Box>
+        </div>
 
-      <Box bg="white" borderRadius="sm" p={4} mt={1.5}>
-        <Heading size="xs" mb={3}>连通性测试</Heading>
-        <Stack gap={3}>
-          <Textarea size="sm" value={testPrompt} onChange={(e) => setTestPrompt(e.target.value)} minH="72px" />
-          <Button size="sm" colorScheme="green" alignSelf="flex-start" onClick={testConnection} isLoading={testing}>发送测试</Button>
-          {testResult && (
-            <>
-              <Divider />
-              <Text fontSize="sm" whiteSpace="pre-wrap">{testResult}</Text>
-            </>
-          )}
-        </Stack>
-      </Box>
-    </Box>
+        <div className="ck-panel">
+          <div className="ck-hairline" style={{ marginTop: 0 }}>PROBE // 连通性测试</div>
+          <textarea
+            value={testPrompt}
+            onChange={(e) => setTestPrompt(e.target.value)}
+            style={{
+              display: 'block',
+              width: '100%',
+              minHeight: 72,
+              resize: 'vertical',
+              background: 'transparent',
+              border: '1px solid var(--line)',
+              borderRadius: 4,
+              padding: '10px 14px',
+              color: 'var(--ink)',
+              fontFamily: 'inherit',
+              fontSize: '12.5px',
+              lineHeight: 1.6,
+              outline: 'none',
+            }}
+          />
+          <div className="ck-tools" style={{ marginTop: 8 }}>
+            <button className="ck-btn primary" onClick={testConnection}>{testing ? '测试中…' : '发送测试'}</button>
+          </div>
+          {testResult && <div className="ck-term" style={{ marginTop: 8 }}>{testResult}</div>}
+        </div>
+      </div>
+    </div>
   );
 }

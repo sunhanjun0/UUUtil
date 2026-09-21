@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UUUtil 驾驶舱原型 · 全船暗色母舰</title>
+<style>
+/* ============ 设计 token（来自 ui-design-language.md §二） ============ */
+:root {
+  --bg: #060d18;
+  --bg2: #0a1424;
+  --line: rgba(103, 232, 249, 0.14);
+  --line-strong: rgba(103, 232, 249, 0.35);
+  --phos: #67e8f9;
+  --phos-dim: #3b7d8c;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --green: #34d399;
+  --ink: #d7ecf5;
+  --ink-2: #8fb3c7;
+  --ink-3: #5f8098;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, "PingFang SC", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: #030810;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: rgba(103, 232, 249, 0.28); }
+
+/* ============ 整船外壳 ============ */
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(120% 90% at 50% -10%, #0d1c33 0%, #060d18 55%),
+    #060d18;
+  position: relative;
+  overflow: hidden;
+}
+/* 扫描线 + 网格 */
+.app::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.016) 0 1px, transparent 1px 3px);
+}
+.app::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(rgba(103,232,249,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103,232,249,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(80% 70% at 50% 40%, transparent 30%, #000 100%);
+  -webkit-mask-image: radial-gradient(80% 70% at 50% 40%, transparent 30%, #000 100%);
+}
+
+/* ============ 顶部 HUD 导航 ============ */
+.top {
+  position: relative; z-index: 2;
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 18px 10px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.brand {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.22em;
+  color: var(--phos); text-shadow: 0 0 12px rgba(103,232,249,0.45);
+  white-space: nowrap;
+}
+.brand .zh { font-size: 10px; letter-spacing: 0.4em; color: var(--ink-3); text-shadow: none; margin-left: 8px; font-weight: 400; }
+
+.tabs {
+  display: flex; align-items: center; gap: 4px;
+  flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex-shrink: 0;
+  font-size: 10.5px; letter-spacing: 0.08em;
+  color: var(--ink-3); padding: 4px 10px;
+  border: 1px solid transparent; border-radius: 3px;
+  cursor: pointer; transition: all .15s ease;
+  user-select: none; white-space: nowrap;
+}
+.tab:hover { color: var(--ink-2); border-color: var(--line); }
+.tab.active {
+  color: var(--phos); border-color: var(--line-strong);
+  background: rgba(103, 232, 249, 0.07);
+  box-shadow: 0 0 12px rgba(103,232,249,0.12) inset, 0 0 8px rgba(103,232,249,0.12);
+}
+.tabs .divider { width: 1px; height: 14px; background: var(--line-strong); margin: 0 6px; flex-shrink: 0; }
+.tab.backtab { color: var(--ink-3); }
+.tab.flipbtn {
+  color: var(--amber); border-color: var(--line-strong);
+  background: rgba(251,191,36,0.05);
+  box-shadow: 0 0 8px rgba(251,191,36,0.12) inset;
+}
+
+.sys {
+  display: flex; align-items: center; gap: 12px; white-space: nowrap; flex-shrink: 0;
+}
+.leds { display: flex; gap: 8px; }
+.led { display: flex; align-items: center; gap: 4px; font-size: 9px; letter-spacing: 0.12em; color: var(--ink-3); }
+.led i { width: 6px; height: 6px; border-radius: 50%; }
+.led.ok i { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.led.nav i { background: var(--phos); box-shadow: 0 0 6px var(--phos); }
+.stardate { font-size: 10.5px; color: var(--ink-2); letter-spacing: 0.06em; }
+.stardate b { color: var(--phos); font-weight: 600; }
+
+/* ============ 舞台 ============ */
+.stage { position: relative; z-index: 1; flex: 1; min-height: 0; overflow-y: auto; }
+.page { display: none; padding: 20px 24px 28px; height: 100%; }
+.page.active { display: block; animation: boot 200ms linear 1; }
+@keyframes boot { 0%{opacity:0} 30%{opacity:1} 48%{opacity:.35} 72%{opacity:1} 100%{opacity:1} }
+
+/* 页面通用头 */
+.page-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 16px; }
+.page-head h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.22em; color: var(--phos); text-shadow: 0 0 12px rgba(103,232,249,0.45); }
+.page-head .zh { font-size: 11px; letter-spacing: 0.4em; color: var(--ink-3); font-weight: 400; }
+.page-head .sub { margin-left: auto; font-size: 10px; letter-spacing: 0.08em; color: var(--ink-3); }
+
+/* 发丝线分组标题 */
+.hairline { display: flex; align-items: center; gap: 10px; margin: 18px 0 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.28em; color: var(--ink-3); }
+.hairline::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.hairline.danger { color: var(--red); }
+.hairline.danger::after { background: rgba(248,113,113,0.25); }
+.hairline .n { font-variant-numeric: tabular-nums; }
+
+/* ============ 通用 HUD 控件 ============ */
+.hud-input {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(103,232,249,0.05);
+  border: 1px solid var(--line-strong); border-radius: 4px;
+  padding: 11px 14px; position: relative; cursor: text;
+  box-shadow: 0 0 20px rgba(103,232,249,0.08), 0 0 0 1px rgba(103,232,249,0.04) inset;
+}
+.hud-input::before, .hud-input::after {
+  content: ''; position: absolute; width: 10px; height: 10px;
+  border: 1.5px solid var(--phos); pointer-events: none;
+}
+.hud-input::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+.hud-input::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+.hud-input .prompt { color: var(--phos); font-weight: 700; text-shadow: 0 0 8px rgba(103,232,249,.5); }
+.hud-input .ph { color: var(--ink-3); flex: 1; }
+.hud-input .caret { width: 7px; height: 15px; background: var(--phos); box-shadow: 0 0 8px var(--phos); animation: blink 1.1s steps(1) infinite; flex-shrink: 0; }
+@keyframes blink { 50% { opacity: 0; } }
+.hud-input kbd { font-family: inherit; font-size: 10px; letter-spacing: 0.1em; color: var(--phos-dim); border: 1px solid var(--line); border-radius: 3px; padding: 2px 7px; flex-shrink: 0; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; padding: 3px 10px; border-radius: 3px;
+  border: 1px solid var(--line); background: transparent; color: var(--ink-3);
+  cursor: pointer; transition: all .15s ease; letter-spacing: 0.04em; white-space: nowrap;
+}
+.chip:hover { color: var(--ink-2); border-color: var(--line-strong); }
+.chip.on { color: var(--phos); border-color: var(--phos); background: rgba(103,232,249,0.1); box-shadow: 0 0 10px rgba(103,232,249,0.18); }
+
+/* ============ 行 ============ */
+.row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 6px; border-bottom: 1px solid var(--line);
+  transition: background .15s ease;
+}
+.row:hover { background: rgba(103,232,249,0.04); }
+.row .check {
+  width: 16px; height: 16px; flex-shrink: 0;
+  border: 1.5px solid var(--ink-3); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .18s ease; color: transparent;
+}
+.row .check::after { content: '✓'; color: var(--bg); font-size: 9px; font-weight: 700; }
+.row .check.p1 { border-color: var(--red); box-shadow: 0 0 6px rgba(248,113,113,.35); }
+.row .check.p2 { border-color: var(--amber); box-shadow: 0 0 6px rgba(251,191,36,.3); }
+.row .check.p3 { border-color: var(--phos); box-shadow: 0 0 6px rgba(103,232,249,.3); }
+.row .check.done { background: var(--green); border-color: var(--green); box-shadow: 0 0 10px rgba(52,211,153,.55); }
+.row .title { flex: 1; min-width: 0; color: var(--ink); word-break: break-all; }
+.row.done .title { color: var(--ink-3); text-decoration: line-through; }
+.row .meta { flex-shrink: 0; display: flex; align-items: center; gap: 10px; font-size: 10px; color: var(--ink-3); }
+.meta .due { color: var(--ink-2); }
+.meta .due.overdue { color: var(--red); text-shadow: 0 0 8px rgba(248,113,113,.4); }
+.meta .due.today { color: var(--amber); text-shadow: 0 0 8px rgba(251,191,36,.35); }
+.meta .tag { color: var(--ink-3); border: 1px solid var(--line); border-radius: 2px; padding: 1px 5px; font-size: 9px; letter-spacing: 0.05em; }
+
+/* ============ 首页：舰桥 ============ */
+.br-cols { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+.br-card {
+  grid-column: span 3;
+  border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px;
+  background: rgba(103,232,249,0.02); position: relative;
+}
+.br-card .k { font-size: 9px; letter-spacing: 0.24em; color: var(--ink-3); }
+.br-card .v { font-size: 22px; font-weight: 700; color: var(--phos); margin-top: 6px; text-shadow: 0 0 14px rgba(103,232,249,0.35); }
+.br-card .v.green { color: var(--green); text-shadow: 0 0 14px rgba(52,211,153,0.35); }
+.br-card .v.amber { color: var(--amber); text-shadow: 0 0 14px rgba(251,191,36,0.3); }
+.br-card .v.red { color: var(--red); text-shadow: 0 0 14px rgba(248,113,113,0.35); }
+.br-card .d { font-size: 9.5px; color: var(--ink-3); margin-top: 4px; letter-spacing: 0.05em; }
+.br-wide { grid-column: span 7; }
+.br-wide .mini-list { margin-top: 8px; }
+.br-wide .mini-list .row { padding: 7px 4px; }
+
+/* ============ 通用模块占位（待接入舱室） ============ */
+.module-placeholder {
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 46px 20px; text-align: center;
+  color: var(--ink-3); letter-spacing: 0.15em; font-size: 11px;
+}
+.module-placeholder .code { color: var(--phos-dim); letter-spacing: 0.32em; font-weight: 700; margin-bottom: 8px; }
+
+/* ============ 首页 · 画板（战术绘图台 PLOT） ============ */
+.page.plot-page { display: flex; flex-direction: column; }
+.plot { flex: 1; min-height: 0; display: flex; gap: 10px; }
+.rail {
+  flex-shrink: 0; width: 40px;
+  display: flex; flex-direction: column; gap: 5px; align-items: center;
+  border: 1px solid var(--line); border-radius: 4px; padding: 8px 0;
+  background: rgba(103,232,249,0.02);
+}
+.rail .sep { width: 22px; height: 1px; background: var(--line); margin: 2px 0; }
+.tool {
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  color: var(--ink-3); border: 1px solid transparent; border-radius: 3px; cursor: pointer;
+  transition: all .15s ease;
+}
+.tool:hover { color: var(--ink-2); border-color: var(--line); }
+.tool.on { color: var(--phos); border-color: var(--line-strong); background: rgba(103,232,249,0.1); box-shadow: 0 0 8px rgba(103,232,249,0.15); }
+.tool svg { width: 15px; height: 15px; }
+.canvas {
+  flex: 1; min-height: 360px; position: relative; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 4px;
+  background:
+    linear-gradient(rgba(103,232,249,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103,232,249,0.05) 1px, transparent 1px),
+    rgba(4, 9, 18, 0.55);
+  background-size: 24px 24px;
+}
+.draw-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.pnote {
+  position: absolute; width: 200px; padding: 9px 12px 11px;
+  border-radius: 3px; font-size: 11.5px; line-height: 1.55; color: var(--ink);
+  background: rgba(10, 20, 36, 0.92);
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--amber);
+  box-shadow: 0 8px 22px rgba(0,0,0,0.45);
+}
+.pnote .t { font-size: 9px; letter-spacing: 0.2em; color: var(--ink-3); margin-bottom: 5px; }
+.pnote.phos { border-left-color: var(--phos); }
+.pnote.green { border-left-color: var(--green); }
+.ptext { position: absolute; font-size: 12px; color: var(--ink-2); }
+.pimg {
+  position: absolute; width: 150px; height: 90px;
+  border: 1px dashed var(--line-strong); border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; letter-spacing: 0.24em; color: var(--ink-3);
+  background: rgba(103,232,249,0.03);
+}
+.boards-bar { display: flex; gap: 6px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+
+/* ============ 底部状态栏 ============ */
+.foot {
+  position: relative; z-index: 2; flex-shrink: 0;
+  display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+  padding: 10px 18px 13px; border-top: 1px solid var(--line);
+  font-size: 10px; letter-spacing: 0.1em; color: var(--ink-3);
+}
+.foot .ok { color: var(--green); }
+.foot code { font-family: inherit; color: var(--phos-dim); }
+.foot .right { margin-left: auto; }
+
+/* ============ 终端页 ============ */
+.term {
+  background: rgba(4,9,18,0.7); border: 1px solid var(--line); border-radius: 4px;
+  padding: 14px 16px; min-height: 240px; font-size: 12px; line-height: 1.7;
+  color: var(--ink-2);
+}
+.term .ln { white-space: pre-wrap; word-break: break-all; }
+.term .ps { color: var(--green); }
+.term .cmd { color: var(--ink); }
+.term .out { color: var(--ink-2); }
+.term .cur { display: inline-block; width: 7px; height: 13px; background: var(--phos); box-shadow: 0 0 8px var(--phos); vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
+
+/* ============ 助手页（上行链路） ============ */
+.msg { display: flex; gap: 12px; margin-bottom: 14px; }
+.msg .who { flex-shrink: 0; font-size: 9px; letter-spacing: 0.2em; color: var(--ink-3); padding-top: 3px; width: 52px; }
+.msg.user .who { color: var(--phos); }
+.msg .bubble {
+  padding: 9px 12px; border-radius: 4px; font-size: 12.5px; line-height: 1.6;
+  border: 1px solid var(--line); background: rgba(103,232,249,0.03); color: var(--ink);
+  max-width: 74%;
+}
+.msg.user .bubble { background: rgba(103,232,249,0.08); border-color: var(--line-strong); }
+
+/* ============ 知识库/剪贴板 搜索 + 列表 ============ */
+.search-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.search-row .chip-sep { flex: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">UUUTIL<span class="zh">个人辅助</span></div>
+    <nav class="tabs" id="tabs"></nav>
+    <div class="sys">
+      <div class="leds">
+        <span class="led ok"><i></i>PWR</span>
+        <span class="led nav"><i></i>NAV</span>
+        <span class="led ok"><i></i>COM</span>
+      </div>
+      <span class="stardate">SD <b id="sd">2026.XXX</b></span>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+
+    <!-- 首页 · 画板（战术绘图台 PLOT） -->
+    <section class="page active plot-page" data-page="home">
+      <div class="page-head">
+        <h1>PLOT</h1><span class="zh">画板</span>
+        <span class="sub">PLOTTING TABLE // 便签 / 附件 / SVG 涂鸦</span>
+      </div>
+      <div class="plot">
+        <div class="rail">
+          <div class="tool on" title="新增画布"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+          <div class="tool" title="便签"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="4" width="14" height="16" rx="1.5"/><path d="M9 9h6M9 13h6"/></svg></div>
+          <div class="tool" title="文本框"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7V5h14v2M12 5v14M9 19h6"/></svg></div>
+          <div class="tool" title="导入文件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V5M7 10l5-5 5 5M4 19h16"/></svg></div>
+          <div class="sep"></div>
+          <div class="tool" title="框选图形"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 3l14 7-6 1-3 6z"/></svg></div>
+          <div class="tool" title="画笔"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1L20 7l-3-3L5 16z"/></svg></div>
+          <div class="sep"></div>
+          <div class="tool" title="清空画布"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></div>
+        </div>
+        <div class="canvas">
+          <svg class="draw-svg" viewBox="0 0 900 360" preserveAspectRatio="none">
+            <line x1="252" y1="84" x2="466" y2="118" stroke="rgba(103,232,249,0.5)" stroke-width="1.5"/>
+            <polygon points="466,118 452,112 454,125" fill="rgba(103,232,249,0.7)"/>
+            <rect x="466" y="92" width="218" height="118" fill="none" stroke="rgba(103,232,249,0.4)" stroke-width="1" stroke-dasharray="4 3"/>
+            <path d="M330 330 q 70 -60 130 -10 t 140 22" fill="none" stroke="rgba(251,191,36,0.5)" stroke-width="1.5"/>
+          </svg>
+          <div class="pnote" style="left:52px;top:36px">
+            <div class="t">NOTE · 设计语言</div>
+            把驾驶舱 token 推到全局主题<br>// 学思路 &gt; 抄皮肤
+          </div>
+          <div class="pnote phos" style="left:470px;top:96px">
+            <div class="t">NOTE · 原型</div>
+            cockpit-prototype.html<br>已生成，待评审
+          </div>
+          <div class="pnote green" style="left:60px;top:268px">
+            <div class="t">NOTE · TODO</div>
+            恢复画板为首页<br>✓ 已补回
+          </div>
+          <div class="ptext" style="left:350px;top:34px">← 自由文本框：双击编辑</div>
+          <div class="pimg" style="left:720px;top:268px">IMG // 附件</div>
+        </div>
+      </div>
+      <div class="boards-bar">
+        <span class="chip on">画布 1</span><span class="chip">画布 2</span><span class="chip">画布 3</span><span class="chip">+ 新画布</span>
+        <span style="margin-left:auto;font-size:9.5px;letter-spacing:0.12em;color:var(--ink-3)">⌘Z 撤销 · ⌘V 粘贴导入 · 拖拽 / 缩放</span>
+      </div>
+    </section>
+
+    <!-- 事项 · 任务日志 -->
+    <section class="page" data-page="todos">
+      <div class="page-head">
+        <h1>MISSION LOG</h1><span class="zh">事项</span>
+        <span class="sub">CLI UPLINK // uuutil call todo.add</span>
+      </div>
+      <div class="hud-input">
+        <span class="prompt">›</span>
+        <span class="ph">新任务录入…（#标签 @清单 !优先级）</span>
+        <kbd>⌘K</kbd><span class="caret"></span>
+      </div>
+      <div class="hairline danger">OVERDUE // 逾期 <span class="n">1</span></div>
+      <div class="row"><span class="check p1"></span><span class="title">校准驾驶舱 token 到全局主题</span><span class="meta"><span class="due overdue">T-1D</span></span></div>
+      <div class="hairline" style="color:var(--phos)">TODAY // 今日航段 <span class="n">2</span></div>
+      <div class="row"><span class="check p2"></span><span class="title">写 FIE 归因说明文档</span><span class="meta"><span class="due today">17:30</span><span class="tag">DOC</span></span></div>
+      <div class="row"><span class="check p3"></span><span class="title">整理知识库笔记</span><span class="meta"><span class="due today">TODAY</span></span></div>
+      <div class="hairline">HOLDING // 待轨 <span class="n">3</span></div>
+      <div class="row"><span class="check"></span><span class="title">研究 assistant-ui 主题定制</span><span class="meta"><span class="due">08-20</span></span></div>
+      <div class="row done"><span class="check done"></span><span class="title">确定 8 插件清单</span><span class="meta"><span class="tag">DONE</span></span></div>
+    </section>
+
+    <!-- 剪贴板 · 记忆缓冲 -->
+    <section class="page" data-page="clipboard">
+      <div class="page-head">
+        <h1>MEMORY BUFFER</h1><span class="zh">剪贴板</span>
+        <span class="sub">LIVE MONITOR // 监听中</span>
+      </div>
+      <div class="search-row">
+        <div class="hud-input" style="flex:1;padding:8px 12px;border-color:var(--line);box-shadow:none">
+          <span class="ph">搜索剪贴板…</span>
+        </div>
+        <span class="chip">TXT</span><span class="chip">IMG</span><span class="chip">RTF</span><span class="chip">FILE</span>
+      </div>
+      <div class="hairline">RECENT // 最近记录 <span class="n">4</span></div>
+      <div class="row"><span class="title">git push origin main → d875d4e</span><span class="meta"><span class="tag">TXT</span><span class="due">2m</span></div>
+      <div class="row"><span class="title">dashboard_screenshot_0918.png</span><span class="meta"><span class="tag">IMG</span><span class="due">18m</span></div>
+      <div class="row"><span class="title">https://skills.sh/pbakaus/impeccable</span><span class="meta"><span class="tag">TXT</span><span class="due">42m</span></div>
+      <div class="row"><span class="title">ui-design-language.md</span><span class="meta"><span class="tag">FILE</span><span class="due">1h</span></div>
+    </section>
+
+    <!-- 知识库 · 档案 -->
+    <section class="page" data-page="knowledge">
+      <div class="page-head">
+        <h1>ARCHIVE</h1><span class="zh">知识库</span>
+        <span class="sub">DATABANK // 本地档案</span>
+      </div>
+      <div class="search-row">
+        <div class="hud-input" style="flex:1;padding:8px 12px;border-color:var(--line);box-shadow:none">
+          <span class="ph">检索笔记 / 标签…</span>
+        </div>
+        <span class="chip on">全部</span><span class="chip">设计</span><span class="chip">工程</span><span class="chip">产品</span>
+      </div>
+      <div class="hairline">PINNED // 置顶 <span class="n">2</span></div>
+      <div class="row"><span class="title">界面设计语言 · ui-design-language</span><span class="meta"><span class="tag">设计</span></div>
+      <div class="row"><span class="title">插件铁律 · docs/CONVENTIONS.md</span><span class="meta"><span class="tag">工程</span></div>
+      <div class="hairline">LATEST // 最近 <span class="n">3</span></div>
+      <div class="row"><span class="title">IA 归因接入 FIE 的三种模式</span><span class="meta"><span class="tag">产品</span></div>
+      <div class="row"><span class="title">sql.js 持久化 autoSave 时机</span><span class="meta"><span class="tag">工程</span></div>
+      <div class="row"><span class="title">悬浮球环形菜单几何参数</span><span class="meta"><span class="tag">设计</span></div>
+    </section>
+
+    <!-- 助手 · 上行链路 -->
+    <section class="page" data-page="assistant">
+      <div class="page-head">
+        <h1>UPLINK</h1><span class="zh">助手</span>
+        <span class="sub">COMMS // 流式会话</span>
+      </div>
+      <div class="msg user"><span class="who">YOU ›</span><div class="bubble">把事项页的驾驶舱风格推到整个应用，值不值得？</div></div>
+      <div class="msg"><span class="who">SYS ›</span><div class="bubble">值得，但要分清外壳与舱室：全局 token 一处换血，13 个页面逐个去蓝去白；设置/日志这类舱室建议降强度，避免驾驶舱疲劳。</div></div>
+      <div class="msg user"><span class="who">YOU ›</span><div class="bubble">先做个原型我看看。<span class="caret" style="display:inline-block;width:7px;height:14px;background:var(--phos);box-shadow:0 0 8px var(--phos);vertical-align:-2px;animation:blink 1.1s steps(1) infinite"></span></div></div>
+      <div class="hud-input" style="margin-top:8px">
+        <span class="prompt">›</span>
+        <span class="ph">向助手提问…</span>
+        <kbd>↵</kbd>
+      </div>
+    </section>
+
+    <!-- 终端 · 链路 -->
+    <section class="page" data-page="terminal">
+      <div class="page-head">
+        <h1>LINK</h1><span class="zh">终端</span>
+        <span class="sub">PTY + tmux // 会话持久化</span>
+      </div>
+      <div class="term">
+        <div class="ln"><span class="ps">hanjun@uuutil</span> <span class="out">~/UUUtil</span> <span class="ps">$</span> <span class="cmd">uuutil call todo.list --view=today</span></div>
+        <div class="ln out"> 6 active missions · 2 today · 1 overdue</div>
+        <div class="ln"><span class="ps">hanjun@uuutil</span> <span class="out">~/UUUtil</span> <span class="ps">$</span> <span class="cmd">git log --oneline -3</span></div>
+        <div class="ln out">4b72981 feat(todo+reminder): 到期事项自动接入提醒中心</div>
+        <div class="ln out">d875d4e docs: 更新 AGENTS/CLAUDE/README 至当前架构</div>
+        <div class="ln out">7d1729f docs: 同步 .serena 语言服务器清单</div>
+        <div class="ln"><span class="ps">hanjun@uuutil</span> <span class="out">~/UUUtil</span> <span class="ps">$</span> <span class="cur"></span></div>
+      </div>
+    </section>
+
+    <!-- 焦点 · 提醒（作战舱，暂用占位示意） -->
+    <section class="page" data-page="focus">
+      <div class="page-head"><h1>FOCUS</h1><span class="zh">焦点</span><span class="sub">ATTENTION SCAN</span></div>
+      <div class="module-placeholder"><div class="code">FOCUS // ATTENTION SCAN</div>关注对象 · 检视 · 健康度 · 权重 · 告警</div>
+    </section>
+    <section class="page" data-page="reminders">
+      <div class="page-head"><h1>ALERTS</h1><span class="zh">提醒</span><span class="sub">PAGER // 通知中心</span></div>
+      <div class="hairline danger">ACTION // 待确认 <span class="n">1</span></div>
+      <div class="row"><span class="check p1"></span><span class="title">Mika 请求确认 · 是否推送 v7 原型</span><span class="meta"><span class="tag">ACTION</span><span class="due overdue">5m</span></div>
+      <div class="hairline">INFO // 通知 <span class="n">2</span></div>
+      <div class="row"><span class="check p3"></span><span class="title">事项「校准 token」已到期</span><span class="meta"><span class="tag">TODO</span></div>
+      <div class="row"><span class="check p3"></span><span class="title">构建完成 personal-assistant 0.1.0</span><span class="meta"><span class="tag">BUILD</span></div>
+    </section>
+
+    <!-- 其余通用舱室占位 -->
+    <section class="page" data-page="translation"><div class="page-head"><h1>LINGUIST</h1><span class="zh">翻译</span></div><div class="module-placeholder"><div class="code">LINGUIST // PARSE</div>翻译舱室 · 待接入</div></section>
+    <section class="page" data-page="calculator"><div class="page-head"><h1>COMPUTE</h1><span class="zh">计算器</span></div><div class="module-placeholder"><div class="code">COMPUTE // EVAL</div>计算舱室 · 待接入</div></section>
+    <section class="page" data-page="dev-utils"><div class="page-head"><h1>TOOLKIT</h1><span class="zh">开发工具</span></div><div class="module-placeholder"><div class="code">TOOLKIT // OPS</div>开发工具舱室 · 待接入</div></section>
+    <section class="page" data-page="color"><div class="page-head"><h1>PALETTE</h1><span class="zh">配色</span></div><div class="module-placeholder"><div class="code">PALETTE // SPECTRUM</div>配色舱室 · 待接入</div></section>
+    <section class="page" data-page="ai-config"><div class="page-head"><h1>AI CORE</h1><span class="zh">AI 配置</span></div><div class="module-placeholder"><div class="code">AI CORE // PROVIDERS</div>AI 配置舱室 · 待接入</div></section>
+    <section class="page" data-page="logs"><div class="page-head"><h1>DATA LOG</h1><span class="zh">日志</span></div><div class="module-placeholder"><div class="code">DATA LOG // STREAM</div>日志舱室 · 待接入</div></section>
+    <section class="page" data-page="interface-settings"><div class="page-head"><h1>SYSTEM CFG</h1><span class="zh">界面设置</span></div><div class="module-placeholder"><div class="code">SYSTEM CFG // TAB LAYOUT</div>界面设置舱室 · 待接入</div></section>
+
+  </main>
+
+  <footer class="foot">
+    <span>SYS <span class="ok">●</span> OK</span>
+    <span><code>⌘K</code> QUICK-ADD</span>
+    <span><code>uuutil call &lt;plugin.action&gt;</code> UPLINK</span>
+    <span>SYNC → REMINDER.CTR</span>
+    <span class="right">驾驶舱原型 · 全船暗色母舰</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  // —— tab 定义（前台 + 后台）——
+  const FRONT = [
+    { id: 'home', label: '首页' },
+    { id: 'focus', label: '焦点' },
+    { id: 'reminders', label: '提醒' },
+    { id: 'todos', label: '事项' },
+    { id: 'clipboard', label: '剪贴板' },
+    { id: 'knowledge', label: '知识库' },
+    { id: 'assistant', label: '助手' },
+    { id: 'translation', label: '翻译' },
+    { id: 'calculator', label: '计算器' },
+    { id: 'dev-utils', label: '开发工具' },
+    { id: 'terminal', label: '终端' },
+    { id: 'color', label: '配色' },
+  ];
+  const BACK = [
+    { id: 'ai-config', label: 'AI配置' },
+    { id: 'logs', label: '日志' },
+    { id: 'interface-settings', label: '界面设置' },
+  ];
+
+  const tabsEl = document.getElementById('tabs');
+  const stageEl = document.getElementById('stage');
+  let side = 'front';
+  let active = 'home';
+
+  function renderTabs() {
+    const tabs = side === 'front' ? FRONT : BACK;
+    tabsEl.innerHTML = '';
+    tabs.forEach((t) => {
+      const el = document.createElement('div');
+      el.className = 'tab' + (t.id === active ? ' active' : '');
+      el.textContent = t.label;
+      el.addEventListener('click', () => activate(t.id));
+      tabsEl.appendChild(el);
+    });
+    // 分隔 + 翻面按钮
+    const div = document.createElement('div');
+    div.className = 'divider';
+    tabsEl.appendChild(div);
+    const flip = document.createElement('div');
+    flip.className = 'tab flipbtn';
+    flip.textContent = side === 'front' ? '◈ 后台' : '◈ 前台';
+    flip.addEventListener('click', () => {
+      side = side === 'front' ? 'back' : 'front';
+      active = side === 'front' ? 'home' : 'ai-config';
+      renderTabs();
+      showPage(active);
+    });
+    tabsEl.appendChild(flip);
+  }
+
+  function showPage(id) {
+    document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
+    const page = document.querySelector(`.page[data-page="${id}"]`);
+    if (page) page.classList.add('active');
+  }
+
+  function activate(id) {
+    active = id;
+    showPage(id);
+    // 同步 tab 高亮
+    [...tabsEl.querySelectorAll('.tab')].forEach((t) => t.classList.remove('active'));
+    const idx = (side === 'front' ? FRONT : BACK).findIndex((t) => t.id === id);
+    if (idx >= 0) tabsEl.querySelectorAll('.tab')[idx].classList.add('active');
+  }
+
+  // 首页快捷跳转 chip
+  document.querySelectorAll('.chip[data-goto]').forEach((c) => {
+    c.addEventListener('click', () => {
+      const id = c.getAttribute('data-goto');
+      if (side !== 'front') { side = 'front'; renderTabs(); }
+      activate(id);
+      stageEl.scrollTop = 0;
+    });
+  });
+
+  // 勾选完成：唯一编排时刻（绿色充能）
+  document.querySelectorAll('.row .check').forEach((chk) => {
+    chk.addEventListener('click', () => {
+      chk.classList.toggle('done');
+      chk.closest('.row')?.classList.toggle('done', chk.classList.contains('done'));
+    });
+  });
+
+  // 星历（Julian day）
+  function stardate() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const doy = Math.floor((now.getTime() - new Date(y, 0, 0).getTime()) / 86400000);
+    const wd = ['SUN','MON','TUE','WED','THU','FRI','SAT'][now.getDay()];
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    document.getElementById('sd').textContent = `${y}.${String(doy).padStart(3, '0')} // ${mm}-${dd} ${wd}`;
+  }
+
+  stardate();
+  renderTabs();
+  showPage('home');
+})();
+</script>
+</body>
+</html>

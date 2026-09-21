@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Button, Flex, Heading, IconButton, Text, useToast } from '@chakra-ui/react';
+import { useToast } from '@chakra-ui/react';
 import { Eye, EyeOff, GripVertical, RotateCcw } from 'lucide-react';
 import { foregroundRoutes } from '../router';
 import type { RouteConfig } from '../router';
@@ -96,63 +96,56 @@ export default function InterfaceSettingsPage() {
   const visibleCount = items.filter((item) => item.visible).length;
 
   return (
-    <Flex direction="column" h="100%" minH={0}>
-      <Box p={3} borderBottom="1px solid" borderColor="gray.100">
-        <Flex align="center" justify="space-between" mb={1}>
-          <Box>
-            <Heading size="sm">界面设置 · TAB 栏</Heading>
-            <Text fontSize="xs" color="gray.500">拖动排序，点击眼睛图标切换显隐（仅影响前台工具栏）</Text>
-          </Box>
-          <Flex gap={2} flexShrink={0}>
-            <Button size="sm" variant="outline" leftIcon={<RotateCcw size={14} />} onClick={resetDefault}>恢复默认</Button>
-            <Button size="sm" colorScheme="blue" onClick={save} isLoading={saving}>保存</Button>
-          </Flex>
-        </Flex>
-        <Text fontSize="xs" color="gray.500">当前显示 {visibleCount} / {items.length} 个标签</Text>
-      </Box>
+    <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head">
+        <span className="code">SYSTEM CFG</span>
+        <span className="zh">界面设置</span>
+        <span className="sub">TAB LAYOUT // 布局持久化</span>
+      </div>
 
-      <Box flex={1} minH={0} overflow="auto" p={3}>
-        <Flex direction="column" gap={2}>
-          {items.map((item, index) => {
-            const Icon = item.icon;
-            return (
-              <Flex
-                key={item.path}
-                align="center"
-                gap={3}
-                p={2}
-                pl={2}
-                bg="white"
-                border="1px solid"
-                borderColor={dragIndex === index ? 'blue.300' : 'gray.100'}
-                borderRadius="md"
-                boxShadow="0 6px 16px rgba(15, 23, 42, 0.04)"
-                opacity={item.visible ? 1 : 0.5}
-                draggable
-                onDragStart={() => setDragIndex(index)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => handleDrop(index)}
-                onDragEnd={() => setDragIndex(null)}
-                cursor="grab"
-                transition="border-color 0.15s"
+      <div className="ck-tools">
+        <span className="ck-dim" style={{ fontSize: 11 }}>当前显示 {visibleCount} / {items.length} 个标签</span>
+        <div className="ck-spacer" />
+        <button className="ck-btn" onClick={resetDefault}><RotateCcw size={12} /> 恢复默认</button>
+        <button className="ck-btn primary" onClick={() => void save()} disabled={saving}>
+          {saving ? '保存中…' : '保存'}
+        </button>
+      </div>
+
+      <div className="ck-list">
+        {items.map((item, index) => {
+          const Icon = item.icon;
+          return (
+            <div
+              key={item.path}
+              className="ck-row"
+              style={{
+                opacity: item.visible ? 1 : 0.45,
+                cursor: 'grab',
+                boxShadow: dragIndex === index ? 'inset 0 0 0 1px var(--phos)' : undefined,
+              }}
+              draggable
+              onDragStart={() => setDragIndex(index)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => handleDrop(index)}
+              onDragEnd={() => setDragIndex(null)}
+            >
+              <span className="ck-dim" style={{ flexShrink: 0, display: 'flex' }}><GripVertical size={16} /></span>
+              <span className="ck-phos" style={{ flexShrink: 0, display: 'flex' }}><Icon size={16} strokeWidth={1.8} /></span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {item.label}
+              </span>
+              <button
+                className={'ck-ico' + (item.visible ? ' on' : '')}
+                title={item.visible ? '隐藏' : '显示'}
+                onClick={() => toggleVisible(item.path)}
               >
-                <Box color="gray.400" flexShrink={0}><GripVertical size={16} /></Box>
-                <Box color="gray.600" flexShrink={0}><Icon size={16} strokeWidth={1.8} /></Box>
-                <Text flex={1} fontSize="sm" fontWeight={500} color="gray.800">{item.label}</Text>
-                <IconButton
-                  size="xs"
-                  variant="ghost"
-                  aria-label={item.visible ? '隐藏' : '显示'}
-                  title={item.visible ? '隐藏' : '显示'}
-                  color={item.visible ? 'blue.500' : 'gray.400'}
-                  icon={item.visible ? <Eye size={15} /> : <EyeOff size={15} />}
-                  onClick={() => toggleVisible(item.path)}
-                />
-              </Flex>
-            );
-          })}
-        </Flex>
-      </Box>
-    </Flex>
+                {item.visible ? <Eye size={15} /> : <EyeOff size={15} />}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

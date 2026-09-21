@@ -62,7 +62,7 @@ const CSS = `
 }
 
 .todo-cockpit .column {
-  width: 560px; max-width: 100%; flex: 1;
+  width: 560px; max-width: 100%; flex: 0 1 auto;
   display: flex; flex-direction: column;
   padding: 0 22px; position: relative; z-index: 1; min-height: 0;
 }
@@ -80,7 +80,7 @@ const CSS = `
   text-shadow: 0 0 12px rgba(103, 232, 249, 0.45);
 }
 .todo-cockpit .head h1 .zh { font-size: 11px; letter-spacing: 0.5em; color: var(--ink-3); text-shadow: none; margin-left: 8px; font-weight: 400; }
-.todo-cockpit .leds { display: flex; gap: 10px; margin-left: 4px; }
+.todo-cockpit .leds { display: flex; gap: 10px; margin-left: auto; }
 .todo-cockpit .led { display: flex; align-items: center; gap: 4px; font-size: 9px; letter-spacing: 0.12em; color: var(--ink-3); }
 .todo-cockpit .led i { width: 6px; height: 6px; border-radius: 50%; }
 .todo-cockpit .led.on i { background: var(--green); box-shadow: 0 0 6px var(--green); }
@@ -92,10 +92,10 @@ const CSS = `
 .todo-cockpit .stardate b { color: var(--phos); font-weight: 600; }
 
 /* ===== 视图切换 ===== */
-.todo-cockpit .views { display: flex; gap: 6px; padding: 12px 2px 0; flex-shrink: 0; }
+.todo-cockpit .views { display: flex; gap: 4px; margin-left: 12px; flex-shrink: 0; }
 .todo-cockpit .view {
-  font-size: 11px; letter-spacing: 0.1em;
-  color: var(--ink-3); padding: 4px 12px;
+  font-size: 10px; letter-spacing: 0.08em; white-space: nowrap;
+  color: var(--ink-3); padding: 3px 9px;
   border: 1px solid transparent; border-radius: 3px;
   cursor: pointer; transition: all .15s ease;
   user-select: none;
@@ -1216,34 +1216,32 @@ export default function TodoPage() {
             MISSION LOG
             <span className="zh">事项</span>
           </h1>
+          <div className="views">
+            {VIEW_DEFS.map((v) => (
+              <div
+                key={v.key}
+                className={`view${!selectedDate && view === v.key ? ' active' : ''}`}
+                onClick={() => {
+                  setSelectedDate(null);
+                  setView(v.key);
+                }}
+              >
+                {v.label}
+                <span className="n">{data[v.key].length}</span>
+              </div>
+            ))}
+            {selectedDate && selectedDate !== today && (
+              <div className="view date-chip active" onClick={() => selectDate(null)} title="清除日期筛选">
+                CAL // {selectedDate.slice(5)}
+                <X />
+              </div>
+            )}
+          </div>
           <div className="leds">
             <span className="led on"><i />PWR</span>
             <span className="led nav"><i />NAV</span>
             <span className="led on"><i key={comSeq} className={comSeq > 0 ? 'com-pulse' : ''} />COM</span>
           </div>
-          <div className="stardate">SD <b>{sdMain}</b> // {sdDate}</div>
-        </div>
-
-        <div className="views">
-          {VIEW_DEFS.map((v) => (
-            <div
-              key={v.key}
-              className={`view${!selectedDate && view === v.key ? ' active' : ''}`}
-              onClick={() => {
-                setSelectedDate(null);
-                setView(v.key);
-              }}
-            >
-              {v.label}
-              <span className="n">{data[v.key].length}</span>
-            </div>
-          ))}
-          {selectedDate && selectedDate !== today && (
-            <div className="view date-chip active" onClick={() => selectDate(null)} title="清除日期筛选">
-              CAL // {selectedDate.slice(5)}
-              <X />
-            </div>
-          )}
         </div>
 
         <div className="quick-add" onClick={() => inputRef.current?.focus()}>
@@ -1307,6 +1305,7 @@ export default function TodoPage() {
           <span><code>⌘K</code> QUICK-ADD</span>
           <span><code>uuutil.call.todo.add</code> UPLINK</span>
           <span>SYNC → REMINDER.CTR</span>
+          <span className="stardate">SD <b>{sdMain}</b> // {sdDate}</span>
         </div>
       </div>
       <div className="console right">
