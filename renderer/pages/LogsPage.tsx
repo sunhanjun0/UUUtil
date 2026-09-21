@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Badge, Box, Button, Flex, Heading, Select, Text, useToast } from '@chakra-ui/react';
+import { Select, useToast } from '@chakra-ui/react';
 import { FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -20,12 +20,12 @@ function parseLog(line: string): LogEntry | null {
   }
 }
 
-function levelColor(level: LogLevel): string {
-  if (level === 'error') return 'red';
-  if (level === 'warn') return 'orange';
-  if (level === 'info') return 'blue';
-  return 'gray';
-}
+const LEVEL_CLASS: Record<LogLevel, string> = {
+  debug: 'ck-dim',
+  info: 'ck-phos',
+  warn: 'ck-warn',
+  error: 'ck-err',
+};
 
 function formatTime(time: string): string {
   const date = new Date(time);
@@ -87,60 +87,51 @@ export default function LogsPage() {
   }, []);
 
   return (
-    <Box h="calc(100vh - 132px)" minH="520px" bg="gray.50" borderRadius="lg" overflow="hidden" border="1px solid" borderColor="gray.100">
-      <Flex direction="column" h="100%" minH={0}>
-        <Box px={4} py={3} borderBottom="1px solid" borderColor="gray.100" bg="white">
-          <Flex justify="space-between" align="center" gap={3} mb={2}>
-            <Box minW={0}>
-              <Heading size="sm">日志管理</Heading>
-              <Text fontSize="xs" color="gray.500" noOfLines={1}>{logPath || '日志路径加载中...'}</Text>
-            </Box>
-            <Flex gap={2} flexShrink={0}>
-              <Button size="sm" leftIcon={<RefreshCw size={14} />} onClick={loadLogs} isLoading={isLoading}>刷新</Button>
-              <Button size="sm" leftIcon={<FolderOpen size={14} />} onClick={openDir}>打开目录</Button>
-              <Button size="sm" colorScheme="red" variant="outline" leftIcon={<Trash2 size={14} />} onClick={clearAllLogs}>清空</Button>
-            </Flex>
-          </Flex>
-          <Flex gap={2} align="center">
-            <Select size="sm" w="140px" value={levelFilter} onChange={(event) => setLevelFilter(event.target.value as 'all' | LogLevel)}>
-              <option value="all">全部级别</option>
-              <option value="debug">debug</option>
-              <option value="info">info</option>
-              <option value="warn">warn</option>
-              <option value="error">error</option>
-            </Select>
-            <Select size="sm" w="180px" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value)}>
-              <option value="all">全部模块</option>
-              {scopes.map((scope) => <option key={scope} value={scope}>{scope}</option>)}
-            </Select>
-            <Text fontSize="xs" color="gray.500">显示 {filteredEntries.length} / {entries.length} 条</Text>
-          </Flex>
-        </Box>
+    <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head">
+        <span className="code">DATA LOG</span>
+        <span className="zh">日志</span>
+        <span className="sub">STREAM // 结构化日志</span>
+      </div>
 
-        <Box flex={1} minH={0} overflow="auto" p={3}>
-          {filteredEntries.length === 0 ? (
-            <Flex h="100%" align="center" justify="center" color="gray.500" fontSize="sm">暂无日志</Flex>
-          ) : (
-            <Flex direction="column" gap={2}>
-              {filteredEntries.map((entry, index) => (
-                <Box key={`${entry.time}-${index}`} bg="white" border="1px solid" borderColor="gray.100" borderRadius="md" p={3} boxShadow="0 6px 16px rgba(15, 23, 42, 0.04)">
-                  <Flex gap={2} align="center" mb={1} wrap="wrap">
-                    <Badge colorScheme={levelColor(entry.level)}>{entry.level}</Badge>
-                    <Badge variant="subtle" colorScheme="purple">{entry.scope}</Badge>
-                    <Text fontSize="xs" color="gray.500">{formatTime(entry.time)}</Text>
-                  </Flex>
-                  <Text fontSize="sm" fontWeight="medium" color="gray.800">{entry.message}</Text>
-                  {entry.meta && (
-                    <Box as="pre" mt={2} p={2} bg="gray.50" borderRadius="md" overflowX="auto" fontSize="xs" color="gray.600" whiteSpace="pre-wrap">
-                      {JSON.stringify(entry.meta, null, 2)}
-                    </Box>
-                  )}
-                </Box>
-              ))}
-            </Flex>
-          )}
-        </Box>
-      </Flex>
-    </Box>
+      <div className="ck-tools">
+        <button className="ck-btn" onClick={loadLogs}>{isLoading ? '读取中…' : <><RefreshCw size={12} /> 刷新</>}</button>
+        <button className="ck-btn" onClick={openDir}><FolderOpen size={12} /> 打开目录</button>
+        <button className="ck-btn danger" onClick={clearAllLogs}><Trash2 size={12} /> 清空</button>
+        <div className="ck-spacer" />
+        <Select size="sm" w="150px" value={levelFilter} onChange={(event) => setLevelFilter(event.target.value as 'all' | LogLevel)}>
+          <option value="all">全部级别</option>
+          <option value="debug">debug</option>
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </Select>
+        <Select size="sm" w="190px" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value)}>
+          <option value="all">全部模块</option>
+          {scopes.map((scope) => <option key={scope} value={scope}>{scope}</option>)}
+        </Select>
+        <span className="ck-util">显示 {filteredEntries.length} / {entries.length} 条</span>
+      </div>
+
+      <div className="ck-hairline" style={{ marginTop: 4 }}>RECENT // 最近日志 <span className="n">{filteredEntries.length}</span></div>
+
+      <div className="ck-list">
+        {filteredEntries.length === 0 ? (
+          <div className="ck-empty"><div className="code">NO DATA</div>暂无日志</div>
+        ) : (
+          filteredEntries.map((entry, index) => (
+            <div key={index} className="ck-row" style={{ alignItems: 'flex-start' }}>
+              <span className="ck-util" style={{ flexShrink: 0, minWidth: 130 }}>{formatTime(entry.time)}</span>
+              <span className={LEVEL_CLASS[entry.level]} style={{ flexShrink: 0, width: 44, fontSize: 10, letterSpacing: '0.08em' }}>{entry.level.toUpperCase()}</span>
+              <span className="ck-sub" style={{ flexShrink: 0, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.scope}</span>
+              <div style={{ flex: 1, minWidth: 0, wordBreak: 'break-all', fontSize: 12 }}>
+                {entry.message}
+                {entry.meta ? <span className="ck-dim"> {JSON.stringify(entry.meta)}</span> : null}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }

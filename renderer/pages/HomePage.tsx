@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Button, Flex, Heading, Input, Text, Textarea, Tooltip, useToast } from '@chakra-ui/react';
 import { ArrowUpRight, Circle, Eraser, FileText, FolderOpen, Minus, MousePointer2, Palette, Pencil, Plus, Square, StickyNote, Strikethrough, Trash2, Type as TypeIcon, Underline, Upload } from 'lucide-react';
+import { useThemeMode } from '../theme';
 
 const STORAGE_KEY = 'uuutil:whiteboard-items';
-const noteColors = ['#fff7cc', '#e6f4ff', '#eaffea', '#fff0f6', '#f3e8ff'];
+const noteColors = ['var(--uu-note-yellow)', 'var(--uu-note-blue)', 'var(--uu-note-green)', 'var(--uu-note-pink)', 'var(--uu-note-purple)'];
 const textColors = [
   { value: 'gray.800', swatch: '#2d3748' },
   { value: 'red.500', swatch: '#e53e3e' },
@@ -271,7 +272,7 @@ function normalizeShape(shape: BoardShape): BoardShape {
     ...shape,
     createdAt: shape.createdAt || fallbackTime,
     updatedAt: shape.updatedAt || fallbackTime,
-    stroke: shape.stroke || '#2563eb',
+    stroke: shape.stroke || 'var(--uu-blue)',
     strokeWidth: shape.strokeWidth || 2,
   };
 }
@@ -335,6 +336,8 @@ function getTextBoxSize(text: string, fontSize = 13) {
 
 export default function HomePage() {
   const toast = useToast();
+  const { mode: themeMode } = useThemeMode();
+  const canvasGridColor = themeMode === 'cockpit' ? 'rgba(103, 232, 249, 0.03)' : '#edf2f7';
   const initialBoard = useRef(createBoard()).current;
   const [boards, setBoards] = useState<Board[]>([initialBoard]);
   const [activeBoardId, setActiveBoardId] = useState(initialBoard.id);
@@ -898,7 +901,7 @@ export default function HomePage() {
       y,
       width: drawTool === 'freehand' ? 1 : 0,
       height: drawTool === 'freehand' ? 1 : 0,
-      stroke: '#2563eb',
+      stroke: 'var(--uu-blue)',
       strokeWidth: drawTool === 'freehand' ? 3 : 2,
       fill: 'transparent',
       points: drawTool === 'freehand' ? [{ x, y }] : undefined,
@@ -1263,7 +1266,7 @@ export default function HomePage() {
         overflow="hidden"
         border="1px solid"
         borderColor="gray.100"
-        backgroundImage="linear-gradient(#edf2f7 1px, transparent 1px), linear-gradient(90deg, #edf2f7 1px, transparent 1px)"
+        backgroundImage={`linear-gradient(${canvasGridColor} 1px, transparent 1px), linear-gradient(90deg, ${canvasGridColor} 1px, transparent 1px)`}
         backgroundSize="24px 24px"
         outline="none"
         userSelect="none"
@@ -1354,7 +1357,7 @@ export default function HomePage() {
               width={selectionBox.width}
               height={selectionBox.height}
               fill="rgba(49, 130, 206, 0.08)"
-              stroke="#3182ce"
+              stroke="var(--uu-blue)"
               strokeWidth="1"
               strokeDasharray="4 3"
               pointerEvents="none"
@@ -1427,7 +1430,7 @@ export default function HomePage() {
                         width={bounds.width + 8}
                         height={bounds.height + 8}
                         fill="none"
-                        stroke="#3182ce"
+                        stroke="var(--uu-blue)"
                         strokeWidth="1"
                         strokeDasharray="4 3"
                         pointerEvents="none"
@@ -1443,7 +1446,7 @@ export default function HomePage() {
                           cy={cy}
                           r="5"
                           fill="white"
-                          stroke="#3182ce"
+                          stroke="var(--uu-blue)"
                           strokeWidth="1.5"
                           style={{ cursor: `${handle}-resize`, pointerEvents: 'all' }}
                           onPointerDown={(event) => startShapeResize(event, shape, handle)}
@@ -1454,9 +1457,9 @@ export default function HomePage() {
                       <>
                         <line x1={shape.x} y1={shape.y} x2={getCurvePoint(shape).x} y2={getCurvePoint(shape).y} stroke="#90CDF4" strokeWidth="1" strokeDasharray="3 3" pointerEvents="none" />
                         <line x1={shape.x + shape.width} y1={shape.y + shape.height} x2={getCurvePoint(shape).x} y2={getCurvePoint(shape).y} stroke="#90CDF4" strokeWidth="1" strokeDasharray="3 3" pointerEvents="none" />
-                        <circle cx={shape.x} cy={shape.y} r="5" fill="white" stroke="#3182ce" strokeWidth="1.5" style={{ cursor: 'move', pointerEvents: 'all' }} onPointerDown={(event) => startCurveEdit(event, shape, 'start')} />
-                        <circle cx={shape.x + shape.width} cy={shape.y + shape.height} r="5" fill="white" stroke="#3182ce" strokeWidth="1.5" style={{ cursor: 'move', pointerEvents: 'all' }} onPointerDown={(event) => startCurveEdit(event, shape, 'end')} />
-                        <circle cx={getCurvePoint(shape).x} cy={getCurvePoint(shape).y} r="5" fill="#3182ce" stroke="white" strokeWidth="1.5" style={{ cursor: 'grab', pointerEvents: 'all' }} onPointerDown={(event) => startCurveEdit(event, shape, 'curve')} />
+                        <circle cx={shape.x} cy={shape.y} r="5" fill="white" stroke="var(--uu-blue)" strokeWidth="1.5" style={{ cursor: 'move', pointerEvents: 'all' }} onPointerDown={(event) => startCurveEdit(event, shape, 'start')} />
+                        <circle cx={shape.x + shape.width} cy={shape.y + shape.height} r="5" fill="white" stroke="var(--uu-blue)" strokeWidth="1.5" style={{ cursor: 'move', pointerEvents: 'all' }} onPointerDown={(event) => startCurveEdit(event, shape, 'end')} />
+                        <circle cx={getCurvePoint(shape).x} cy={getCurvePoint(shape).y} r="5" fill="var(--uu-blue)" stroke="white" strokeWidth="1.5" style={{ cursor: 'grab', pointerEvents: 'all' }} onPointerDown={(event) => startCurveEdit(event, shape, 'curve')} />
                       </>
                     )}
                     <g

@@ -1,35 +1,62 @@
 import React, { useEffect, useState } from 'react';
-import {
-  Box, Button, Flex, Textarea, Input, Text, Code, Tabs, TabList, Tab, TabPanels, TabPanel,
-} from '@chakra-ui/react';
 
 type Tool = 'json' | 'sql' | 'base64' | 'timestamp' | 'regex' | 'uuid';
+
+const TOOLS: { id: Tool; label: string }[] = [
+  { id: 'json', label: 'JSON' },
+  { id: 'sql', label: 'SQL' },
+  { id: 'base64', label: 'Base64' },
+  { id: 'timestamp', label: '时间戳' },
+  { id: 'regex', label: '正则' },
+  { id: 'uuid', label: 'UUID' },
+];
+
+const textareaStyle: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  background: 'transparent',
+  border: 'none',
+  outline: 'none',
+  color: 'var(--ink)',
+  fontFamily: 'inherit',
+  fontSize: 12.5,
+  lineHeight: 1.6,
+  resize: 'vertical',
+  padding: '6px 0',
+};
 
 export default function DevUtils() {
   const [active, setActive] = useState<Tool>('json');
 
   return (
-    <Box>
-      <Tabs index={['json','sql','base64','timestamp','regex','uuid'].indexOf(active)} onChange={(i) => setActive(['json','sql','base64','timestamp','regex','uuid'][i] as Tool)} size="sm" variant="soft-rounded" colorScheme="blue" mb={1.5}>
-        <TabList gap={1}>
-          <Tab>JSON</Tab>
-          <Tab>SQL</Tab>
-          <Tab>Base64</Tab>
-          <Tab>时间戳</Tab>
-          <Tab>正则</Tab>
-          <Tab>UUID</Tab>
-        </TabList>
-      </Tabs>
+    <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head">
+        <span className="code">TOOLKIT</span>
+        <span className="zh">开发工具</span>
+        <span className="sub">OPS // JSON SQL BASE64 时间戳 正则 UUID</span>
+      </div>
 
-      <Box>
+      <div className="ck-tools">
+        {TOOLS.map((t) => (
+          <button
+            key={t.id}
+            className={'ck-chip' + (active === t.id ? ' on' : '')}
+            onClick={() => setActive(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div>
         {active === 'json' && <JsonTool />}
         {active === 'sql' && <SqlTool />}
         {active === 'base64' && <Base64Tool />}
         {active === 'timestamp' && <TimestampTool />}
         {active === 'regex' && <RegexTool />}
         {active === 'uuid' && <UuidTool />}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }
 
@@ -45,15 +72,25 @@ function JsonTool() {
   }
 
   return (
-    <Box>
-      <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="粘贴 JSON 字符串..." size="sm" rows={4} mb={1} fontFamily="mono" />
-      <Button size="sm" colorScheme="blue" onClick={format} mb={1}>格式化</Button>
+    <div className="ck-panel brackets">
+      <div className="ck-input" style={{ padding: '6px 14px', alignItems: 'stretch' }}>
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="粘贴 JSON 字符串..."
+          rows={5}
+          style={textareaStyle}
+        />
+      </div>
+      <div className="ck-tools" style={{ marginTop: 8 }}>
+        <button className="ck-btn primary" onClick={format}>格式化</button>
+      </div>
       {output && (
-        <Box as="pre" mt={2} p={2} bg={error ? 'red.50' : 'gray.50'} borderRadius="md" fontSize="sm" whiteSpace="pre-wrap" wordBreak="break-all" maxH={300} overflow="auto" color={error ? 'red.600' : undefined}>
+        <div className="ck-term" style={{ marginTop: 8, maxHeight: 300, overflowY: 'auto', color: error ? 'var(--red)' : undefined }}>
           {output}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -74,18 +111,26 @@ function SqlTool() {
   }
 
   return (
-    <Box>
-      <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="粘贴 SQL 语句..." size="sm" rows={5} mb={1} fontFamily="mono" />
-      <Flex gap={2} mb={1}>
-        <Button size="sm" colorScheme="blue" onClick={() => handle('sqlFormat')}>美化</Button>
-        <Button size="sm" variant="outline" onClick={() => handle('sqlCompress')}>压缩</Button>
-      </Flex>
+    <div className="ck-panel brackets">
+      <div className="ck-input" style={{ padding: '6px 14px', alignItems: 'stretch' }}>
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="粘贴 SQL 语句..."
+          rows={5}
+          style={textareaStyle}
+        />
+      </div>
+      <div className="ck-tools" style={{ marginTop: 8 }}>
+        <button className="ck-btn primary" onClick={() => handle('sqlFormat')}>美化</button>
+        <button className="ck-btn" onClick={() => handle('sqlCompress')}>压缩</button>
+      </div>
       {output && (
-        <Box as="pre" mt={2} p={2} bg={error ? 'red.50' : 'gray.50'} borderRadius="md" fontSize="sm" whiteSpace="pre-wrap" wordBreak="break-all" maxH={300} overflow="auto" color={error ? 'red.600' : undefined}>
+        <div className="ck-term" style={{ marginTop: 8, maxHeight: 300, overflowY: 'auto', color: error ? 'var(--red)' : undefined }}>
           {output}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -154,25 +199,40 @@ function Base64Tool() {
   }
 
   return (
-    <Box>
-      <Flex gap={2} mb={1}>
-        <Button size="xs" colorScheme={mode === 'encode' ? 'blue' : 'gray'} variant={mode === 'encode' ? 'solid' : 'outline'} onClick={() => { setMode('encode'); setOutput(''); }}>编码</Button>
-        <Button size="xs" colorScheme={mode === 'decode' ? 'blue' : 'gray'} variant={mode === 'decode' ? 'solid' : 'outline'} onClick={() => { setMode('decode'); setOutput(''); }}>解码</Button>
-        <Button size="xs" colorScheme={mode === 'tofile' ? 'blue' : 'gray'} variant={mode === 'tofile' ? 'solid' : 'outline'} onClick={() => { setMode('tofile'); setOutput(''); setFileName(''); }}>转文件</Button>
-      </Flex>
+    <div className="ck-panel brackets">
+      <div className="ck-tools">
+        <button className={'ck-chip' + (mode === 'encode' ? ' on' : '')} onClick={() => { setMode('encode'); setOutput(''); }}>编码</button>
+        <button className={'ck-chip' + (mode === 'decode' ? ' on' : '')} onClick={() => { setMode('decode'); setOutput(''); }}>解码</button>
+        <button className={'ck-chip' + (mode === 'tofile' ? ' on' : '')} onClick={() => { setMode('tofile'); setOutput(''); setFileName(''); }}>转文件</button>
+      </div>
       {mode === 'tofile' && (
-        <Flex gap={2} mb={1}>
-          <Input size="sm" value={fileName} onChange={(e) => setFileName(e.target.value)} placeholder="文件名（可选，自动识别）" flex={1} />
-        </Flex>
+        <div className="ck-input" style={{ marginTop: 8, flex: 1 }}>
+          <span className="prompt">›</span>
+          <input
+            value={fileName}
+            onChange={(e) => setFileName(e.target.value)}
+            placeholder="文件名（可选，自动识别）"
+          />
+        </div>
       )}
-      <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder={mode === 'tofile' ? '粘贴 Base64 或 data: URI...' : mode === 'encode' ? '输入原始文本...' : '输入 Base64 字符串...'} size="sm" rows={4} mb={1} fontFamily="mono" />
-      <Button size="sm" colorScheme="blue" onClick={handle} mb={1}>{mode === 'tofile' ? '下载文件' : mode === 'encode' ? '编码' : '解码'}</Button>
+      <div className="ck-input" style={{ marginTop: 8, padding: '6px 14px', alignItems: 'stretch' }}>
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={mode === 'tofile' ? '粘贴 Base64 或 data: URI...' : mode === 'encode' ? '输入原始文本...' : '输入 Base64 字符串...'}
+          rows={4}
+          style={textareaStyle}
+        />
+      </div>
+      <div className="ck-tools" style={{ marginTop: 8 }}>
+        <button className="ck-btn primary" onClick={handle}>{mode === 'tofile' ? '下载文件' : mode === 'encode' ? '编码' : '解码'}</button>
+      </div>
       {output && (
-        <Box as="pre" mt={2} p={2} bg={error ? 'red.50' : 'gray.50'} borderRadius="md" fontSize="sm" whiteSpace="pre-wrap" wordBreak="break-all" maxH={300} overflow="auto" color={error ? 'red.600' : undefined}>
+        <div className="ck-term" style={{ marginTop: 8, maxHeight: 300, overflowY: 'auto', color: error ? 'var(--red)' : undefined }}>
           {output}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -210,33 +270,42 @@ function TimestampTool() {
   }
 
   return (
-    <Box>
-      <Box bg="gray.50" borderRadius="md" p={2} mb={2}>
-        <Text fontSize="xs" color="gray.500" mb={1}>当前时间</Text>
+    <div>
+      <div className="ck-panel">
+        <div className="ck-hairline" style={{ margin: '0 0 6px' }}>NOW // 当前时间</div>
         {currentFormats.map((item) => (
-          <Flex key={item.label} gap={2} align="center" py={0.5}>
-            <Text fontSize="xs" color="gray.500" w="72px" shrink={0}>{item.label}</Text>
-            <Code flex={1} fontSize="xs" whiteSpace="normal" wordBreak="break-all">{item.value}</Code>
-            <Button size="xs" variant="outline" onClick={() => setInput(item.value)}>填入</Button>
-          </Flex>
+          <div key={item.label} className="ck-row">
+            <span className="ck-dim" style={{ width: 72, flexShrink: 0, fontSize: 11 }}>{item.label}</span>
+            <code className="ck-sub" style={{ flex: 1, minWidth: 0, wordBreak: 'break-all', fontSize: 12 }}>{item.value}</code>
+            <button className="ck-btn" onClick={() => setInput(item.value)}>填入</button>
+          </div>
         ))}
-      </Box>
+      </div>
 
-      <Flex gap={2} mb={1}>
-        <Button size="xs" colorScheme={mode === 'ts2date' ? 'blue' : 'gray'} variant={mode === 'ts2date' ? 'solid' : 'outline'} onClick={() => { setMode('ts2date'); setOutput(''); }}>时间戳 → 日期</Button>
-        <Button size="xs" colorScheme={mode === 'date2ts' ? 'blue' : 'gray'} variant={mode === 'date2ts' ? 'solid' : 'outline'} onClick={() => { setMode('date2ts'); setOutput(''); }}>日期 → 时间戳</Button>
-      </Flex>
-      <Flex gap={2} mb={1}>
-        <Input size="sm" value={input} onChange={(e) => setInput(e.target.value)} placeholder={mode === 'ts2date' ? '输入时间戳（秒或毫秒）' : '输入日期（如 2024-01-01）'} flex={1} />
-        <Button size="xs" colorScheme="gray" onClick={fillNow}>当前</Button>
-      </Flex>
-      <Button size="sm" colorScheme="blue" onClick={handle} mb={1}>转换</Button>
-      {output && (
-        <Box as="pre" mt={2} p={2} bg={error ? 'red.50' : 'gray.50'} borderRadius="md" fontSize="sm" whiteSpace="pre-wrap" wordBreak="break-all" maxH={300} overflow="auto" color={error ? 'red.600' : undefined}>
-          {output}
-        </Box>
-      )}
-    </Box>
+      <div className="ck-panel brackets" style={{ marginTop: 10 }}>
+        <div className="ck-tools">
+          <button className={'ck-chip' + (mode === 'ts2date' ? ' on' : '')} onClick={() => { setMode('ts2date'); setOutput(''); }}>时间戳 → 日期</button>
+          <button className={'ck-chip' + (mode === 'date2ts' ? ' on' : '')} onClick={() => { setMode('date2ts'); setOutput(''); }}>日期 → 时间戳</button>
+        </div>
+        <div className="ck-tools" style={{ marginTop: 8 }}>
+          <div className="ck-input" style={{ flex: 1 }}>
+            <span className="prompt">›</span>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={mode === 'ts2date' ? '输入时间戳（秒或毫秒）' : '输入日期（如 2024-01-01）'}
+            />
+          </div>
+          <button className="ck-btn" onClick={fillNow}>当前</button>
+          <button className="ck-btn primary" onClick={handle}>转换</button>
+        </div>
+        {output && (
+          <div className="ck-term" style={{ marginTop: 8, maxHeight: 300, overflowY: 'auto', color: error ? 'var(--red)' : undefined }}>
+            {output}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -259,26 +328,52 @@ function RegexTool() {
   }
 
   return (
-    <Box>
-      <Flex gap={1} mb={1} align="center">
-        <Text fontSize="sm" color="gray.400" fontWeight="bold">/</Text>
-        <Input size="sm" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="正则表达式" flex={1} />
-        <Text fontSize="sm" color="gray.400" fontWeight="bold">/</Text>
-        <Input size="sm" value={flags} onChange={(e) => setFlags(e.target.value)} placeholder="g" w="60px" />
-      </Flex>
-      <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="测试文本..." size="sm" rows={3} mb={1} fontFamily="mono" />
-      <Button size="sm" colorScheme="blue" onClick={test} mb={1}>测试</Button>
+    <div className="ck-panel brackets">
+      <div className="ck-tools">
+        <div className="ck-input" style={{ flex: 1 }}>
+          <span className="prompt">/</span>
+          <input
+            value={pattern}
+            onChange={(e) => setPattern(e.target.value)}
+            placeholder="正则表达式"
+          />
+          <span className="prompt">/</span>
+        </div>
+        <div className="ck-input" style={{ width: 90 }}>
+          <input
+            value={flags}
+            onChange={(e) => setFlags(e.target.value)}
+            placeholder="g"
+          />
+        </div>
+      </div>
+      <div className="ck-input" style={{ marginTop: 8, padding: '6px 14px', alignItems: 'stretch' }}>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="测试文本..."
+          rows={3}
+          style={textareaStyle}
+        />
+      </div>
+      <div className="ck-tools" style={{ marginTop: 8 }}>
+        <button className="ck-btn primary" onClick={test}>测试</button>
+      </div>
       {error && (
-        <Box mt={2} p={2} bg="red.50" borderRadius="md" fontSize="sm" color="red.600">{error}</Box>
+        <div className="ck-term" style={{ marginTop: 8, color: 'var(--red)' }}>{error}</div>
       )}
       {matches.length > 0 && (
-        <Box mt={2} p={2} bg="gray.50" borderRadius="md" fontSize="sm" maxH={300} overflow="auto">
-          <Text fontSize="xs" color="gray.500" mb={1}>匹配 {matches.length} 项:</Text>
-          {matches.map((m, i) => <Code key={i} display="block" fontSize="xs" py={0.5}>{m}</Code>)}
-        </Box>
+        <div className="ck-term" style={{ marginTop: 8, maxHeight: 300, overflowY: 'auto' }}>
+          <div className="ck-dim">匹配 {matches.length} 项:</div>
+          {matches.map((m, i) => (
+            <div key={i} className="ck-phos">{m}</div>
+          ))}
+        </div>
       )}
-      {matches.length === 0 && !error && <Text color="gray.400" fontSize="sm">无匹配结果</Text>}
-    </Box>
+      {matches.length === 0 && !error && (
+        <div className="ck-dim" style={{ marginTop: 8, fontSize: 12 }}>无匹配结果</div>
+      )}
+    </div>
   );
 }
 
@@ -301,23 +396,25 @@ function UuidTool() {
   }
 
   return (
-    <Box>
-      <Flex gap={2} mb={1} align="center">
-        <Button size="xs" colorScheme={version === 'v4' ? 'blue' : 'gray'} variant={version === 'v4' ? 'solid' : 'outline'} onClick={() => setVersion('v4')}>V4</Button>
-        <Button size="xs" colorScheme={version === 'v7' ? 'blue' : 'gray'} variant={version === 'v7' ? 'solid' : 'outline'} onClick={() => setVersion('v7')}>V7</Button>
-        <Button size="sm" colorScheme="blue" onClick={generate}>生成一个</Button>
-        <Button size="xs" colorScheme="gray" onClick={() => generateBatch(5)}>生成 5 个</Button>
-      </Flex>
+    <div className="ck-panel brackets">
+      <div className="ck-tools">
+        <button className={'ck-chip' + (version === 'v4' ? ' on' : '')} onClick={() => setVersion('v4')}>V4</button>
+        <button className={'ck-chip' + (version === 'v7' ? ' on' : '')} onClick={() => setVersion('v7')}>V7</button>
+        <div className="ck-spacer" />
+        <button className="ck-btn primary" onClick={generate}>生成一个</button>
+        <button className="ck-btn" onClick={() => generateBatch(5)}>生成 5 个</button>
+      </div>
       {uuids.length > 0 && (
-        <Box mt={2} p={2} bg="gray.50" borderRadius="md" maxH={300} overflow="auto">
+        <div style={{ marginTop: 8, maxHeight: 300, overflowY: 'auto' }}>
+          <div className="ck-hairline" style={{ margin: '0 0 4px' }}>GENERATED // 已生成 <span className="n">{uuids.length}</span></div>
           {uuids.map((u, i) => (
-            <Flex key={i} align="center" gap={2} py={1}>
-              <Code flex={1} fontSize="xs" wordBreak="break-all">{u}</Code>
-              <Button size="xs" variant="outline" onClick={() => navigator.clipboard.writeText(u)}>复制</Button>
-            </Flex>
+            <div key={i} className="ck-row">
+              <code className="ck-sub" style={{ flex: 1, minWidth: 0, wordBreak: 'break-all', fontSize: 12 }}>{u}</code>
+              <button className="ck-btn" onClick={() => navigator.clipboard.writeText(u)}>复制</button>
+            </div>
           ))}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }

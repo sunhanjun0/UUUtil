@@ -9,6 +9,7 @@ import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
 import type { KnowledgeNote, KnowledgeCategory, KnowledgeTag } from '@shared/types';
+import { useThemeMode } from '../theme';
 
 // 颜色选项用于新建分类
 const CATEGORY_COLORS = [
@@ -35,7 +36,7 @@ function HighlightText({ text, keyword }: { text: string; keyword: string }) {
   return (
     <>
       {before && before.length > 100 ? '...' + before.slice(before.length - 50) : before}
-      <mark style={{ backgroundColor: '#fef08a', color: 'inherit', padding: '0 2px', borderRadius: '2px' }}>
+      <mark style={{ backgroundColor: 'var(--uu-note-yellow)', color: 'inherit', padding: '0 2px', borderRadius: '2px' }}>
         {match}
       </mark>
       {after.length > 50 ? after.slice(0, 50) + '...' : after}
@@ -64,6 +65,7 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 export default function KnowledgeBase() {
+  const { mode: themeMode } = useThemeMode();
   const [notes, setNotes] = useState<KnowledgeNote[]>([]);
   const [categories, setCategories] = useState<KnowledgeCategory[]>([]);
   const [tags, setTags] = useState<KnowledgeTag[]>([]);
@@ -326,96 +328,80 @@ export default function KnowledgeBase() {
 
   if (viewMode === 'edit') {
     return (
-      <Flex direction="column" h="full" bg="white">
-        <Box px={4} py={3} borderBottom="1px" borderColor="gray.200">
-          <Stack gap={3}>
-            {/* 标题输入 */}
-            <Flex gap={3} align="flex-start" wrap="wrap">
-              <Input
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="笔记标题"
-                variant="flushed"
-                fontSize="xl"
-                fontWeight="semibold"
-                flex={1}
-                minW="250px"
-                autoFocus
-              />
-            </Flex>
+      <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+        <div className="ck-head">
+          <span className="code">ARCHIVE</span>
+          <span className="zh">知识库</span>
+          <span className="sub">DATABANK // 本地档案</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="ck-input" style={{ padding: '10px 14px' }}>
+            <span className="prompt">▸</span>
+            <input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="笔记标题"
+              autoFocus
+              style={{ fontSize: 16, fontWeight: 600 }}
+            />
+          </div>
 
-            {/* 分类选择 + 已选标签 */}
-            <Flex gap={4} align="center" wrap="wrap">
-              <Select
-                size="sm"
-                value={editCategoryId}
-                onChange={(e) => setEditCategoryId(e.target.value)}
-                w="180px"
-                placeholder="选择分类"
-              >
-                <option value="">无分类</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+          <div className="ck-tools">
+            <Select
+              size="sm"
+              value={editCategoryId}
+              onChange={(e) => setEditCategoryId(e.target.value)}
+              w="180px"
+            >
+              <option value="">无分类</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </Select>
+
+            <span className="ck-dim" style={{ fontSize: 11 }}>标签：</span>
+            {editTagIds.map(tagId => {
+              const tag = getTag(tagId);
+              return tag ? (
+                <span key={tagId} className="ck-chip on" style={{ padding: '2px 8px' }}>
+                  {tag.name}
+                  <span style={{ cursor: 'pointer', marginLeft: 4, color: 'var(--ink-3)' }} onClick={() => toggleEditTag(tagId)}>×</span>
+                </span>
+              ) : null;
+            })}
+            {editTagIds.length === 0 && <span className="ck-dim" style={{ fontSize: 11 }}>无标签</span>}
+
+            <div className="ck-spacer" />
+
+            <Menu>
+              <MenuButton as={Button} size="xs" variant="outline" leftIcon={<TagIcon size={14} />}>
+                添加标签
+              </MenuButton>
+              <MenuList maxH="200px" overflowY="auto" minW="150px">
+                {tags.filter(t => !editTagIds.includes(t.id)).map(tag => (
+                  <MenuItem key={tag.id} onClick={() => toggleEditTag(tag.id)}>
+                    {tag.name}
+                  </MenuItem>
                 ))}
-              </Select>
+                {tags.length === editTagIds.length && (
+                  <MenuItem isDisabled>没有更多标签</MenuItem>
+                )}
+              </MenuList>
+            </Menu>
+          </div>
 
-              <Box flex={1}>
-                <Text fontSize="xs" color="gray.500" mb={1}>已选标签：</Text>
-                <HStack spacing={1} flexWrap="wrap">
-                  {editTagIds.map(tagId => {
-                    const tag = getTag(tagId);
-                    return tag ? (
-                      <Tag
-                        key={tagId}
-                        size="sm"
-                        colorScheme="blue"
-                        variant="subtle"
-                      >
-                        {tag.name}
-                        <TagCloseButton onClick={() => toggleEditTag(tagId)} />
-                      </Tag>
-                    ) : null;
-                  })}
-                  {editTagIds.length === 0 && (
-                    <Text fontSize="xs" color="gray.400">无标签</Text>
-                  )}
-                </HStack>
-              </Box>
-            </Flex>
-
-            {/* 标签选择菜单 */}
-            <Flex align="center">
-              <Menu>
-                <MenuButton as={Button} size="xs" variant="outline" leftIcon={<TagIcon size={14} />}>
-                  添加标签
-                </MenuButton>
-                <MenuList maxH="200px" overflowY="auto" minW="150px">
-                  {tags.filter(t => !editTagIds.includes(t.id)).map(tag => (
-                    <MenuItem key={tag.id} onClick={() => toggleEditTag(tag.id)}>
-                      {tag.name}
-                    </MenuItem>
-                  ))}
-                  {tags.length === editTagIds.length && (
-                    <MenuItem isDisabled>没有更多标签</MenuItem>
-                  )}
-                </MenuList>
-              </Menu>
-            </Flex>
-
-            {/* 操作按钮 */}
-            <Flex gap={2} justify="flex-end">
-              <Text fontSize="xs" color="gray.400">
-                快捷键: Ctrl/Cmd+S 保存, Esc 取消
-              </Text>
-              <Button size="sm" colorScheme="green" onClick={handleSaveNote}>保存</Button>
-              {selectedNote && <Button size="sm" colorScheme="red" onClick={handleDeleteNote}>删除</Button>}
-              <Button size="sm" variant="outline" onClick={cancelEdit}>取消</Button>
-            </Flex>
-          </Stack>
-        </Box>
+          <div className="ck-tools">
+            <span className="ck-dim" style={{ fontSize: 10 }}>快捷键: Ctrl/Cmd+S 保存 · Esc 取消</span>
+            <div className="ck-spacer" />
+            <button className="ck-btn primary" onClick={handleSaveNote}>保存</button>
+            {selectedNote && <button className="ck-btn danger" onClick={handleDeleteNote}>删除</button>}
+            <button className="ck-btn" onClick={cancelEdit}>取消</button>
+          </div>
+        </div>
 
         <Box flex={1} overflow="auto">
           <MDEditor
+            data-color-mode={themeMode === 'cockpit' ? 'dark' : 'light'}
             value={editContent}
             onChange={(val) => setEditContent(val || '')}
             preview="live"
@@ -424,307 +410,131 @@ export default function KnowledgeBase() {
             visibleDragbar={false}
           />
         </Box>
-      </Flex>
+      </div>
     );
   }
 
   return (
-    <Flex h="full" bg="gray.50">
+    <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head">
+        <span className="code">ARCHIVE</span>
+        <span className="zh">知识库</span>
+        <span className="sub">DATABANK // 本地档案</span>
+      </div>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 12 }}>
       {/* 左侧边栏：分类 + 标签管理 */}
-      <Box w="240px" bg="white" borderRight="1px" borderColor="gray.200" display="flex" flexDirection="column">
-        {/* 分类区域 */}
-        <Box p={3} flex={1} overflow="auto">
-          <Heading size="sm" mb={3} display="flex" align="center" gap={1}>
-            <Folder size={16} />
-            分类
-          </Heading>
-
-          <Stack gap={1} mb={4}>
-            {categories.map(category => (
-              <Flex
-                key={category.id}
-                align="center"
-                p={1}
-                borderRadius="md"
-                cursor="pointer"
-                bg={filterCategoryId === category.id ? 'blue.50' : 'transparent'}
-                _hover={{ bg: 'gray.100' }}
-                onClick={() => handleFilterByCategory(category.id)}
-              >
-                <Box
-                  w={3}
-                  h={3}
-                  borderRadius="full"
-                  bg={category.color || '#999'}
-                  mr={2}
-                  flexShrink={0}
-                />
-                <Text flex={1} fontSize="sm" noOfLines={1}>
-                  {category.name}
-                </Text>
-                <IconButton
-                  aria-label="删除分类"
-                  icon={<Trash2 size={14} />}
-                  size="xs"
-                  variant="ghost"
-                  colorScheme="red"
-                  opacity={0}
-                  _groupHover={{ opacity: 1 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteCategory(category.id);
-                  }}
-                />
-              </Flex>
-            ))}
-            {categories.length === 0 && (
-              <Text fontSize="xs" color="gray.400" textAlign="center" py={2}>
-                暂无分类
-              </Text>
-            )}
-          </Stack>
-
-          {/* 新建分类 */}
-          <Stack gap={2}>
-            <Input
-              size="sm"
-              placeholder="分类名称"
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
-            />
-            <Flex gap={1} wrap="wrap">
-              {CATEGORY_COLORS.map(color => (
-                <Box
-                  key={color}
-                  w={6}
-                  h={6}
-                  borderRadius="full"
-                  bg={color}
-                  cursor="pointer"
-                  border={newCategoryColor === color ? '2px solid black' : '2px solid transparent'}
-                  onClick={() => setNewCategoryColor(color)}
-                />
-              ))}
-            </Flex>
-            <Button
-              size="sm"
-              leftIcon={<Plus size={16} />}
-              colorScheme="blue"
-              isDisabled={!newCategoryName.trim()}
-              onClick={handleCreateCategory}
+      <div className="ck-aside" style={{ width: 240, minWidth: 240, borderRight: '1px solid var(--line)', padding: '12px 10px', gap: 10 }}>
+        <div className="ck-hairline" style={{ marginTop: 0 }}><Folder size={13} /> 分类</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {categories.map(category => (
+            <div
+              key={category.id}
+              className={'ck-chip' + (filterCategoryId === category.id ? ' on' : '')}
+              style={{ justifyContent: 'flex-start', width: '100%' }}
+              onClick={() => handleFilterByCategory(category.id)}
             >
-              添加分类
-            </Button>
-          </Stack>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: category.color || '#999', flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{category.name}</span>
+              <button className="ck-ico" style={{ width: 20, height: 20 }} title="删除分类" onClick={(e) => { e.stopPropagation(); handleDeleteCategory(category.id); }}><Trash2 size={12} /></button>
+            </div>
+          ))}
+          {categories.length === 0 && <div className="ck-dim" style={{ fontSize: 11, textAlign: 'center', padding: 6 }}>暂无分类</div>}
+        </div>
 
-          <Divider my={4} />
-
-          {/* 标签区域 */}
-          <Heading size="sm" mb={3} display="flex" align="center" gap={1}>
-            <TagIcon size={16} />
-            标签
-          </Heading>
-
-          <Stack gap={1} mb={4} maxH="200px" overflowY="auto">
-            {tags.map(tag => (
-              <Flex
-                key={tag.id}
-                align="center"
-                p={1}
-                borderRadius="md"
-                cursor="pointer"
-                bg={filterTagId === tag.id ? 'blue.50' : 'transparent'}
-                _hover={{ bg: 'gray.100' }}
-                onClick={() => handleFilterByTag(tag.id)}
-              >
-                <Text flex={1} fontSize="sm" noOfLines={1}>
-                  {tag.name}
-                </Text>
-                <IconButton
-                  aria-label="删除标签"
-                  icon={<Trash2 size={14} />}
-                  size="xs"
-                  variant="ghost"
-                  colorScheme="red"
-                  opacity={0}
-                  _groupHover={{ opacity: 1 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteTag(tag.id);
-                  }}
-                />
-              </Flex>
-            ))}
-            {tags.length === 0 && (
-              <Text fontSize="xs" color="gray.400" textAlign="center" py={2}>
-                暂无标签
-              </Text>
-            )}
-          </Stack>
-
-          {/* 新建标签 */}
-          <Stack gap={2}>
-            <Input
-              size="sm"
-              placeholder="标签名称"
-              value={newTagName}
-              onChange={(e) => setNewTagName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateTag()}
+        <div className="ck-input" style={{ padding: '6px 10px' }}>
+          <span className="prompt">›</span>
+          <input placeholder="分类名称" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()} />
+        </div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {CATEGORY_COLORS.map(color => (
+            <span
+              key={color}
+              onClick={() => setNewCategoryColor(color)}
+              style={{ width: 16, height: 16, borderRadius: '50%', background: color, cursor: 'pointer', border: newCategoryColor === color ? '2px solid var(--ink)' : '2px solid transparent', boxSizing: 'border-box' }}
             />
-            <Button
-              size="sm"
-              leftIcon={<Plus size={16} />}
-              colorScheme="green"
-              isDisabled={!newTagName.trim()}
-              onClick={handleCreateTag}
+          ))}
+        </div>
+        <button className="ck-btn" style={{ justifyContent: 'center' }} disabled={!newCategoryName.trim()} onClick={handleCreateCategory}><Plus size={13} /> 添加分类</button>
+
+        <div className="ck-hairline"><TagIcon size={13} /> 标签</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 200, overflowY: 'auto' }}>
+          {tags.map(tag => (
+            <div
+              key={tag.id}
+              className={'ck-chip' + (filterTagId === tag.id ? ' on' : '')}
+              style={{ justifyContent: 'flex-start', width: '100%' }}
+              onClick={() => handleFilterByTag(tag.id)}
             >
-              添加标签
-            </Button>
-          </Stack>
-        </Box>
-      </Box>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tag.name}</span>
+              <button className="ck-ico" style={{ width: 20, height: 20 }} title="删除标签" onClick={(e) => { e.stopPropagation(); handleDeleteTag(tag.id); }}><Trash2 size={12} /></button>
+            </div>
+          ))}
+          {tags.length === 0 && <div className="ck-dim" style={{ fontSize: 11, textAlign: 'center', padding: 6 }}>暂无标签</div>}
+        </div>
+
+        <div className="ck-input" style={{ padding: '6px 10px' }}>
+          <span className="prompt">›</span>
+          <input placeholder="标签名称" value={newTagName} onChange={(e) => setNewTagName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreateTag()} />
+        </div>
+        <button className="ck-btn" style={{ justifyContent: 'center' }} disabled={!newTagName.trim()} onClick={handleCreateTag}><Plus size={13} /> 添加标签</button>
+      </div>
 
       {/* 右侧：搜索 + 笔记列表 */}
-      <Flex direction="column" flex={1} bg="white">
-        {/* 顶部操作栏 */}
-        <Box px={4} py={3} borderBottom="1px" borderColor="gray.200">
-          <Flex justify="space-between" align="center" mb={2}>
-            <Heading size="md">知识库</Heading>
-            <Button size="sm" colorScheme="blue" leftIcon={<Plus size={16} />} onClick={startNewNote}>
-              新建笔记
-            </Button>
-          </Flex>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+        <div className="ck-tools" style={{ marginBottom: 8 }}>
+          <div className="ck-input" style={{ flex: 1, padding: '7px 12px' }}>
+            <span className="prompt">›</span>
+            <input placeholder="搜索标题或内容..." value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} />
+            <kbd>⌘F</kbd>
+          </div>
+          {hasActiveFilter && (
+            <button className="ck-chip on" onClick={clearFilters}>
+              <FilterX size={13} /> 清除{filterCategoryId ? `(${getCategory(filterCategoryId)?.name})` : filterTagId ? `(${getTag(filterTagId)?.name})` : ''}
+            </button>
+          )}
+          <span className="ck-dim" style={{ fontSize: 11 }}>{displayedNotes.length > 0 ? `共 ${displayedNotes.length} 条笔记` : ''}</span>
+          <div className="ck-spacer" />
+          <button className="ck-btn primary" onClick={startNewNote}><Plus size={13} /> 新建笔记</button>
+        </div>
 
-          <Flex gap={2} align="center">
-            <InputGroup size="sm" maxW="320px">
-              <InputLeftElement pointerEvents="none">
-                <Search size={14} color="#A0AEC0" />
-              </InputLeftElement>
-              <Input
-                placeholder="搜索标题或内容..."
-                value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
-              />
-            </InputGroup>
-
-            {hasActiveFilter && (
-              <Button
-                size="sm"
-                variant="outline"
-                leftIcon={<FilterX size={16} />}
-                onClick={clearFilters}
-              >
-                清除筛选
-                {filterCategoryId
-                  ? `(${getCategory(filterCategoryId)?.name})`
-                  : filterTagId
-                    ? `(${getTag(filterTagId)?.name})`
-                    : ''}
-              </Button>
-            )}
-
-            {displayedNotes.length > 0 && (
-              <Text fontSize="sm" color="gray.500">
-                共 {displayedNotes.length} 条笔记
-              </Text>
-            )}
-          </Flex>
-        </Box>
-
-        {/* 笔记列表网格 */}
-        <Box flex={1} overflow="auto" p={4}>
+        <div className="ck-list">
           {displayedNotes.length === 0 ? (
-            <Flex direction="column" align="center" justify="center" py={20}>
-              <Box color="gray.300" mb={2}>
-                <StickyNote size={56} strokeWidth={1.6} />
-              </Box>
-              <Heading size="md" mb={1}>
-                {searchKeyword || hasActiveFilter ? '未找到匹配的笔记' : '暂无笔记'}
-              </Heading>
-              <Text fontSize="sm" color="gray.400">
-                {searchKeyword || hasActiveFilter
-                  ? '尝试换个关键词或清除筛选'
-                  : '点击上方"新建笔记"开始记录你的想法'
-                }
-              </Text>
-            </Flex>
+            <div className="ck-empty">
+              <div className="code">NO DATA</div>
+              {searchKeyword || hasActiveFilter ? '未找到匹配的笔记' : '点击上方「新建笔记」开始记录你的想法'}
+            </div>
           ) : (
-            <Box
-              display="grid"
-              gridTemplateColumns="repeat(auto-fill, minmax(260px, 1fr))"
-              gap={3}
-            >
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
               {displayedNotes.map((note) => (
-                <Box
-                  key={note.id}
-                  p={3}
-                  borderRadius="md"
-                  border="1px"
-                  borderColor="gray.200"
-                  bg="white"
-                  cursor="pointer"
-                  _hover={{ shadow: 'md', borderColor: 'blue.200' }}
-                  onClick={() => startEditNote(note)}
-                >
-                  <Flex justify="space-between" align="flex-start" mb={1} gap={2}>
-                    <Heading size="xs" flex={1} lineHeight="tight">
-                      <HighlightText text={note.title} keyword={searchKeyword} />
-                    </Heading>
-                    <Text fontSize="xs" color="gray.400" whiteSpace="nowrap">
-                      {formatRelativeTime(note.updatedAt)}
-                    </Text>
-                  </Flex>
-
-                  {/* 分类标签 */}
+                <div key={note.id} className="ck-panel" style={{ cursor: 'pointer' }} onClick={() => startEditNote(note)}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
+                    <div className="ck-item-title" style={{ fontWeight: 700 }}><HighlightText text={note.title} keyword={searchKeyword} /></div>
+                    <span className="ck-dim" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>{formatRelativeTime(note.updatedAt)}</span>
+                  </div>
                   {note.categoryId && getCategory(note.categoryId) && (
-                    <Badge
-                      mb={1}
-                      display="inline-block"
-                      colorScheme="blue"
-                      variant="subtle"
-                      fontSize="xs"
-                    >
-                      {getCategory(note.categoryId)?.name}
-                    </Badge>
+                    <span className="ck-badge phos" style={{ marginBottom: 6 }}>{getCategory(note.categoryId)?.name}</span>
                   )}
-
-                  {/* 内容摘要 */}
                   {note.content && (
-                    <Text fontSize="xs" color="gray.500" noOfLines={3} mb={2}>
+                    <div className="ck-dim" style={{ fontSize: 11.5, marginBottom: 6, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       <HighlightText text={note.content} keyword={searchKeyword} />
-                    </Text>
+                    </div>
                   )}
-
-                  {/* 标签列表 */}
                   {note.tagIds.length > 0 && (
-                    <Flex gap={1} wrap="wrap">
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {note.tagIds.slice(0, 5).map((tagId) => {
                         const tag = getTag(tagId);
-                        return tag && (
-                          <Badge
-                            key={tagId}
-                            variant="outline"
-                            fontSize="xs"
-                            colorScheme="gray"
-                          >
-                            {tag.name}
-                          </Badge>
-                        );
+                        return tag && <span key={tagId} className="ck-badge">{tag.name}</span>;
                       })}
-                      {note.tagIds.length > 5 && (
-                        <Badge variant="outline" fontSize="xs">
-                          +{note.tagIds.length - 5}
-                        </Badge>
-                      )}
-                    </Flex>
+                      {note.tagIds.length > 5 && <span className="ck-badge">+{note.tagIds.length - 5}</span>}
+                    </div>
                   )}
-                </Box>
+                </div>
               ))}
-            </Box>
+            </div>
           )}
-        </Box>
-      </Flex>
-    </Flex>
+        </div>
+      </div>
+      </div>
+    </div>
   );
 }

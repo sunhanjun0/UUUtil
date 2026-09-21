@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, SimpleGrid, Text } from '@chakra-ui/react';
 
 export default function Calculator() {
   const [expr, setExpr] = useState('');
@@ -55,53 +54,56 @@ export default function Calculator() {
   const keys = ['C', '(', ')', '/', '7', '8', '9', '*', '4', '5', '6', '-', '1', '2', '3', '+', '0', '.', '%', '='];
 
   return (
-    <Box>
-      <Box
-        ref={displayRef}
-        bg="gray.100"
-        borderRadius="md"
-        px={3} py={2}
-        mb={1.5}
-        h="132px"
-        overflowY="auto"
-      >
-        <Box
-          minH="100%"
-          display="flex"
-          flexDirection="column"
-          justifyContent="flex-end"
-          alignItems="flex-end"
-        >
-          {history.map((item, index) => (
-            <Text key={`${item}-${index}`} fontSize="xs" color="gray.500" noOfLines={1}>
-              {item}
-            </Text>
-          ))}
-          <Box fontSize="lg" color="gray.700" wordBreak="break-all" textAlign="right">{expr || '0'}</Box>
-          <Box fontSize="sm" color="blue.600" fontWeight="semibold" mt={1}>{result}</Box>
-        </Box>
-      </Box>
+    <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head">
+        <span className="code">COMPUTE</span>
+        <span className="zh">计算器</span>
+        <span className="sub">EVAL // 表达式计算</span>
+      </div>
 
-      <SimpleGrid columns={4} gap={1.5}>
+      <div
+        className="ck-panel brackets"
+        ref={displayRef}
+        style={{ height: 132, overflowY: 'auto' }}
+      >
+        <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'flex-end', gap: 2 }}>
+          {history.map((item, index) => (
+            <div key={`${item}-${index}`} className="ck-dim" style={{ fontSize: 11 }}>{item}</div>
+          ))}
+          <div className="ck-phos" style={{ fontSize: 22, fontWeight: 700, wordBreak: 'break-all', textAlign: 'right' }}>
+            {expr || '0'}
+          </div>
+          {result !== '' && (
+            <div className={result === 'Error' ? 'ck-err' : 'ck-phos'} style={{ fontSize: 14 }}>
+              {result}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
         {keys.map((key) => {
           const isOp = '+-*/%'.includes(key);
           const isEqual = key === '=';
           const isClear = key === 'C';
 
+          let cls = 'ck-btn';
+          if (isClear) cls += ' danger';
+          else if (isEqual) cls += ' primary';
+          else if (isOp) cls += ' ck-warn';
+
           return (
-            <Button
+            <button
               key={key}
-              size="md"
+              className={cls}
+              style={{ justifyContent: 'center', fontWeight: isOp || isEqual ? 700 : 400 }}
               onClick={() => handleKey(key)}
-              colorScheme={isClear ? 'red' : isEqual ? 'blue' : 'gray'}
-              variant={isClear || isEqual ? 'solid' : 'outline'}
-              fontWeight={isOp || isEqual ? 'semibold' : 'normal'}
             >
               {key}
-            </Button>
+            </button>
           );
         })}
-      </SimpleGrid>
-    </Box>
+      </div>
+    </div>
   );
 }

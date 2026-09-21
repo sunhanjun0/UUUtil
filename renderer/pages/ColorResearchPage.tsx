@@ -328,7 +328,7 @@ function SchemePreview({ scheme, colors }: { scheme: ClassicScheme; colors: stri
       <Box bg={bg} p={3} minH="132px">
         <Flex justify="space-between" align="center" mb={2}>
           <Text fontSize="10px" fontWeight={800} color={text}>{copy.title}</Text>
-          <Badge bg={accent} color="white" fontSize="8px">限时</Badge>
+          <Badge bg={accent} color="#ffffff" fontSize="8px">限时</Badge>
         </Flex>
         <Flex gap={2}>
           <Box flex={1} bg={surface} borderRadius="sm" p={2} border="1px solid" borderColor="blackAlpha.100">
@@ -337,7 +337,7 @@ function SchemePreview({ scheme, colors }: { scheme: ClassicScheme; colors: stri
             <Text fontSize="8px" color={text} opacity={0.55}>{copy.subtitle}</Text>
           </Box>
           <Flex w="72px" direction="column" justify="space-between">
-            <Box bg={accent} color="white" borderRadius="sm" px={2} py={1}><Text fontSize="8px" fontWeight={800}>立即购买</Text></Box>
+            <Box bg={accent} color="#ffffff" borderRadius="sm" px={2} py={1}><Text fontSize="8px" fontWeight={800}>立即购买</Text></Box>
             <Box bg={blend(accent, '#ffffff', 0.78)} borderRadius="sm" px={2} py={1}><Text fontSize="8px" color={text}>优惠券</Text></Box>
           </Flex>
         </Flex>
@@ -361,7 +361,7 @@ function SchemePreview({ scheme, colors }: { scheme: ClassicScheme; colors: stri
   if (kind === 'dashboard' || kind === 'ai') {
     return (
       <Box bg={bg} p={3} minH="132px">
-        <Flex justify="space-between" mb={2}><Text fontSize="10px" fontWeight={800} color={text}>{copy.title}</Text><Badge bg={accent} color="white" fontSize="8px">Live</Badge></Flex>
+        <Flex justify="space-between" mb={2}><Text fontSize="10px" fontWeight={800} color={text}>{copy.title}</Text><Badge bg={accent} color="#ffffff" fontSize="8px">Live</Badge></Flex>
         <SimpleGrid columns={3} gap={1.5} mb={2}>
           {[primary, accent, text].map((color, index) => <Box key={index} bg={surface} borderRadius="sm" p={1.5}><Text fontSize="7px" color={text} opacity={0.55}>Metric</Text><Text fontSize="11px" fontWeight={800} color={color}>{[86, 42, 19][index]}%</Text></Box>)}
         </SimpleGrid>
@@ -397,7 +397,7 @@ function SchemePreview({ scheme, colors }: { scheme: ClassicScheme; colors: stri
     return (
       <Box bg={bg} p={3} minH="132px">
         <Text fontSize="10px" fontWeight={800} color={text} mb={2}>{copy.title}</Text>
-        <Flex gap={2} align="center"><Box w="44px" h="44px" borderRadius="full" bg={primary} display="flex" alignItems="center" justifyContent="center"><Text color="white" fontSize="11px" fontWeight={800}>OK</Text></Box><Box flex={1}><Text fontSize="8px" color={text}>{copy.subtitle}</Text><Box mt={2} h="7px" bg={blend(primary, '#ffffff', 0.7)} borderRadius="full"><Box h="7px" w="72%" bg={accent} borderRadius="full" /></Box></Box></Flex>
+        <Flex gap={2} align="center"><Box w="44px" h="44px" borderRadius="full" bg={primary} display="flex" alignItems="center" justifyContent="center"><Text color="#ffffff" fontSize="11px" fontWeight={800}>OK</Text></Box><Box flex={1}><Text fontSize="8px" color={text}>{copy.subtitle}</Text><Box mt={2} h="7px" bg={blend(primary, '#ffffff', 0.7)} borderRadius="full"><Box h="7px" w="72%" bg={accent} borderRadius="full" /></Box></Box></Flex>
       </Box>
     );
   }
@@ -429,11 +429,11 @@ function SchemePreview({ scheme, colors }: { scheme: ClassicScheme; colors: stri
   return (
     <Box bg={bg} p={3} minH="132px">
       <Flex h="26px" bg={text} align="center" justify="space-between" px={2} borderRadius="sm" mb={2}>
-        <Text fontSize="9px" color="white" fontWeight={700}>{copy.title}</Text>
+        <Text fontSize="9px" color="#ffffff" fontWeight={700}>{copy.title}</Text>
         <Flex gap={1}><Box w="18px" h="5px" borderRadius="full" bg={primary} /><Box w="18px" h="5px" borderRadius="full" bg={accent} /></Flex>
       </Flex>
       <Flex gap={2}>
-        <Box w="56px" minH="58px" bg={primary} borderRadius="sm" p={2}><Text fontSize="8px" color="white" fontWeight={700}>导航</Text></Box>
+        <Box w="56px" minH="58px" bg={primary} borderRadius="sm" p={2}><Text fontSize="8px" color="#ffffff" fontWeight={700}>导航</Text></Box>
         <Box flex={1} bg={surface} p={2} borderRadius="sm" borderLeft="3px solid" borderLeftColor={accent}><Text fontSize="8px" color={text} fontWeight={700}>内容卡片标题</Text><Text fontSize="8px" color={text} opacity={0.55}>{copy.subtitle}</Text></Box>
       </Flex>
     </Box>
@@ -529,7 +529,7 @@ export default function ColorResearchPage() {
           <Flex h="54px">
             {activeScheme.colors.map((item) => (
               <Box key={item.role} flex={1} bg={item.color} display="flex" alignItems="flex-end" px={2} py={1}>
-                <Text fontSize="8px" fontFamily="mono" color="white" textShadow="0 1px 3px rgba(0,0,0,0.45)">{item.color}</Text>
+                <Text fontSize="8px" fontFamily="mono" color="#ffffff" textShadow="0 1px 3px rgba(0,0,0,0.45)">{item.color}</Text>
               </Box>
             ))}
           </Flex>
@@ -616,7 +616,7 @@ export default function ColorResearchPage() {
         <Heading size="xs" mb={1.5}>组件预览</Heading>
         <Stack gap={2}>
           <Flex gap={2} wrap="wrap">
-            <Button size="sm" bg={brandColor} color="white" _hover={{ bg: palette.shades[6] }}>主按钮</Button>
+            <Button size="sm" bg={brandColor} color="#ffffff" _hover={{ bg: palette.shades[6] }}>主按钮</Button>
             <Button size="sm" variant="outline" borderColor={schemeColors[1]} color={schemeColors[1]}>次按钮</Button>
             <Button size="sm" variant="ghost">幽灵按钮</Button>
           </Flex>

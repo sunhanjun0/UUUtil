@@ -1,21 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import {
-  Badge,
-  Box,
-  Button,
-  Flex,
-  FormControl,
-  FormLabel,
-  Heading,
-  Input,
-  Select,
-  Stack,
-  Switch,
-  Text,
-  Textarea,
-  useClipboard,
-  useToast,
-} from '@chakra-ui/react';
+import { useClipboard, useToast } from '@chakra-ui/react';
+import { ArrowRight, Copy, Languages } from 'lucide-react';
 import type { AiMessage } from '../../src/shared/types';
 
 const languageOptions = [
@@ -93,74 +78,118 @@ export default function TranslationPage() {
   }
 
   return (
-    <Box w="100%">
-      <Box bg="white" borderRadius="sm" p={4} mb={1.5}>
-        <Flex justify="space-between" align="center" mb={2}>
-          <Box>
-            <Heading size="sm">翻译助手</Heading>
-            <Text fontSize="xs" color="gray.500" mt={1}>基于 AI 核心配置进行翻译，后续可扩展术语表、批量翻译和双语对照。</Text>
-          </Box>
-          <Badge colorScheme="blue">AI</Badge>
-        </Flex>
-      </Box>
+    <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head">
+        <span className="code">LINGUIST</span>
+        <span className="zh">翻译</span>
+        <span className="sub">PARSE // 多语互译</span>
+      </div>
 
-      <Flex gap={1.5} wrap="wrap">
-        <Box bg="white" borderRadius="sm" p={4} flex="1 1 320px">
-          <Stack gap={3}>
-            <FormControl>
-              <FormLabel fontSize="xs">目标语言</FormLabel>
-              <Select size="sm" value={targetLanguage} onChange={(e) => setTargetLanguage(e.target.value)}>
-                {languageOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </Select>
-            </FormControl>
-            <FormControl>
-              <FormLabel fontSize="xs">语气</FormLabel>
-              <Select size="sm" value={tone} onChange={(e) => setTone(e.target.value)}>
-                {toneOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </Select>
-            </FormControl>
-            <Flex justify="space-between" align="center">
-              <Text fontSize="sm">保留格式</Text>
-              <Switch isChecked={preserveFormatting} onChange={(e) => setPreserveFormatting(e.target.checked)} />
-            </Flex>
-            <Flex justify="space-between" align="center">
-              <Text fontSize="sm">显示原文</Text>
-              <Switch isChecked={showOriginal} onChange={(e) => setShowOriginal(e.target.checked)} />
-            </Flex>
-            <FormControl>
-              <FormLabel fontSize="xs">源文本</FormLabel>
-              <Textarea value={sourceText} onChange={(e) => setSourceText(e.target.value)} minH="180px" placeholder="输入要翻译的内容" />
-            </FormControl>
-            <Button colorScheme="blue" onClick={handleTranslate} isLoading={loading}>开始翻译</Button>
-          </Stack>
-        </Box>
+      {/* 控制台：目标语言 / 语气 / 开关 */}
+      <div className="ck-panel" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="ck-tools">
+          <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.2em', flexShrink: 0 }}>LANG</span>
+          {languageOptions.map((option) => (
+            <button
+              key={option.value}
+              className={'ck-chip' + (targetLanguage === option.value ? ' on' : '')}
+              onClick={() => setTargetLanguage(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+          <div className="ck-spacer" />
+          <button
+            className={'ck-chip' + (preserveFormatting ? ' on' : '')}
+            onClick={() => setPreserveFormatting((v) => !v)}
+          >
+            FMT 保留格式
+          </button>
+          <button
+            className={'ck-chip' + (showOriginal ? ' on' : '')}
+            onClick={() => setShowOriginal((v) => !v)}
+          >
+            SRC 显示原文
+          </button>
+        </div>
 
-        <Box bg="white" borderRadius="sm" p={4} flex="1 1 320px">
-          <Flex justify="space-between" align="center" mb={3}>
-            <Heading size="xs">译文</Heading>
-            <Button size="xs" variant="outline" onClick={handleCopy} isDisabled={!translatedText}>复制结果</Button>
-          </Flex>
+        <div className="ck-tools">
+          <span className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.2em', flexShrink: 0 }}>TONE</span>
+          {toneOptions.map((option) => (
+            <button
+              key={option.value}
+              className={'ck-chip' + (tone === option.value ? ' on' : '')}
+              onClick={() => setTone(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+          <div className="ck-spacer" />
+          <button className="ck-btn primary" onClick={handleTranslate} disabled={loading}>
+            <ArrowRight size={12} /> {loading ? '翻译中…' : '开始翻译'}
+          </button>
+        </div>
+      </div>
+
+      {/* 源 / 译 双栏 */}
+      <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, flexWrap: 'wrap', overflowY: 'auto' }}>
+        <div className="ck-panel" style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 280 }}>
+          <div className="ck-hairline" style={{ margin: 0 }}>SOURCE // 源文本</div>
+          <div className="ck-input" style={{ alignItems: 'flex-start', padding: '8px 12px', flex: 1 }}>
+            <textarea
+              value={sourceText}
+              onChange={(e) => setSourceText(e.target.value)}
+              placeholder="输入要翻译的内容"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                alignSelf: 'stretch',
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: 'var(--ink)',
+                fontFamily: 'inherit',
+                fontSize: 12.5,
+                lineHeight: 1.6,
+                resize: 'vertical',
+                minHeight: 200,
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="ck-panel" style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 280 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="ck-hairline" style={{ margin: 0, flex: 1 }}>TARGET // 译文</div>
+            <button className="ck-btn" onClick={handleCopy} disabled={!translatedText}>
+              <Copy size={12} /> 复制结果
+            </button>
+          </div>
 
           {showOriginal && (
-            <Box mb={3} p={3} borderRadius="md" bg="gray.50">
-              <Text fontSize="xs" color="gray.500" mb={1}>原文</Text>
-              <Text fontSize="sm" whiteSpace="pre-wrap">{sourceText}</Text>
-            </Box>
+            <div style={{ border: '1px solid var(--line)', borderRadius: 3, padding: '8px 10px' }}>
+              <div className="ck-dim" style={{ fontSize: 10, letterSpacing: '0.2em', marginBottom: 4 }}>SRC // 原文</div>
+              <div style={{ whiteSpace: 'pre-wrap', color: 'var(--ink-2)', fontSize: 12.5 }}>{sourceText}</div>
+            </div>
           )}
 
-          <Box p={3} borderRadius="md" bg="gray.50" minH="220px">
-            {translatedText ? (
-              <Text fontSize="sm" whiteSpace="pre-wrap">{translatedText}</Text>
-            ) : (
-              <Text fontSize="sm" color="gray.400">翻译结果会显示在这里。</Text>
+          <div style={{
+            flex: 1,
+            minHeight: 200,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            fontSize: 12.5,
+            color: translatedText ? 'var(--ink)' : 'var(--ink-3)',
+          }}>
+            {translatedText || (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Languages size={14} color="var(--uu-icon-muted)" />
+                翻译结果会显示在这里。
+              </span>
             )}
-          </Box>
-        </Box>
-      </Flex>
-    </Box>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

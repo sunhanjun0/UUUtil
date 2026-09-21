@@ -4,7 +4,7 @@ import DevUtils from '../components/DevUtils';
 
 export default function DevUtilsPage() {
   return (
-    <Box w="100%">
+    <Box w="100%" h="100%">
       <Box bg="white" borderRadius="sm" p={4}>
         <DevUtils />
       </Box>

@@ -1,32 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Badge,
-  Box,
-  Button,
-  Divider,
-  Flex,
-  HStack,
-  Heading,
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuList,
-  Select,
-  Spinner,
-  Text,
-  Textarea,
-  VStack,
-  useToast,
-} from '@chakra-ui/react';
+import { Spinner, useToast } from '@chakra-ui/react';
 import {
   AlertTriangle,
-  Bell,
   Bot,
   CheckCircle2,
   Clock,
   Folder,
   Info,
-  RefreshCw, ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
 import type { Reminder, ReminderAction, ReminderSeverity, ReminderStatus, ReminderType } from '../../src/shared/types';
 
@@ -39,15 +20,9 @@ const STATUS_OPTIONS: { value: ReminderStatus | 'all'; label: string }[] = [
 ];
 
 function TypeDot({ type }: { type: ReminderType }) {
-  const color = type === 'action' ? '#F59E0B' : '#3B82F6';
   return (
-    <Box
-      w="10px"
-      h="10px"
-      borderRadius="full"
-      bg={color}
-      flexShrink={0}
-      mt="6px"
+    <span
+      className={'check ' + (type === 'action' ? 'p1' : 'p3')}
       title={type === 'action' ? '需处理' : '告知'}
     />
   );
@@ -57,27 +32,20 @@ function TypeDot({ type }: { type: ReminderType }) {
 function AgentBadge({ agentId, priority }: { agentId: string | null; priority: string | null }) {
   if (!agentId) return null;
   return (
-    <HStack spacing={0.5}>
-      <Badge
-        variant="solid"
-        colorScheme={priority === 'high' ? 'red' : 'purple'}
-        size="sm"
-        px={1.5}
-        py={0}
-        fontSize="10px"
-        borderRadius="full"
-      >
-        <Bot size={10} style={{ display: 'inline', marginRight: 2 }} />
-        {agentId}
-      </Badge>
-    </HStack>
+    <span
+      className={'tag ' + (priority === 'high' ? 'ck-err' : 'ck-phos')}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <Bot size={10} />
+      {agentId}
+    </span>
   );
 }
 
 function SeverityIcon({ severity }: { severity: ReminderSeverity }) {
-  if (severity === 'error') return <AlertTriangle size={14} color="#DC2626" />;
-  if (severity === 'warning') return <AlertTriangle size={14} color="#F59E0B" />;
-  return <Info size={14} color="#6B7280" />;
+  if (severity === 'error') return <AlertTriangle size={13} className="ck-err" />;
+  if (severity === 'warning') return <AlertTriangle size={13} className="ck-warn" />;
+  return <Info size={13} color="var(--uu-icon-muted)" />;
 }
 
 function formatRelativeTime(iso: string): string {
@@ -143,192 +111,184 @@ export default function ReminderCenter() {
     };
   }, [load]);
 
-  return (
-    <Flex direction="column" h="100%" p={4} gap={3}>
-      <Flex align="center" gap={3}>
-        <HStack spacing={2}>
-          <Bell size={18} />
-          <Heading size="md">提醒中心</Heading>
-        </HStack>
-        <Box flex={1} />
-        <Select
-          size="sm"
-          w="120px"
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value as ReminderStatus | 'all');
-            setSelectedId(null);
-          }}
-        >
-          {STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </Select>
-        <Text fontSize="xs" color="gray.500">共 {items.length} 条</Text>
-        {projects.length > 0 && (
-          <Menu>
-            <MenuButton as={Button} size="xs" variant="ghost" rightIcon={<ChevronDown size={12} />}>
-              <HStack spacing={1}>
-                <Folder size={12} />
-                <Text>{projectFilter === 'all' ? '全部项目' : projectFilter}</Text>
-              </HStack>
-            </MenuButton>
-            <MenuList>
-              <MenuItem onClick={() => setProjectFilter('all')}>全部项目</MenuItem>
-              {projects.map((p) => (
-                <MenuItem key={p} onClick={() => setProjectFilter(p)}>{p}</MenuItem>
-              ))}
-            </MenuList>
-          </Menu>
+  const actionItems = items.filter((it) => it.type === 'action');
+  const errorItems = items.filter(
+    (it) => it.type !== 'action' && (it.severity === 'error' || it.severity === 'warning'),
+  );
+  const infoItems = items.filter(
+    (it) => it.type !== 'action' && it.severity !== 'error' && it.severity !== 'warning',
+  );
+
+  const renderRow = (it: Reminder) => {
+    const sel = selectedId === it.id;
+    return (
+      <div
+        key={it.id}
+        className="ck-row"
+        style={{
+          cursor: 'pointer',
+          borderRadius: sel ? 3 : undefined,
+          background: sel ? 'rgba(103,232,249,0.07)' : undefined,
+          boxShadow: sel ? 'inset 0 0 0 1px var(--line-strong)' : undefined,
+        }}
+        onClick={() => setSelectedId(it.id)}
+      >
+        <TypeDot type={it.type} />
+        <div className="ck-item" style={{ flex: 1 }}>
+          <div className="ck-item-main">
+            <div className="ck-item-title">{it.title}</div>
+            {it.body && <div className="ck-dim" style={{ fontSize: 11 }}>{it.body}</div>}
+          </div>
+        </div>
+        <span className="tag">{it.type === 'action' ? 'ACTION' : 'INFO'}</span>
+        {it.stage ? (
+          <span className="tag">{it.stage}</span>
+        ) : (
+          <SeverityIcon severity={it.severity} />
         )}
-        <Button size="xs" variant="ghost" onClick={() => void load()} isLoading={loading} leftIcon={<RefreshCw size={12} />}>
-          刷新
-        </Button>
-      </Flex>
+        {it.project && <span className="tag">{it.project}</span>}
+        {it.agentId && <Bot size={13} className="ck-phos" style={{ flexShrink: 0 }} />}
+        <span className="ck-util">{formatRelativeTime(it.createdAt)}</span>
+      </div>
+    );
+  };
 
-      <Flex flex={1} minH={0} gap={3}>
-        {/* 列表 */}
-        <Box flex="0 0 55%" borderWidth="1px" borderRadius="md" overflow="auto">
+  return (
+    <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head">
+        <span className="code">ALERTS</span>
+        <span className="zh">提醒</span>
+        <span className="sub">PAGER // 通知中心</span>
+      </div>
+
+      <div className="ck-tools">
+        <span className="ck-chips">
+          {STATUS_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              className={'ck-chip' + (status === opt.value ? ' on' : '')}
+              onClick={() => {
+                setStatus(opt.value);
+                setSelectedId(null);
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </span>
+        <div className="ck-spacer" />
+        {projects.length > 0 && (
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            title="筛选项目"
+            style={{
+              fontFamily: 'inherit',
+              fontSize: '10.5px',
+              letterSpacing: '0.04em',
+              color: 'var(--ink-2)',
+              background: 'var(--bg2)',
+              border: '1px solid var(--line-strong)',
+              borderRadius: 3,
+              padding: '3px 8px',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <option value="all">◈ 全部项目</option>
+            {projects.map((p) => (
+              <option key={p} value={p}>◈ {p}</option>
+            ))}
+          </select>
+        )}
+        <span className="ck-util">共 {items.length} 条</span>
+        <button className="ck-btn" onClick={() => void load()} disabled={loading}>
+          <RefreshCw size={12} /> 刷新
+        </button>
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
+        <div className="ck-list" style={{ flex: '0 0 55%', minWidth: 0 }}>
           {loading && items.length === 0 ? (
-            <Flex align="center" justify="center" h="100%"><Spinner size="sm" /></Flex>
+            <div className="ck-empty" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <div className="code">ALERTS // SYNC</div>
+              <Spinner size="sm" />
+            </div>
           ) : items.length === 0 ? (
-            <Flex align="center" justify="center" h="100%" color="gray.500" fontSize="sm">
-              <VStack spacing={2}>
-                <CheckCircle2 size={20} />
-                <Text>暂无提醒</Text>
-              </VStack>
-            </Flex>
-          ) : (
-            <VStack align="stretch" spacing={0} divider={<Divider />}>
-              {items.map((it) => (
-                <Box
-                  key={it.id}
-                  px={3}
-                  py={2}
-                  cursor="pointer"
-                  bg={selectedId === it.id ? 'blue.50' : 'transparent'}
-                  _hover={{ bg: selectedId === it.id ? 'blue.50' : 'gray.50' }}
-                  onClick={() => setSelectedId(it.id)}
-                >
-                  <HStack align="flex-start" spacing={2}>
-                    <TypeDot type={it.type} />
-                    {it.agentId && <Bot size={14} color="#9333EA" />}
-                    <VStack align="stretch" spacing={0.5} flex={1} minW={0}>
-                      <HStack spacing={2} minW={0}>
-                        <Text fontSize="sm" fontWeight="medium" noOfLines={1} flex={1}>
-                          {it.title}
-                        </Text>
-                        <Text fontSize="xs" color="gray.500" flexShrink={0}>
-                          {formatRelativeTime(it.createdAt)}
-                        </Text>
-                      </HStack>
-                      <HStack spacing={2}>
-                        {it.stage && (
-                          <Badge size="sm" variant="subtle" colorScheme={
-                            it.stage === 'done' ? 'green' : 
-                            it.stage === 'blocked' ? 'red' : 
-                            it.stage === 'progress' ? 'orange' : 'blue'
-                          } fontSize="10px" px={1.5} py={0}>
-                            {it.stage}
-                          </Badge>
-                        )}
-                        {!it.stage && <SeverityIcon severity={it.severity} />}
-                        {it.project && (
-                          <Badge size="sm" variant="outline" colorScheme="gray" fontSize="10px" px={1.5} py={0}>
-                            {it.project}
-                          </Badge>
-                        )}
-                        {it.body && (
-                          <Text fontSize="xs" color="gray.500" noOfLines={1}>
-                            {it.body}
-                          </Text>
-                        )}
-                      </HStack>
-                      {it.agentId && (
-                        <HStack spacing={2} mt={1}>
-                          <Badge size="sm" variant="subtle" colorScheme="purple" fontSize="10px" px={1.5} py={0}>
-                            Agent: {it.agentId}
-                          </Badge>
-                          {it.topic && (
-                            <Text fontSize="xs" color="gray.400">
-                              {it.topic}
-                            </Text>
-                          )}
-                        </HStack>
-                      )}
-                    </VStack>
-                  </HStack>
-                </Box>
-              ))}
-            </VStack>
-          )}
-        </Box>
-
-        {/* 详情 */}
-        <VStack flex="1" align="stretch" spacing={0} borderWidth="1px" borderRadius="md" overflow="hidden">
-          {!selected ? (
-            <Flex align="center" justify="center" h="100%" color="gray.500" fontSize="sm">
-              请选择一条提醒查看详情
-            </Flex>
+            <div className="ck-empty" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="code">NO SIGNAL</div>
+              {status === 'all' ? '暂无提醒' : '该筛选下暂无提醒'}
+            </div>
           ) : (
             <>
-              {/* 头部 */}
-              <VStack align="stretch" spacing={2} p={3} borderBottomWidth="1px">
-                <Flex align="center" gap={2}>
-                  <Heading size="sm">{selected.title}</Heading>
-                  <Box flex={1} />
-                  <AgentBadge agentId={selected.agentId} priority={selected.priority} />
-                </Flex>
-
-                <HStack spacing={3} flexWrap="wrap">
-                  <HStack spacing={1} fontSize="xs" color="gray.500">
-                    <Clock size={12} />
-                    <Text>创建：{formatRelativeTime(selected.createdAt)}</Text>
-                  </HStack>
-                  <HStack spacing={1} fontSize="xs" color="gray.500">
-                    <Text>更新：{formatRelativeTime(selected.updatedAt)}</Text>
-                  </HStack>
-                  {selected.project && (
-                    <HStack spacing={1} fontSize="xs">
-                      <Folder size={12} />
-                      <Text>{selected.project}</Text>
-                    </HStack>
-                  )}
-                  {selected.topic && (
-                    <Badge size="sm" variant="subtle" colorScheme="gray" fontSize="10px">
-                      {selected.topic}
-                    </Badge>
-                  )}
-                </HStack>
-              </VStack>
-
-              {/* 内容区域 - 简单的预格式化文本 */}
-              <Box flex={1} overflow="auto" p={3}>
-                {selected.body ? (
-                  <Box fontSize="sm" whiteSpace="pre-wrap" fontFamily={selected.agentId ? 'monospace' : 'inherit'}>
-                    {selected.body}
-                  </Box>
-                ) : null}
-              </Box>
-
-              {/* 响应面板 */}
-              <Box p={3} borderTopWidth="1px">
-                <ReminderResponsePanel reminder={selected} />
-              </Box>
+              {actionItems.length > 0 && (
+                <>
+                  <div className="ck-hairline danger">ACTION // 待确认 <span className="n">{actionItems.length}</span></div>
+                  {actionItems.map(renderRow)}
+                </>
+              )}
+              {errorItems.length > 0 && (
+                <>
+                  <div className="ck-hairline ck-err">ERROR // 告警 <span className="n">{errorItems.length}</span></div>
+                  {errorItems.map(renderRow)}
+                </>
+              )}
+              {infoItems.length > 0 && (
+                <>
+                  <div className="ck-hairline">INFO // 通知 <span className="n">{infoItems.length}</span></div>
+                  {infoItems.map(renderRow)}
+                </>
+              )}
             </>
           )}
-        </VStack>
-      </Flex>
-    </Flex>
-  );
-}
+        </div>
 
-function buttonColorScheme(style?: ReminderAction['style']): string | undefined {
-  if (style === 'primary') return 'blue';
-  if (style === 'danger') return 'red';
-  return undefined;
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          {!selected ? (
+            <div className="ck-empty" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="code">NO SELECT</div>
+              请选择一条提醒查看详情
+            </div>
+          ) : (
+            <div className="ck-panel brackets" style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 13.5, color: 'var(--phos)', letterSpacing: '0.04em', wordBreak: 'break-word' }}>
+                    {selected.title}
+                  </div>
+                  <AgentBadge agentId={selected.agentId} priority={selected.priority} />
+                </div>
+                <div className="ck-tools" style={{ marginTop: 8 }}>
+                  <span className="ck-util" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <Clock size={12} /> 创建 {formatRelativeTime(selected.createdAt)}
+                  </span>
+                  <span className="ck-util">更新 {formatRelativeTime(selected.updatedAt)}</span>
+                  {selected.project && (
+                    <span className="tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <Folder size={10} /> {selected.project}
+                    </span>
+                  )}
+                  {selected.topic && <span className="tag">{selected.topic}</span>}
+                </div>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '12px 14px' }}>
+                {selected.body ? (
+                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12.5, color: 'var(--ink)' }}>
+                    {selected.body}
+                  </div>
+                ) : (
+                  <div className="ck-dim" style={{ fontSize: 11 }}>NO PAYLOAD</div>
+                )}
+              </div>
+              <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line)', flexShrink: 0 }}>
+                <ReminderResponsePanel reminder={selected} />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ReminderResponsePanel({ reminder }: { reminder: Reminder }) {
@@ -384,37 +344,44 @@ function ReminderResponsePanel({ reminder }: { reminder: Reminder }) {
     const label =
       reminder.actions?.find((a) => a.id === reminder.response!.actionId)?.label ?? reminder.response.actionId;
     return (
-      <HStack spacing={2} fontSize="sm">
-        <CheckCircle2 size={14} />
-        <Text>已响应：<b>{label}</b> · {formatRelativeTime(reminder.response.respondedAt)}</Text>
-      </HStack>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+        <CheckCircle2 size={14} className="ck-ok" />
+        <span className="ck-sub">
+          已响应：<span className="ck-phos">{label}</span> · {formatRelativeTime(reminder.response.respondedAt)}
+        </span>
+      </div>
     );
   }
 
   if (reminder.status === 'dismissed') {
-    return <Text fontSize="sm" color="gray.500">已忽略 · {formatRelativeTime(reminder.doneAt ?? reminder.updatedAt)}</Text>;
+    return (
+      <div className="ck-dim" style={{ fontSize: 12.5 }}>
+        已忽略 · {formatRelativeTime(reminder.doneAt ?? reminder.updatedAt)}
+      </div>
+    );
   }
 
   if (!reminder.actions || reminder.actions.length === 0) {
     if (reminder.type !== 'action') return null;
     return (
-      <Button size="sm" variant="ghost" onClick={() => void dismiss()} isLoading={submitting}>
+      <button className="ck-btn" onClick={() => void dismiss()} disabled={submitting}>
         忽略这条
-      </Button>
+      </button>
     );
   }
 
+  const actionClass = (style?: ReminderAction['style']) =>
+    style === 'primary' ? ' primary' : style === 'danger' ? ' danger' : '';
+
   return (
-    <VStack align="stretch" spacing={2}>
-      <Text fontSize="xs" color="gray.500">请选择一个响应</Text>
-      <HStack spacing={2} flexWrap="wrap">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <span className="ck-dim" style={{ fontSize: 11 }}>请选择一个响应</span>
+      <div className="ck-tools">
         {reminder.actions.map((action) => (
-          <Button
+          <button
             key={action.id}
-            size="sm"
-            colorScheme={buttonColorScheme(action.style)}
-            variant={action.style === 'primary' || action.style === 'danger' ? 'solid' : 'outline'}
-            isDisabled={submitting}
+            className={'ck-btn' + actionClass(action.style)}
+            disabled={submitting}
             onClick={() => {
               if (action.requiresReason) {
                 setPendingAction((prev) => (prev?.id === action.id ? null : action));
@@ -425,41 +392,46 @@ function ReminderResponsePanel({ reminder }: { reminder: Reminder }) {
             }}
           >
             {action.label}
-          </Button>
+          </button>
         ))}
-        <Button size="sm" variant="ghost" onClick={() => void dismiss()} isDisabled={submitting}>
-          忽略
-        </Button>
-      </HStack>
+        <button className="ck-btn" onClick={() => void dismiss()} disabled={submitting}>忽略</button>
+      </div>
       {pendingAction && (
-        <VStack align="stretch" spacing={2} mt={2}>
-          <Text fontSize="xs" color="gray.600">
-            按 <b>{pendingAction.label}</b> 需要填写理由
-          </Text>
-          <Textarea
-            size="sm"
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+          <span className="ck-dim" style={{ fontSize: 11 }}>
+            按 <span className="ck-warn">{pendingAction.label}</span> 需要填写理由
+          </span>
+          <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="请说明理由..."
             rows={2}
-            isDisabled={submitting}
+            disabled={submitting}
+            style={{
+              fontFamily: 'inherit',
+              fontSize: 12.5,
+              color: 'var(--ink)',
+              background: 'var(--bg)',
+              border: '1px solid var(--line-strong)',
+              borderRadius: 4,
+              padding: '8px 10px',
+              resize: 'vertical',
+              outline: 'none',
+              minWidth: 0,
+            }}
           />
-          <HStack spacing={2}>
-            <Button
-              size="sm"
-              colorScheme={buttonColorScheme(pendingAction.style) ?? 'blue'}
-              isDisabled={!reason.trim() || submitting}
-              isLoading={submitting}
+          <div className="ck-tools">
+            <button
+              className={'ck-btn' + actionClass(pendingAction.style)}
+              disabled={!reason.trim() || submitting}
               onClick={() => void submit(pendingAction, reason.trim())}
             >
               提交 {pendingAction.label}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setPendingAction(null); setReason(''); }}>
-              取消
-            </Button>
-          </HStack>
-        </VStack>
+            </button>
+            <button className="ck-btn" onClick={() => { setPendingAction(null); setReason(''); }}>取消</button>
+          </div>
+        </div>
       )}
-    </VStack>
+    </div>
   );
 }

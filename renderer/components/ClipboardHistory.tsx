@@ -1,30 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Box,
-  Button,
-  Divider,
   Flex,
-  HStack,
-  Heading,
-  IconButton,
   Image,
-  Input,
-  InputGroup,
-  InputLeftElement,
   Modal,
   ModalBody,
   ModalCloseButton,
   ModalContent,
   ModalOverlay,
   Spinner,
-  Text,
-  Tooltip,
-  VStack,
   useDisclosure,
   useToast,
 } from '@chakra-ui/react';
 import {
-  Clipboard,
   Copy,
   Eye,
   ExternalLink,
@@ -33,7 +21,6 @@ import {
   FolderOpen,
   ImageIcon,
   RefreshCw,
-  Search,
   Star,
   Trash2,
   Type,
@@ -74,6 +61,8 @@ const KIND_FILTERS: { key: ClipboardKind | 'all'; label: string; icon?: React.Re
   { key: 'file', label: '文件', icon: <FileIcon size={13} /> },
 ];
 
+const KIND_LABEL: Record<string, string> = { text: 'TXT', richtext: 'RTF', image: 'IMG', file: 'FILE' };
+
 function ClipboardThumb({ id, alt }: { id: string; alt: string }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
@@ -87,7 +76,7 @@ function ClipboardThumb({ id, alt }: { id: string; alt: string }) {
   if (!src) {
     return (
       <Flex w="40px" h="40px" align="center" justify="center" bg="gray.100" borderRadius="sm" flexShrink={0}>
-        <ImageIcon size={16} color="#A0AEC0" />
+        <ImageIcon size={16} color="var(--uu-icon-muted)" />
       </Flex>
     );
   }
@@ -110,65 +99,45 @@ function ItemBody({ item }: { item: ClipboardItem }) {
   if (item.kind === 'image') {
     const m = item.meta?.image;
     return (
-      <VStack align="stretch" spacing={0.5} flex={1} minW={0}>
-        <HStack spacing={2} align="center">
-          <ClipboardThumb id={item.id} alt={m?.filename ?? '图片'} />
-          <Text fontSize="sm" color="gray.600" noOfLines={1}>
-            {m ? `${m.width}×${m.height}` : '图片'}
-          </Text>
-          {m && <Text fontSize="xs" color="gray.400">{humanSize(m.sizeBytes)}</Text>}
-        </HStack>
-      </VStack>
+      <div className="ck-item">
+        <ClipboardThumb id={item.id} alt={m?.filename ?? '图片'} />
+        <div className="ck-item-main">
+          <div className="ck-item-title">{m ? `${m.width}×${m.height}` : '图片'}</div>
+          {m && <div className="ck-dim" style={{ fontSize: 11 }}>{humanSize(m.sizeBytes)}</div>}
+        </div>
+      </div>
     );
   }
   if (item.kind === 'file') {
     const m = item.meta?.file;
     return (
-      <VStack align="stretch" spacing={0.5} flex={1} minW={0}>
-        <HStack spacing={2} align="center">
-          <Box mt="2px" flexShrink={0} color={m?.isDir ? 'blue.500' : 'gray.500'}>
-            {m?.isDir ? <Folder size={16} /> : <FileIcon size={16} />}
-          </Box>
-          <Tooltip label={m?.path ?? ''} placement="top" hasArrow>
-            <Text fontSize="sm" noOfLines={1} wordBreak="break-all">{m?.name ?? item.content}</Text>
-          </Tooltip>
-        </HStack>
-        <HStack spacing={2} fontSize="xs" color="gray.500">
-          <Text>{m && m.sizeBytes > 0 ? humanSize(m.sizeBytes) : (m?.isDir ? '文件夹' : '文件')}</Text>
-        </HStack>
-      </VStack>
+      <div className="ck-item">
+        <div className="ck-item-ico">{m?.isDir ? <Folder size={16} /> : <FileIcon size={16} />}</div>
+        <div className="ck-item-main">
+          <div className="ck-item-title">{m?.name ?? item.content}</div>
+          <div className="ck-dim" style={{ fontSize: 11 }}>
+            {m && m.sizeBytes > 0 ? humanSize(m.sizeBytes) : (m?.isDir ? '文件夹' : '文件')}
+          </div>
+        </div>
+      </div>
     );
   }
   // text / richtext
   return (
-    <VStack align="stretch" spacing={0.5} flex={1} minW={0}>
-      <Text fontSize="sm" noOfLines={2} wordBreak="break-all">
-        {previewText(item.content)}
-      </Text>
-      <HStack spacing={2} fontSize="xs" color="gray.500">
-        <Text>{formatRelativeTime(item.lastUsedAt)}</Text>
-        <Text>·</Text>
-        <Text>{item.length} 字符</Text>
-        {item.kind === 'richtext' && (
-          <>
-            <Text>·</Text>
-            <Tooltip label="保留 HTML 格式，粘贴到富文本编辑器不失真" hasArrow>
-              <Text color="purple.500" fontWeight="medium">富文本</Text>
-            </Tooltip>
-          </>
-        )}
-        {item.copyCount > 0 && (
-          <>
-            <Text>·</Text>
-            <Text>已复制 {item.copyCount} 次</Text>
-          </>
-        )}
-      </HStack>
-    </VStack>
+    <div className="ck-item">
+      <div className="ck-item-main" style={{ flex: 1 }}>
+        <div className="ck-item-title">{previewText(item.content)}</div>
+        <div className="ck-dim" style={{ fontSize: 11 }}>
+          {formatRelativeTime(item.lastUsedAt)} · {item.length} 字符
+          {item.kind === 'richtext' && ' · 富文本'}
+          {item.copyCount > 0 && ` · 已复制 ${item.copyCount} 次`}
+        </div>
+      </div>
+    </div>
   );
 }
 
-/** 按 kind 显示不同的操作按钮（仅图标） */
+/** 按 kind 显示不同操作（磷光图标按钮） */
 function ItemActions({ item, onCopy, onView, onOpenFile, onShowFolder, onPin, onRemove }: {
   item: ClipboardItem;
   onCopy: () => void;
@@ -179,87 +148,22 @@ function ItemActions({ item, onCopy, onView, onOpenFile, onShowFolder, onPin, on
   onRemove: () => void;
 }) {
   return (
-    <HStack spacing={1} flexShrink={0}>
-      {/* 复制按钮（所有类型） */}
-      <Tooltip label="复制到剪贴板">
-        <IconButton
-          aria-label="复制"
-          size="xs"
-          variant="ghost"
-          colorScheme="gray"
-          icon={<Copy size={14} />}
-          onClick={onCopy}
-        />
-      </Tooltip>
-
-      {/* 图片：查看大图 */}
+    <div style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+      <button className="ck-ico" title="复制到剪贴板" onClick={onCopy}><Copy size={14} /></button>
       {item.kind === 'image' && onView && (
-        <Tooltip label="查看大图">
-          <IconButton
-            aria-label="查看"
-            size="xs"
-            variant="ghost"
-            colorScheme="blue"
-            icon={<Eye size={14} />}
-            onClick={onView}
-          />
-        </Tooltip>
+        <button className="ck-ico" title="查看大图" onClick={onView}><Eye size={14} /></button>
       )}
-
-      {/* 文件：打开文件 + 在Finder显示 */}
       {item.kind === 'file' && (
         <>
-          {onOpenFile && (
-            <Tooltip label="打开文件">
-              <IconButton
-                aria-label="打开"
-                size="xs"
-                variant="ghost"
-                colorScheme="blue"
-                icon={<ExternalLink size={14} />}
-                onClick={onOpenFile}
-              />
-            </Tooltip>
-          )}
-          {onShowFolder && (
-            <Tooltip label="在 Finder 中显示">
-              <IconButton
-                aria-label="显示"
-                size="xs"
-                variant="ghost"
-                colorScheme="blue"
-                icon={<FolderOpen size={14} />}
-                onClick={onShowFolder}
-              />
-            </Tooltip>
-          )}
+          {onOpenFile && <button className="ck-ico" title="打开文件" onClick={onOpenFile}><ExternalLink size={14} /></button>}
+          {onShowFolder && <button className="ck-ico" title="在 Finder 中显示" onClick={onShowFolder}><FolderOpen size={14} /></button>}
         </>
       )}
-
-      {/* 置顶 */}
-      <Tooltip label={item.pinned ? '取消置顶' : '置顶'}>
-        <IconButton
-          aria-label="置顶"
-          size="xs"
-          variant="ghost"
-          colorScheme={item.pinned ? 'yellow' : 'gray'}
-          icon={<Star size={14} fill={item.pinned ? 'currentColor' : 'none'} />}
-          onClick={onPin}
-        />
-      </Tooltip>
-
-      {/* 删除 */}
-      <Tooltip label="删除">
-        <IconButton
-          aria-label="删除"
-          size="xs"
-          variant="ghost"
-          colorScheme="red"
-          icon={<X size={14} />}
-          onClick={onRemove}
-        />
-      </Tooltip>
-    </HStack>
+      <button className={'ck-ico' + (item.pinned ? ' on' : '')} title={item.pinned ? '取消置顶' : '置顶'} onClick={onPin}>
+        <Star size={14} fill={item.pinned ? 'currentColor' : 'none'} />
+      </button>
+      <button className="ck-ico danger" title="删除" onClick={onRemove}><X size={14} /></button>
+    </div>
   );
 }
 
@@ -271,7 +175,6 @@ export default function ClipboardHistory() {
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [kindFilter, setKindFilter] = useState<ClipboardKind | 'all'>('all');
 
-  // 图片预览弹窗
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [viewingImage, setViewingImage] = useState<{ id: string; src: string; meta?: any } | null>(null);
 
@@ -331,7 +234,6 @@ export default function ClipboardHistory() {
   async function handleViewImage(item: ClipboardItem) {
     if (item.kind !== 'image' || !item.meta?.image) return;
     try {
-      // 加载完整图片（readThumbnail返回dataURL，这里为演示用缩略图；生产应读完整图）
       const src = await window.assistant.clipboard.thumbnail(item.id);
       if (src) {
         setViewingImage({ id: item.id, src, meta: item.meta.image });
@@ -418,143 +320,107 @@ export default function ClipboardHistory() {
   }
 
   return (
-    <Flex direction="column" h="100%" p={4} gap={3}>
-      {/* 顶部工具栏 */}
-      <Flex align="center" gap={3}>
-        <HStack spacing={2}>
-          <Clipboard size={18} />
-          <Heading size="md">剪贴板历史</Heading>
-        </HStack>
-        <Box flex={1} />
-        <InputGroup size="sm" maxW="220px">
-          <InputLeftElement pointerEvents="none">
-            <Search size={13} color="#A0AEC0" />
-          </InputLeftElement>
-          <Input
+    <div className="ck" style={{ padding: '18px 22px 20px', gap: 10, display: 'flex', flexDirection: 'column' }}>
+      <div className="ck-head">
+        <span className="code">MEMORY BUFFER</span>
+        <span className="zh">剪贴板</span>
+        <span className="sub">LIVE MONITOR // 监听中 · {items.length} 条</span>
+      </div>
+
+      <div className="ck-tools">
+        <div className="ck-input" style={{ flex: 1, padding: '8px 12px' }}>
+          <span className="prompt">›</span>
+          <input
             placeholder="搜索复制过的内容…"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
           />
-        </InputGroup>
-        <Tooltip label={pinnedOnly ? '显示全部' : '只看置顶'}>
-          <Button
-            size="sm"
-            variant={pinnedOnly ? 'solid' : 'ghost'}
-            colorScheme={pinnedOnly ? 'yellow' : 'gray'}
-            onClick={() => setPinnedOnly((v) => !v)}
-            leftIcon={<Star size={13} fill={pinnedOnly ? 'currentColor' : 'none'} />}
-          >
-            置顶
-          </Button>
-        </Tooltip>
-        <Text fontSize="xs" color="gray.500" flexShrink={0}>共 {items.length} 条</Text>
-        <Button size="xs" variant="ghost" onClick={() => void load()} isLoading={loading} leftIcon={<RefreshCw size={12} />}>
-          刷新
-        </Button>
-        <Button size="xs" variant="ghost" colorScheme="red" onClick={() => void handleClear()} leftIcon={<Trash2 size={12} />}>
-          清空
-        </Button>
-      </Flex>
+          <kbd>⌘F</kbd>
+        </div>
+        <button className={'ck-chip' + (pinnedOnly ? ' on' : '')} onClick={() => setPinnedOnly((v) => !v)}>
+          <Star size={13} fill={pinnedOnly ? 'currentColor' : 'none'} /> 置顶
+        </button>
+        <div className="ck-spacer" />
+        <button className="ck-btn" onClick={() => void load()}>
+          <RefreshCw size={12} /> 刷新
+        </button>
+        <button className="ck-btn danger" onClick={() => void handleClear()}>
+          <Trash2 size={12} /> 清空
+        </button>
+      </div>
 
-      {/* 类型筛选 */}
-      <HStack spacing={1}>
+      <div className="ck-chips">
         {KIND_FILTERS.map((f) => (
-          <Button
+          <button
             key={f.key}
-            size="xs"
-            variant={kindFilter === f.key ? 'solid' : 'ghost'}
-            colorScheme={kindFilter === f.key ? 'blue' : 'gray'}
-            leftIcon={f.icon}
+            className={'ck-chip' + (kindFilter === f.key ? ' on' : '')}
             onClick={() => setKindFilter(f.key)}
           >
-            {f.label}
-          </Button>
+            {f.icon}{f.label}
+          </button>
         ))}
-      </HStack>
+      </div>
 
-      {/* 列表 */}
-      <Box flex={1} minH={0} borderWidth="1px" borderRadius="md" overflow="auto">
+      <div className="ck-list" style={{ marginTop: 2 }}>
         {loading && items.length === 0 ? (
-          <Flex align="center" justify="center" h="100%"><Spinner size="sm" /></Flex>
+          <div className="ck-empty"><div className="code">MEMORY BUFFER // SYNC</div><Spinner size="sm" ml="auto" mr="auto" />正在同步剪贴板…</div>
         ) : items.length === 0 ? (
-          <Flex align="center" justify="center" h="100%" color="gray.500" fontSize="sm">
-            <VStack spacing={2}>
-              <Clipboard size={22} />
-              <Text>{keyword || pinnedOnly || kindFilter !== 'all' ? '没有匹配的记录' : '暂无剪贴板历史，复制任意内容即可记录'}</Text>
-            </VStack>
-          </Flex>
+          <div className="ck-empty">
+            <div className="code">NO DATA</div>
+            {keyword || pinnedOnly || kindFilter !== 'all' ? '没有匹配的记录' : '暂无剪贴板历史，复制任意内容即可记录'}
+          </div>
         ) : (
-          <VStack align="stretch" spacing={0} divider={<Divider />}>
+          <>
+            <div className="ck-hairline">RECENT // 最近记录 <span className="n">{items.length}</span></div>
             {items.map((item) => (
-              <Flex
-                key={item.id}
-                className="clip-row"
-                px={3}
-                py={2}
-                align="flex-start"
-                gap={2}
-                bg={item.pinned ? 'yellow.50' : 'transparent'}
-                _hover={{ bg: item.pinned ? 'yellow.100' : 'gray.50' }}
-                sx={{
-                  '& .clip-actions': { opacity: 0 },
-                  '&:hover .clip-actions': { opacity: 1 },
-                }}
-              >
-                {/* 置顶标记 */}
-                <Box mt="3px" flexShrink={0} w="16px">
-                  {item.pinned && <Star size={14} color="#D69E2E" fill="#D69E2E" />}
-                </Box>
-
-                {/* 内容主体 */}
+              <div key={item.id} className="ck-row">
                 <ItemBody item={item} />
-
-                {/* 操作按钮（悬浮显示）*/}
-                <Box className="clip-actions" onClick={(e) => e.stopPropagation()} transition="opacity 0.15s">
-                  <ItemActions
-                    item={item}
-                    onCopy={() => void handleCopy(item)}
-                    onView={item.kind === 'image' ? () => void handleViewImage(item) : undefined}
-                    onOpenFile={item.kind === 'file' ? () => void handleOpenFile(item) : undefined}
-                    onShowFolder={item.kind === 'file' ? () => void handleShowInFolder(item) : undefined}
-                    onPin={() => void handleTogglePin(item)}
-                    onRemove={() => void handleRemove(item)}
-                  />
-                </Box>
-              </Flex>
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10 }}>
+                  <span className="tag">{KIND_LABEL[item.kind]}</span>
+                  <span className="ck-util">{formatRelativeTime(item.lastUsedAt)}</span>
+                </div>
+                <ItemActions
+                  item={item}
+                  onCopy={() => void handleCopy(item)}
+                  onView={item.kind === 'image' ? () => void handleViewImage(item) : undefined}
+                  onOpenFile={item.kind === 'file' ? () => void handleOpenFile(item) : undefined}
+                  onShowFolder={item.kind === 'file' ? () => void handleShowInFolder(item) : undefined}
+                  onPin={() => void handleTogglePin(item)}
+                  onRemove={() => void handleRemove(item)}
+                />
+              </div>
             ))}
-          </VStack>
+          </>
         )}
-      </Box>
+      </div>
 
-      {/* 图片预览弹窗 */}
       <Modal isOpen={isOpen} onClose={onClose} size="xl" isCentered>
         <ModalOverlay />
         <ModalContent maxW="90vw" maxH="90vh">
           <ModalCloseButton />
           <ModalBody p={4}>
             {viewingImage && (
-              <VStack spacing={3} align="center">
+              <Box textAlign="center">
                 <Image
                   src={viewingImage.src}
                   alt="预览"
                   maxW="100%"
                   maxH="70vh"
                   objectFit="contain"
+                  display="inline-block"
                 />
-                <HStack fontSize="sm" color="gray.600">
+                <Box mt={3} fontSize="sm" color="gray.600">
                   {viewingImage.meta && (
                     <>
-                      <Text>{viewingImage.meta.width}×{viewingImage.meta.height}</Text>
-                      <Text>·</Text>
-                      <Text>{humanSize(viewingImage.meta.sizeBytes)}</Text>
+                      {viewingImage.meta.width}×{viewingImage.meta.height} · {humanSize(viewingImage.meta.sizeBytes)}
                     </>
                   )}
-                </HStack>
-              </VStack>
+                </Box>
+              </Box>
             )}
           </ModalBody>
         </ModalContent>
       </Modal>
-    </Flex>
+    </div>
   );
 }
