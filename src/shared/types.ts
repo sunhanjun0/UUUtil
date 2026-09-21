@@ -186,7 +186,8 @@ export interface KnowledgeBaseApi {
   updateNote(noteId: string, title: string, content: string, categoryId: string, tagIds: string[]): { success: boolean; error?: string };
   deleteNote(noteId: string): { success: boolean; error?: string };
   getNotes(categoryId?: string, tagId?: string): KnowledgeNote[];
-  searchNotes(keyword: string): KnowledgeSearchResult;
+  /** 语义优先（OpenViking 可达时），不可达回落本地 LIKE */
+  searchNotes(keyword: string): Promise<KnowledgeSearchResult>;
   createCategory(name: string, color?: string): { success: boolean; categoryId?: string; error?: string };
   getCategories(): KnowledgeCategory[];
   deleteCategory(categoryId: string): { success: boolean; error?: string };

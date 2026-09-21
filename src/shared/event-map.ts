@@ -35,7 +35,7 @@ export type ActionResultPayload<T = unknown> = { action: string; result: T };
 export type DevUtilsAction = keyof DevUtilsApi;
 export type DevUtilsResult = ReturnType<DevUtilsApi[DevUtilsAction]>;
 export type KnowledgeBaseAction = keyof KnowledgeBaseApi;
-export type KnowledgeBaseResult = ReturnType<KnowledgeBaseApi[KnowledgeBaseAction]>;
+export type KnowledgeBaseResult = Awaited<ReturnType<KnowledgeBaseApi[KnowledgeBaseAction]>>;
 
 export interface AppEventMap {
   'core:ready': [];

@@ -4,14 +4,16 @@
 
 import { bus } from '../../core/event-bus';
 import { getDatabase, autoSave } from '../../core/db';
+import { registerCommand } from '../../core/command-registry';
 import type { PluginManifest } from '../../core/plugin-loader';
-import { api } from './api';
+import { api, ovMetaResolver } from './api';
+import { ensureOvConfigTable, getOvConfig, isOvAvailable, syncAllNotes } from './openviking';
 
 export const manifest: PluginManifest = {
   id: 'knowledge-base',
   name: 'Knowledge Base',
-  version: '1.0.0',
-  description: '知识库 - 用于日常记录笔记、分类、标签和全文搜索',
+  version: '1.1.0',
+  description: '知识库 - 笔记、分类、标签，接入 OpenViking 语义检索',
 };
 
 export function activate(): void {
@@ -20,6 +22,30 @@ export function activate(): void {
   bus.on('core:ready', () => {
     console.log('[knowledge-base] 核心已就绪，初始化数据库');
     initializeDatabase();
+    ensureOvConfigTable();
+    // 后台全量同步到 OpenViking（服务不可达自动跳过，不阻塞启动）
+    void syncAllNotes(api.getNotes(), ovMetaResolver).then(({ available, synced }) => {
+      console.log(`[knowledge-base] OpenViking 初始同步：${available ? `${synced} 条` : '服务不可达，跳过'}`);
+    });
+  });
+
+  // kb.sync —— 手动触发全量同步 / 查询 OpenViking 连接状态
+  registerCommand({
+    command: 'kb.sync',
+    description: '知识库全量同步到 OpenViking；传 status 只查询连接状态',
+    params: [
+      { name: 'status', type: 'string', required: false, description: '传 "status" 只查询连接状态不同步' },
+    ],
+    example: { status: 'status' },
+    handler: async (args) => {
+      const available = await isOvAvailable();
+      const cfg = getOvConfig();
+      if (args.status === 'status' || !available) {
+        return { available, baseUrl: cfg.baseUrl, rootUri: cfg.rootUri, enabled: cfg.enabled };
+      }
+      const result = await syncAllNotes(api.getNotes(), ovMetaResolver);
+      return { ...result, baseUrl: cfg.baseUrl, rootUri: cfg.rootUri };
+    },
   });
 
   // 事件监听器
@@ -29,8 +55,9 @@ export function activate(): void {
   });
 
   bus.on('knowledge-base:searchNotes', (keyword: string) => {
-    const result = api.searchNotes(keyword);
-    bus.emit('knowledge-base:result', { action: 'searchNotes', result });
+    void api.searchNotes(keyword).then((result) => {
+      bus.emit('knowledge-base:result', { action: 'searchNotes', result });
+    });
   });
 
   bus.on('knowledge-base:createNote', (title: string, content: string, categoryId: string, tagIds: string[]) => {
