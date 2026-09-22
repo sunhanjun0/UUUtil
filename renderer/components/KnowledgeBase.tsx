@@ -8,7 +8,7 @@ import { StickyNote, Plus, Trash2, Search, FilterX, Tag as TagIcon, Folder } fro
 import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
-import type { KnowledgeNote, KnowledgeCategory, KnowledgeTag } from '@shared/types';
+import type { KnowledgeNote, KnowledgeCategory, KnowledgeTag, OvLibraryHit } from '@shared/types';
 import { useThemeMode } from '../theme';
 
 // 颜色选项用于新建分类
@@ -67,6 +67,8 @@ function formatRelativeTime(dateStr: string): string {
 export default function KnowledgeBase() {
   const { mode: themeMode } = useThemeMode();
   const [notes, setNotes] = useState<KnowledgeNote[]>([]);
+  const [ovHits, setOvHits] = useState<OvLibraryHit[] | null>(null);
+  const [expandedOv, setExpandedOv] = useState<{ uri: string; content: string | null } | null>(null);
   const [categories, setCategories] = useState<KnowledgeCategory[]>([]);
   const [tags, setTags] = useState<KnowledgeTag[]>([]);
   const [selectedNote, setSelectedNote] = useState<KnowledgeNote | null>(null);
@@ -121,19 +123,22 @@ export default function KnowledgeBase() {
 
       let notesPromise: Promise<KnowledgeNote[]>;
       if (keyword) {
-        // 搜索为主，再在客户端按分类/标签叠加过滤（后端 searchNotes 不支持组合条件）
-        notesPromise = window.assistant.searchNotes(searchKeyword).then((r) =>
-          normalize(r).filter(
+        // 联合检索：本地笔记 + OpenViking 共享库（本地部分再在客户端按分类/标签叠加过滤）
+        notesPromise = window.assistant.searchKbLibrary(searchKeyword).then((r) => {
+          setOvHits(r?.ov ?? null);
+          return normalize(r?.local).filter(
             (n) =>
               (!filterCategoryId || n.categoryId === filterCategoryId) &&
               (!filterTagId || n.tagIds.includes(filterTagId)),
-          ),
-        );
+          );
+        });
       } else if (filterCategoryId || filterTagId) {
+        setOvHits(null);
         notesPromise = window.assistant
           .getNotes(filterCategoryId || undefined, filterTagId || undefined)
           .then(normalize);
       } else {
+        setOvHits(null);
         notesPromise = window.assistant.getNotes().then(normalize);
       }
 
@@ -532,7 +537,50 @@ export default function KnowledgeBase() {
               ))}
             </div>
           )}
-        </div>
+
+        {/* OpenViking 共享库检索结果（仅搜索时展示，与本地结果同滚动） */}
+        {searchKeyword.trim() && ovHits && ovHits.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div className="ck-hairline">OPENVIKING // 共享库 <span className="n">{ovHits.length}</span></div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+              {ovHits.map((hit) => (
+                <div
+                  key={hit.uri}
+                  className="ck-panel"
+                  style={{ cursor: 'pointer' }}
+                  onClick={async () => {
+                    if (expandedOv?.uri === hit.uri) {
+                      setExpandedOv(null);
+                      return;
+                    }
+                    setExpandedOv({ uri: hit.uri, content: null });
+                    const content = await window.assistant.readKbOvContent(hit.uri);
+                    setExpandedOv((prev) => (prev?.uri === hit.uri ? { uri: hit.uri, content } : prev));
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
+                    <div className="ck-item-title" style={{ fontWeight: 700 }}>{hit.title}</div>
+                    <span className={'ck-badge' + (hit.contextType === 'memory' ? ' phos' : '')}>
+                      {hit.contextType === 'memory' ? 'MEM' : 'RES'} {Math.round(hit.score * 100)}%
+                    </span>
+                  </div>
+                  {hit.abstract && (
+                    <div className="ck-dim" style={{ fontSize: 11.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {hit.abstract}
+                    </div>
+                  )}
+                  <div className="ck-dim" style={{ fontSize: 9, marginTop: 6, letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hit.uri}</div>
+                  {expandedOv?.uri === hit.uri && (
+                    <div className="ck-term" style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto', fontSize: 11.5 }}>
+                      {expandedOv.content ?? 'LOADING…'}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
       </div>
       </div>
     </div>

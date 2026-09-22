@@ -90,6 +90,18 @@ export function activate(): void {
     });
   });
 
+  bus.on('knowledge-base:searchLibrary', (keyword: string) => {
+    void api.searchLibrary(keyword).then((result) => {
+      bus.emit('knowledge-base:result', { action: 'searchLibrary', result });
+    });
+  });
+
+  bus.on('knowledge-base:readOvContent', (uri: string) => {
+    void api.readOvContent(uri).then((result) => {
+      bus.emit('knowledge-base:result', { action: 'readOvContent', result });
+    });
+  });
+
   bus.on('knowledge-base:createNote', (title: string, content: string, categoryId: string, tagIds: string[]) => {
     const result = api.createNote(title, content, categoryId, tagIds);
     bus.emit('knowledge-base:result', { action: 'createNote', result });

@@ -47,6 +47,8 @@ const assistantApi: AssistantApi = {
   // 知识库 API
   getNotes: (categoryId?: string, tagId?: string) => ipcRenderer.invoke('plugin:knowledge-base:getNotes', categoryId, tagId),
   searchNotes: (keyword: string) => ipcRenderer.invoke('plugin:knowledge-base:searchNotes', keyword),
+  searchKbLibrary: (keyword: string) => ipcRenderer.invoke('plugin:knowledge-base:searchLibrary', keyword),
+  readKbOvContent: (uri: string) => ipcRenderer.invoke('plugin:knowledge-base:readOvContent', uri),
   createNote: (title: string, content: string, categoryId: string, tagIds: string[]) => ipcRenderer.invoke('plugin:knowledge-base:createNote', title, content, categoryId, tagIds),
   updateNote: (noteId: string, title: string, content: string, categoryId: string, tagIds: string[]) => ipcRenderer.invoke('plugin:knowledge-base:updateNote', noteId, title, content, categoryId, tagIds),
   deleteNote: (noteId: string) => ipcRenderer.invoke('plugin:knowledge-base:deleteNote', noteId),

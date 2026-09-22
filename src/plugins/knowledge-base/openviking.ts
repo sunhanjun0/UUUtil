@@ -183,6 +183,65 @@ export async function semanticSearchIds(keyword: string, limit = 50): Promise<st
   }
 }
 
+/** OpenViking 共享库检索命中项（跨整个 HANJUN account 的 memories/resources） */
+export interface OvLibraryHit {
+  uri: string;
+  contextType: string;
+  score: number;
+  title: string;
+  abstract: string;
+}
+
+function titleFromUri(uri: string): string {
+  const name = uri.split('/').filter(Boolean).pop() ?? uri;
+  return name.replace(/\.md$/, '');
+}
+
+function normalizeHits(items: unknown[], contextType: string): OvLibraryHit[] {
+  return items.map((raw) => {
+    const item = (raw ?? {}) as Record<string, unknown>;
+    const uri = String(item.uri ?? '');
+    return {
+      uri,
+      contextType: String(item.context_type ?? contextType),
+      score: typeof item.score === 'number' ? item.score : 0,
+      title: titleFromUri(uri),
+      abstract: String(item.abstract ?? item.overview ?? ''),
+    };
+  }).filter((hit) => hit.uri !== '');
+}
+
+/**
+ * 跨整个 HANJUN account 的语义检索（共享库：所有 agent 的 memories + resources）。
+ * 不可达或失败返回 null（调用方只展示本地结果）。
+ */
+export async function searchOvLibrary(keyword: string, limit = 10): Promise<OvLibraryHit[] | null> {
+  if (!(await isOvAvailable())) return null;
+  try {
+    const result = await getClient().find(keyword, { limit });
+    const hits = [
+      ...normalizeHits((result.resources ?? []) as unknown[], 'resource'),
+      ...normalizeHits((result.memories ?? []) as unknown[], 'memory'),
+    ];
+    return hits.sort((a, b) => b.score - a.score).slice(0, limit);
+  } catch (err) {
+    healthCache = { ok: false, at: Date.now() };
+    logWarn('knowledge-base', 'ov_library_search_failed', { error: String(err) });
+    return null;
+  }
+}
+
+/** 读取共享库某条内容的正文；不可达/失败返回 null */
+export async function readOvContent(uri: string): Promise<string | null> {
+  if (!(await isOvAvailable())) return null;
+  try {
+    return await getClient().read(uri);
+  } catch (err) {
+    logWarn('knowledge-base', 'ov_read_failed', { uri, error: String(err) });
+    return null;
+  }
+}
+
 /** 全量同步：启动或手动触发时把本地笔记全部写通到 OpenViking */
 export async function syncAllNotes(notes: KnowledgeNote[], resolver: NoteMetaResolver): Promise<{ available: boolean; synced: number }> {
   if (!(await isOvAvailable())) {

@@ -4,8 +4,8 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, autoSave } from '../../core/db';
-import type { KnowledgeBaseApi, KnowledgeNote, KnowledgeCategory, KnowledgeTag, KnowledgeSearchResult } from '../../shared/types';
-import { semanticSearchIds, syncNoteDelete, syncNoteUpsert } from './openviking';
+import type { KnowledgeBaseApi, KnowledgeNote, KnowledgeCategory, KnowledgeTag, KnowledgeSearchResult, KnowledgeLibraryResult } from '../../shared/types';
+import { readOvContent, searchOvLibrary, semanticSearchIds, syncNoteDelete, syncNoteUpsert } from './openviking';
 import type { NoteMetaResolver } from './openviking';
 
 function runInTransaction<T>(operation: () => T): T {
@@ -195,6 +195,17 @@ export const api: KnowledgeBaseApi = {
       console.error('[knowledge-base] searchNotes 错误:', err);
       return { notes: [], total: 0 };
     }
+  },
+
+  // 联合检索：本地笔记（复用 searchNotes 逻辑）+ OpenViking 共享库全库
+  async searchLibrary(keyword: string): Promise<KnowledgeLibraryResult> {
+    const local = await api.searchNotes(keyword);
+    const ov = await searchOvLibrary(keyword);
+    return { local, ov };
+  },
+
+  async readOvContent(uri: string): Promise<string | null> {
+    return readOvContent(uri);
   },
 
   createCategory(name: string, color?: string): { success: boolean; categoryId?: string; error?: string } {
