@@ -60,6 +60,8 @@ export interface AppEventMap {
 
   'knowledge-base:getNotes': [string?, string?];
   'knowledge-base:searchNotes': [string];
+  'knowledge-base:searchLibrary': [string];
+  'knowledge-base:readOvContent': [string];
   'knowledge-base:createNote': [string, string, string, string[]];
   'knowledge-base:updateNote': [string, string, string, string, string[]];
   'knowledge-base:deleteNote': [string];

@@ -30,6 +30,7 @@ import type {
   IngestBatchResult,
   IngestResult,
   KnowledgeCategory,
+  KnowledgeLibraryResult,
   KnowledgeNote,
   KnowledgeSearchResult,
   KnowledgeTag,
@@ -110,6 +111,10 @@ export interface AssistantApi {
 
   getNotes: (categoryId?: string, tagId?: string) => Promise<KnowledgeNote[]>;
   searchNotes: (keyword: string) => Promise<KnowledgeSearchResult>;
+  /** 本地笔记 + OpenViking 共享库联合检索 */
+  searchKbLibrary: (keyword: string) => Promise<KnowledgeLibraryResult>;
+  /** 读取共享库 Viking URI 正文，不可达/失败为 null */
+  readKbOvContent: (uri: string) => Promise<string | null>;
   createNote: (title: string, content: string, categoryId: string, tagIds: string[]) => Promise<any>;
   updateNote: (noteId: string, title: string, content: string, categoryId: string, tagIds: string[]) => Promise<any>;
   deleteNote: (noteId: string) => Promise<any>;

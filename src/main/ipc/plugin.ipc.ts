@@ -43,6 +43,10 @@ export const pluginIpc: IpcModule = {
       invokeActionPlugin('knowledge-base:result', 'getNotes', 'knowledge-base:getNotes', [categoryId, tagId])),
     defineInvoke('plugin:knowledge-base:searchNotes', (_event, keyword: string) =>
       invokeActionPlugin('knowledge-base:result', 'searchNotes', 'knowledge-base:searchNotes', [keyword])),
+    defineInvoke('plugin:knowledge-base:searchLibrary', (_event, keyword: string) =>
+      invokeActionPlugin('knowledge-base:result', 'searchLibrary', 'knowledge-base:searchLibrary', [keyword])),
+    defineInvoke('plugin:knowledge-base:readOvContent', (_event, uri: string) =>
+      invokeActionPlugin('knowledge-base:result', 'readOvContent', 'knowledge-base:readOvContent', [uri])),
     defineInvoke('plugin:knowledge-base:createNote', (_event, title: string, content: string, categoryId: string, tagIds: string[]) =>
       invokeActionPlugin('knowledge-base:result', 'createNote', 'knowledge-base:createNote', [title, content, categoryId, tagIds])),
     defineInvoke('plugin:knowledge-base:updateNote', (_event, noteId: string, title: string, content: string, categoryId: string, tagIds: string[]) =>

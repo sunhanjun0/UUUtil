@@ -180,6 +180,22 @@ export interface KnowledgeSearchResult {
   total: number;
 }
 
+/** OpenViking 共享库检索命中项（跨 HANJUN account 的 memories/resources） */
+export interface OvLibraryHit {
+  uri: string;
+  contextType: string;
+  score: number;
+  title: string;
+  abstract: string;
+}
+
+/** 本地笔记 + OpenViking 共享库的联合检索结果 */
+export interface KnowledgeLibraryResult {
+  local: KnowledgeSearchResult;
+  /** OpenViking 不可达时为 null（页面只展示本地结果） */
+  ov: OvLibraryHit[] | null;
+}
+
 /** knowledge-base 插件对外暴露的 API */
 export interface KnowledgeBaseApi {
   createNote(title: string, content: string, categoryId: string, tagIds: string[]): { success: boolean; noteId?: string; error?: string };
@@ -188,6 +204,10 @@ export interface KnowledgeBaseApi {
   getNotes(categoryId?: string, tagId?: string): KnowledgeNote[];
   /** 语义优先（OpenViking 可达时），不可达回落本地 LIKE */
   searchNotes(keyword: string): Promise<KnowledgeSearchResult>;
+  /** 本地笔记 + OpenViking 共享库联合检索 */
+  searchLibrary(keyword: string): Promise<KnowledgeLibraryResult>;
+  /** 读取共享库某条 Viking URI 的正文，不可达/失败返回 null */
+  readOvContent(uri: string): Promise<string | null>;
   createCategory(name: string, color?: string): { success: boolean; categoryId?: string; error?: string };
   getCategories(): KnowledgeCategory[];
   deleteCategory(categoryId: string): { success: boolean; error?: string };
