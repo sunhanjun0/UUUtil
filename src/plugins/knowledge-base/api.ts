@@ -5,6 +5,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, autoSave } from '../../core/db';
 import type { KnowledgeBaseApi, KnowledgeNote, KnowledgeCategory, KnowledgeTag, KnowledgeSearchResult } from '../../shared/types';
+import { semanticSearchIds, syncNoteDelete, syncNoteUpsert } from './openviking';
+import type { NoteMetaResolver } from './openviking';
 
 function runInTransaction<T>(operation: () => T): T {
   const db = getDatabase();
@@ -51,6 +53,20 @@ function mapNoteRow(row: any[]): KnowledgeNote {
   };
 }
 
+// OpenViking 写通用的分类/标签名解析器（MD 元信息用，不写 id 便于人和 Agent 阅读）
+export const ovMetaResolver: NoteMetaResolver = {
+  categoryName(categoryId: string | null): string | null {
+    if (!categoryId) return null;
+    const rows = selectRows(`SELECT name FROM kb_categories WHERE id = ?`, [categoryId]);
+    return rows.length > 0 ? String(rows[0][0]) : null;
+  },
+  tagNames(tagIds: string[]): string[] {
+    if (tagIds.length === 0) return [];
+    const placeholders = tagIds.map(() => '?').join(',');
+    return selectRows(`SELECT name FROM kb_tags WHERE id IN (${placeholders})`, tagIds).map((row) => String(row[0]));
+  },
+};
+
 export const api: KnowledgeBaseApi = {
   createNote(title: string, content: string, categoryId: string, tagIds: string[]): { success: boolean; noteId?: string; error?: string } {
     try {
@@ -71,6 +87,9 @@ export const api: KnowledgeBaseApi = {
           );
         }
       });
+
+      // OpenViking 写通（后台，失败不阻塞）
+      void syncNoteUpsert({ id: noteId, title, content, categoryId, tagIds, createdAt: now, updatedAt: now }, ovMetaResolver);
 
       return { success: true, noteId };
     } catch (err) {
@@ -99,6 +118,10 @@ export const api: KnowledgeBaseApi = {
         }
       });
 
+      // OpenViking 写通（后台，失败不阻塞）
+      const updated = api.getNotes().find((note) => note.id === noteId);
+      if (updated) void syncNoteUpsert(updated, ovMetaResolver);
+
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -112,6 +135,10 @@ export const api: KnowledgeBaseApi = {
         db.run(`DELETE FROM kb_note_tags WHERE note_id = ?`, [noteId]);
         db.run(`DELETE FROM kb_notes WHERE id = ?`, [noteId]);
       });
+
+      // OpenViking 同步删除（后台，失败不阻塞）
+      void syncNoteDelete(noteId);
+
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -146,8 +173,16 @@ export const api: KnowledgeBaseApi = {
     }
   },
 
-  searchNotes(keyword: string): KnowledgeSearchResult {
+  // 语义优先：OpenViking 可达时按相关度重排本地笔记；不可达回落本地 LIKE
+  async searchNotes(keyword: string): Promise<KnowledgeSearchResult> {
     try {
+      const semanticIds = await semanticSearchIds(keyword);
+      if (semanticIds) {
+        const byId = new Map(api.getNotes().map((note) => [note.id, note]));
+        const notes = semanticIds.map((id) => byId.get(id)).filter((note): note is KnowledgeNote => Boolean(note));
+        return { notes, total: notes.length };
+      }
+
       const searchPattern = `%${keyword}%`;
       const rows = selectRows(
         `SELECT id, title, content, category_id, created_at, updated_at FROM kb_notes
