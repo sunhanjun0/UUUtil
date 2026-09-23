@@ -6,6 +6,8 @@
  *          不注册 CLI 命令、不含 UI。错误在插件内部抛出，由上层（CLI / IPC 边界）
  *          包装为 { success, error }，不传播到核心层。
  * Stage 5：listDue（到期巡查数据源）+ parseDueAtMs（date-only 按本地零点解析）。
+ * Multica 打通 Stage 1：todos.external_ref 列（幂等迁移）+ link/unlink/getByExternalRef
+ *          + multica 桥接层出口（multicaBridge，spawn 本机 CLI，错误内化静默降级）。
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -28,7 +30,7 @@ const VALID_STATUSES: TodoStatus[] = ['todo', 'doing', 'done', 'cancelled'];
 const OPEN_STATUSES: TodoStatus[] = ['todo', 'doing'];
 
 const SELECT_COLS =
-  'id, title, note, status, priority, due_at, list_id, tags, subtasks, sort_order, completed_at, created_at, updated_at';
+  'id, title, note, status, priority, due_at, list_id, tags, subtasks, sort_order, completed_at, external_ref, created_at, updated_at';
 
 /** 初始化事项与清单表；由插件 activate 时在 core:ready 之后调用（幂等）。 */
 export function ensureTodoTables(): void {
@@ -59,8 +61,14 @@ export function ensureTodoTables(): void {
       created_at TEXT NOT NULL
     )
   `);
+  // external_ref 迁移（幂等）：老库无此列时 ALTER 补上，同 ensureTodoTables 的建表幂等模式
+  const todoCols = selectRows('PRAGMA table_info(todos)').map((r) => String(r[1]));
+  if (!todoCols.includes('external_ref')) {
+    db.run('ALTER TABLE todos ADD COLUMN external_ref TEXT');
+  }
   db.run(`CREATE INDEX IF NOT EXISTS idx_todos_status_due ON todos (status, due_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_todos_list ON todos (list_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_todos_external_ref ON todos (external_ref)`);
   autoSave();
 }
 
@@ -124,8 +132,9 @@ function mapRow(row: unknown[]): Todo {
     subtasks: parseSubtasks(row[8]),
     sortOrder: Number(row[9]) || 0,
     completedAt: toNullableString(row[10]),
-    createdAt: String(row[11]),
-    updatedAt: String(row[12]),
+    externalRef: toNullableString(row[11]),
+    createdAt: String(row[12]),
+    updatedAt: String(row[13]),
   };
 }
 
@@ -236,12 +245,12 @@ function persistTodo(todo: Todo): void {
   db.run(
     `UPDATE todos
         SET title = ?, note = ?, status = ?, priority = ?, due_at = ?, list_id = ?,
-            tags = ?, subtasks = ?, sort_order = ?, completed_at = ?, updated_at = ?
+            tags = ?, subtasks = ?, sort_order = ?, completed_at = ?, external_ref = ?, updated_at = ?
       WHERE id = ?`,
     [
       todo.title, todo.note, todo.status, todo.priority, todo.dueAt, todo.listId,
       JSON.stringify(todo.tags), JSON.stringify(todo.subtasks), todo.sortOrder, todo.completedAt,
-      todo.updatedAt, todo.id,
+      todo.externalRef, todo.updatedAt, todo.id,
     ],
   );
   autoSave();
@@ -363,6 +372,37 @@ export const api: TodoApi = {
     const next: Todo = { ...existing, status: 'todo', completedAt: null, updatedAt: now };
     persistTodo(next);
     return this.get(id)!;
+  },
+
+  linkExternal(id: string, ref: string): Todo {
+    const existing = this.get(id);
+    if (!existing) throw new Error(`事项不存在: ${id}`);
+    const normalized = typeof ref === 'string' ? ref.trim() : '';
+    if (!normalized) throw new Error('external_ref 必填');
+    // 防双拉：同一 ref 只能挂在一条事项上（重复链接同一事项视为幂等）
+    const occupied = this.getByExternalRef(normalized);
+    if (occupied && occupied.id !== id) {
+      throw new Error(`external_ref 已链接到其他事项: ${occupied.id}`);
+    }
+    const db = getDatabase();
+    db.run('UPDATE todos SET external_ref = ?, updated_at = ? WHERE id = ?', [normalized, nowIso(), id]);
+    autoSave();
+    return this.get(id)!;
+  },
+
+  unlinkExternal(id: string): Todo {
+    const existing = this.get(id);
+    if (!existing) throw new Error(`事项不存在: ${id}`);
+    const db = getDatabase();
+    db.run('UPDATE todos SET external_ref = NULL, updated_at = ? WHERE id = ?', [nowIso(), id]);
+    autoSave();
+    return this.get(id)!;
+  },
+
+  getByExternalRef(ref: string): Todo | null {
+    if (typeof ref !== 'string' || !ref.trim()) return null;
+    const rows = selectRows(`SELECT ${SELECT_COLS} FROM todos WHERE external_ref = ?`, [ref.trim()]);
+    return rows.length ? mapRow(rows[0]) : null;
   },
 
   list(options?: ListTodosOptions): Todo[] {
@@ -492,3 +532,11 @@ export const api: TodoApi = {
     }));
   },
 };
+
+// multica 桥接层经本出口暴露（api.ts 唯一出口铁律）；实现见 multica-bridge.ts
+export {
+  multicaBridge,
+  buildMulticaExternalRef,
+  parseMulticaExternalRef,
+  MULTICA_REWRITE_TAG,
+} from './multica-bridge';
