@@ -175,18 +175,32 @@ describe('syncAllNotes', () => {
 });
 
 describe('searchOvLibrary', () => {
-  it('合并 resources 与 memories 并按 score 排序', async () => {
+  it('合并 resources 与 memories、按 score 排序、标题取摘要首行', async () => {
     mockFind.mockResolvedValue({
-      resources: [{ uri: 'viking://resources/uuutil-kb/notes/n1.md', context_type: 'resource', score: 0.5, abstract: 'a' }],
-      memories: [{ uri: 'viking://user/hanjun/memories/m1.md', context_type: 'memory', score: 0.9, abstract: 'b' }],
+      resources: [{ uri: 'viking://resources/shared/guide.md', context_type: 'resource', score: 0.5, abstract: '部署指南：如何配置驾驶舱。' }],
+      memories: [{ uri: 'viking://user/hanjun/memories/m1.md', context_type: 'memory', score: 0.9, abstract: 'openclaw 接入复盘记录。' }],
     });
     const { searchOvLibrary } = await import('../openviking');
     const hits = await searchOvLibrary('query');
     expect(hits).toHaveLength(2);
     expect(hits![0].uri).toContain('m1.md');
     expect(hits![0].contextType).toBe('memory');
-    expect(hits![0].title).toBe('m1');
+    expect(hits![0].title).toBe('openclaw 接入复盘记录。');
     expect(hits![1].score).toBe(0.5);
+  });
+
+  it('剔除系统 sidecar 与本地同步副本', async () => {
+    mockFind.mockResolvedValue({
+      resources: [
+        { uri: 'viking://resources/.abstract.md', context_type: 'resource', score: 0.8, abstract: 'sidecar' },
+        { uri: 'viking://resources/uuutil-kb/notes/n1.md', context_type: 'resource', score: 0.7, abstract: 'own note' },
+        { uri: 'viking://resources/shared/guide.md', context_type: 'resource', score: 0.5, abstract: '真实内容' },
+      ],
+    });
+    const { searchOvLibrary } = await import('../openviking');
+    const hits = await searchOvLibrary('query');
+    expect(hits).toHaveLength(1);
+    expect(hits![0].uri).toBe('viking://resources/shared/guide.md');
   });
 
   it('服务不可达时返回 null', async () => {
