@@ -183,7 +183,7 @@ export async function semanticSearchIds(keyword: string, limit = 50): Promise<st
   }
 }
 
-/** OpenViking 共享库检索命中项（跨整个 HANJUN account 的 memories/resources） */
+/** OpenViking 共享库检索命中项（account 内各 agent 的 memories/resources） */
 export interface OvLibraryHit {
   uri: string;
   contextType: string;
@@ -192,12 +192,21 @@ export interface OvLibraryHit {
   abstract: string;
 }
 
-function titleFromUri(uri: string): string {
+// OpenViking 自动生成的目录 sidecar（.abstract.md / .overview.md），不是真实内容
+const SIDECAR_PATTERN = /\.abstract\.md$|\.overview\.md$/;
+
+function abstractTitle(abstract: string, uri: string): string {
+  // 标题优先取摘要的首个可读行（uuid 文件名对人没有意义）
+  const line = abstract
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l !== '' && !l.startsWith('#') && !l.startsWith('---') && !/^\*\*/.test(l));
+  if (line) return line.length > 60 ? `${line.slice(0, 60)}…` : line;
   const name = uri.split('/').filter(Boolean).pop() ?? uri;
   return name.replace(/\.md$/, '');
 }
 
-function normalizeHits(items: unknown[], contextType: string): OvLibraryHit[] {
+function normalizeHits(items: unknown[], contextType: string, excludePrefixes: string[]): OvLibraryHit[] {
   return items.map((raw) => {
     const item = (raw ?? {}) as Record<string, unknown>;
     const uri = String(item.uri ?? '');
@@ -205,23 +214,31 @@ function normalizeHits(items: unknown[], contextType: string): OvLibraryHit[] {
       uri,
       contextType: String(item.context_type ?? contextType),
       score: typeof item.score === 'number' ? item.score : 0,
-      title: titleFromUri(uri),
+      title: '',
       abstract: String(item.abstract ?? item.overview ?? ''),
     };
-  }).filter((hit) => hit.uri !== '');
+  })
+    .filter((hit) => hit.uri !== '')
+    // 剔除系统生成的目录摘要文件
+    .filter((hit) => !SIDECAR_PATTERN.test(hit.uri))
+    // 剔除本地笔记的同步副本（本地结果区已展示，避免重复）
+    .filter((hit) => !excludePrefixes.some((prefix) => hit.uri.startsWith(prefix)))
+    .map((hit) => ({ ...hit, title: abstractTitle(hit.abstract, hit.uri) }));
 }
 
 /**
- * 跨整个 HANJUN account 的语义检索（共享库：所有 agent 的 memories + resources）。
+ * 跨整个 account 的语义检索（共享库：各 agent 写入 resources/user 的内容）。
  * 不可达或失败返回 null（调用方只展示本地结果）。
  */
-export async function searchOvLibrary(keyword: string, limit = 10): Promise<OvLibraryHit[] | null> {
+export async function searchOvLibrary(keyword: string, limit = 15): Promise<OvLibraryHit[] | null> {
   if (!(await isOvAvailable())) return null;
+  const cfg = getOvConfig();
   try {
-    const result = await getClient().find(keyword, { limit });
+    const result = await getClient().find(keyword, { limit: limit + 10 }); // 多取一些，过滤 sidecar 后再截断
+    const excludePrefixes = [`${cfg.rootUri}/`];
     const hits = [
-      ...normalizeHits((result.resources ?? []) as unknown[], 'resource'),
-      ...normalizeHits((result.memories ?? []) as unknown[], 'memory'),
+      ...normalizeHits((result.resources ?? []) as unknown[], 'resource', excludePrefixes),
+      ...normalizeHits((result.memories ?? []) as unknown[], 'memory', excludePrefixes),
     ];
     return hits.sort((a, b) => b.score - a.score).slice(0, limit);
   } catch (err) {
@@ -231,11 +248,12 @@ export async function searchOvLibrary(keyword: string, limit = 10): Promise<OvLi
   }
 }
 
-/** 读取共享库某条内容的正文；不可达/失败返回 null */
+/** 读取共享库某条内容的正文（剥离 frontmatter 展示层）；不可达/失败返回 null */
 export async function readOvContent(uri: string): Promise<string | null> {
   if (!(await isOvAvailable())) return null;
   try {
-    return await getClient().read(uri);
+    const content = await getClient().read(uri);
+    return content.replace(/^---\n[\s\S]*?\n---\n\n?/, '');
   } catch (err) {
     logWarn('knowledge-base', 'ov_read_failed', { uri, error: String(err) });
     return null;
