@@ -23,6 +23,12 @@ import type {
   ListRemindersOptions,
   ListTodosOptions,
   Reminder,
+  SpeechGatewayHealth,
+  SpeechSynthesizeInput,
+  SpeechSynthesizeResult,
+  SpeechTranscribeInput,
+  SpeechTranscribeResult,
+  SpeechVoiceItem,
   ReminderUpdatePayload,
   RespondReminderInput,
   FieRunDetail,
@@ -124,6 +130,16 @@ export interface AssistantApi {
   getTags: () => Promise<KnowledgeTag[]>;
   createTag: (name: string) => Promise<any>;
   deleteTag: (tagId: string) => Promise<any>;
+
+  // ===== 语音实验室 Speech API =====
+  speech: {
+    health: () => Promise<SpeechGatewayHealth>;
+    voices: () => Promise<SpeechVoiceItem[]>;
+    synthesize: (input: SpeechSynthesizeInput) => Promise<SpeechSynthesizeResult>;
+    transcribe: (input: SpeechTranscribeInput) => Promise<SpeechTranscribeResult>;
+    getConfig: () => Promise<{ baseUrl: string; apiKeySet: boolean }>;
+    setConfig: (input: { baseUrl?: string; apiKey?: string }) => Promise<{ updated: string[]; config: { baseUrl: string; apiKeySet: boolean } }>;
+  };
 
   focus: {
     ingest: (event: AttentionEvent) => Promise<FieResult<IngestResult>>;

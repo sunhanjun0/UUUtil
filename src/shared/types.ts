@@ -794,3 +794,62 @@ export interface TodoApi {
   removeList(id: string): void;
   listLists(): TodoList[];
 }
+
+// ==================== 语音网关 Speech 类型 ====================
+
+export interface SpeechConfig {
+  baseUrl: string;
+  /** 网关调用 Key；只写入，读出时脱敏 */
+  apiKey: string;
+}
+
+export interface SpeechSynthesizeInput {
+  text: string;
+  model?: string;
+  voice?: string;
+  speed?: number;
+  format?: 'mp3' | 'wav' | 'pcm' | 'opus';
+  instruction?: string;
+}
+
+export interface SpeechSynthesizeResult {
+  success: boolean;
+  audioBase64?: string;
+  format?: string;
+  chars?: number;
+  error?: string;
+}
+
+export interface SpeechTranscribeInput {
+  audioBase64: string;
+  format: string;
+  model?: string;
+  durationSeconds?: number;
+}
+
+export interface SpeechTranscribeResult {
+  success: boolean;
+  text?: string;
+  model?: string;
+  error?: string;
+}
+
+export interface SpeechVoiceItem {
+  id: string;
+  name: string;
+  ready: boolean;
+}
+
+export interface SpeechGatewayHealth {
+  ok: boolean;
+  upstreamReady?: boolean;
+  version?: string;
+}
+
+export interface SpeechApi {
+  health(): Promise<SpeechGatewayHealth>;
+  listVoices(): Promise<SpeechVoiceItem[]>;
+  synthesize(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeResult>;
+  transcribe(input: SpeechTranscribeInput): Promise<SpeechTranscribeResult>;
+  getConfig(): SpeechConfig;
+}

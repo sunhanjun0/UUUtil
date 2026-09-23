@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, ComponentType } from 'react';
 import { Box, Spinner } from '@chakra-ui/react';
-import { Bell, Bot, Calculator, Clipboard, Clock, Code2, FileText, Home, Languages, MessageCircle, Palette, Rocket, ScrollText, SlidersHorizontal, Terminal } from 'lucide-react';
+import { AudioLines, Bell, Bot, Calculator, Clipboard, Clock, Code2, FileText, Home, Languages, MessageCircle, Palette, Rocket, ScrollText, SlidersHorizontal, Terminal } from 'lucide-react';
 import type { TabLayout } from '../src/shared/types';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -17,6 +17,7 @@ const FocusPage = lazy(() => import('./pages/FocusPage'));
 const ReminderCenterPage = lazy(() => import('./pages/ReminderCenterPage'));
 const TodoPage = lazy(() => import('./pages/TodoPage'));
 const ClipboardHistoryPage = lazy(() => import('./pages/ClipboardHistoryPage'));
+const SpeechLabPage = lazy(() => import('./pages/SpeechLabPage'));
 const InterfaceSettingsPage = lazy(() => import('./pages/InterfaceSettingsPage'));
 
 export interface RouteConfig {
@@ -39,6 +40,7 @@ export const routes: RouteConfig[] = [
   { path: '/calculator', label: '计算器', icon: Calculator, component: CalculatorPage, panel: 'front' },
   { path: '/dev-utils', label: '开发工具', icon: Code2, component: DevUtilsPage, panel: 'front' },
   { path: '/terminal', label: '终端', icon: Terminal, component: TerminalPage, panel: 'front' },
+  { path: '/speech', label: '语音', icon: AudioLines, component: SpeechLabPage, panel: 'front' },
   { path: '/color-research', label: '配色', icon: Palette, component: ColorResearchPage, panel: 'front' },
   { path: '/ai-config', label: 'AI 配置', icon: Bot, component: AiConfigPage, panel: 'back' },
   { path: '/logs', label: '日志', icon: FileText, component: LogsPage, panel: 'back' },

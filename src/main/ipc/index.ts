@@ -16,6 +16,7 @@ import { logsIpc } from './logs.ipc';
 import { focusIpc } from './focus.ipc';
 import { reminderIpc } from './reminder.ipc';
 import { todoIpc } from './todo.ipc';
+import { speechIpc } from './speech.ipc';
 import { clipboardIpc } from './clipboard.ipc';
 import { screenshotIpc } from './screenshot.ipc';
 import { uiSettingsIpc } from './ui-settings.ipc';
@@ -32,6 +33,7 @@ export function registerAllIpc(): void {
     focusIpc,
     reminderIpc,
     todoIpc,
+    speechIpc,
     clipboardIpc,
     screenshotIpc,
     uiSettingsIpc,
