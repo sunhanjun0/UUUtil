@@ -803,6 +803,7 @@ export interface TodoApi {
   listLists(): TodoList[];
 }
 
+
 // ===== Multica 桥接（todo × Multica 打通）=====
 
 /** 桥接层返回的 Multica issue 摘要：投影分组与链接所需字段子集，已 camelCase 化。 */
@@ -842,4 +843,63 @@ export interface MulticaBridgeApi {
   /** 回写评论；正文尾部统一追加「——代驾驶舱回写」标注。 */
   addComment(issueId: string, body: string): Promise<MulticaBridgeResult<null>>;
   createIssue(input: CreateMulticaIssueInput): Promise<MulticaBridgeResult<MulticaIssueSummary>>;
+}
+
+// ==================== 语音网关 Speech 类型 ====================
+
+export interface SpeechConfig {
+  baseUrl: string;
+  /** 网关调用 Key；只写入，读出时脱敏 */
+  apiKey: string;
+}
+
+export interface SpeechSynthesizeInput {
+  text: string;
+  model?: string;
+  voice?: string;
+  speed?: number;
+  format?: 'mp3' | 'wav' | 'pcm' | 'opus';
+  instruction?: string;
+}
+
+export interface SpeechSynthesizeResult {
+  success: boolean;
+  audioBase64?: string;
+  format?: string;
+  chars?: number;
+  error?: string;
+}
+
+export interface SpeechTranscribeInput {
+  audioBase64: string;
+  format: string;
+  model?: string;
+  durationSeconds?: number;
+}
+
+export interface SpeechTranscribeResult {
+  success: boolean;
+  text?: string;
+  model?: string;
+  error?: string;
+}
+
+export interface SpeechVoiceItem {
+  id: string;
+  name: string;
+  ready: boolean;
+}
+
+export interface SpeechGatewayHealth {
+  ok: boolean;
+  upstreamReady?: boolean;
+  version?: string;
+}
+
+export interface SpeechApi {
+  health(): Promise<SpeechGatewayHealth>;
+  listVoices(): Promise<SpeechVoiceItem[]>;
+  synthesize(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeResult>;
+  transcribe(input: SpeechTranscribeInput): Promise<SpeechTranscribeResult>;
+  getConfig(): SpeechConfig;
 }

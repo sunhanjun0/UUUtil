@@ -127,6 +127,16 @@ const assistantApi: AssistantApi = {
     },
   },
 
+  // ===== 语音实验室 Speech API =====
+  speech: {
+    health: () => ipcRenderer.invoke('speech:health'),
+    voices: () => ipcRenderer.invoke('speech:voices'),
+    synthesize: (input) => ipcRenderer.invoke('speech:synthesize', input),
+    transcribe: (input) => ipcRenderer.invoke('speech:transcribe', input),
+    getConfig: () => ipcRenderer.invoke('speech:get-config'),
+    setConfig: (input) => ipcRenderer.invoke('speech:set-config', input),
+  },
+
   // AI 核心 API
   ai: {
     listProviders: () => ipcRenderer.invoke('core:ai:list-providers'),
