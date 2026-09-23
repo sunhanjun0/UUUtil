@@ -178,3 +178,36 @@ describe('linkExternal / unlinkExternal / getByExternalRef', () => {
     expect(api.done(todo.id).externalRef).toBe(REF);
   });
 });
+
+describe('create + externalRef（Stage 2 ⇩ 拉入一步到位）', () => {
+  const REF = 'multica:01a0cd72-d818-734d-b854-a2a31642893f:HANJ-90';
+
+  it('create 带 externalRef：一次落库带链接，getByExternalRef 即查得', () => {
+    const todo = api.create({
+      title: 'Stage 2: MULTICA 投影分组 + 拉入交互',
+      note: '摘要\n\n——来源：Multica HANJ-90',
+      priority: 3,
+      dueAt: '2026-09-25',
+      externalRef: REF,
+    });
+    expect(todo.externalRef).toBe(REF);
+    expect(api.get(todo.id)!.externalRef).toBe(REF);
+    expect(api.getByExternalRef(REF)!.id).toBe(todo.id);
+    expect(todo.priority).toBe(3);
+    expect(todo.dueAt).toBe('2026-09-25');
+  });
+
+  it('ref 已被占用时 create 抛错，不产生无链接孤儿事项', () => {
+    const first = api.create({ title: '首次拉入', externalRef: REF });
+    const before = api.list().length;
+
+    expect(() => api.create({ title: '重复拉入', externalRef: REF })).toThrow('已链接到其他事项');
+    expect(api.list().length).toBe(before);
+    expect(api.getByExternalRef(REF)!.id).toBe(first.id);
+  });
+
+  it('externalRef 空白串按未传处理', () => {
+    const todo = api.create({ title: '普通事项', externalRef: '   ' });
+    expect(todo.externalRef).toBeNull();
+  });
+});

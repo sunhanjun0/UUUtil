@@ -34,8 +34,12 @@ import type {
   KnowledgeNote,
   KnowledgeSearchResult,
   KnowledgeTag,
+  MulticaBridgeResult,
+  MulticaIssueSummary,
   PluginInfo,
   PluginStateResult,
+  PullMulticaTodoInput,
+  PullMulticaTodoResult,
   RegisteredPluginInfo,
   TabLayout,
   Todo,
@@ -155,6 +159,15 @@ export interface AssistantApi {
     createList: (input: CreateTodoListInput) => Promise<TodoList>;
     updateList: (id: string, patch: UpdateTodoListInput) => Promise<TodoList>;
     removeList: (id: string) => Promise<void>;
+    /** 按外部链接精确查询（Multica 投影「已拉入 IN LOG」判定数据源）。 */
+    getByExternalRef: (ref: string) => Promise<Todo | null>;
+    /** MULTICA 投影分组数据源：当前成员名下 todo/in_progress 的 issue；Multica 不可用 ok:false。 */
+    multicaList: () => Promise<MulticaBridgeResult<MulticaIssueSummary[]>>;
+    multicaGet: (id: string) => Promise<MulticaBridgeResult<MulticaIssueSummary>>;
+    /** ⇩ 拉入：create+link 一步到位；已拉入/数据非法返回 ok:false，不抛出。 */
+    multicaPull: (input: PullMulticaTodoInput) => Promise<PullMulticaTodoResult>;
+    /** 系统浏览器打开对应 Multica issue；app_url 不可解析时 ok:false。 */
+    multicaOpen: (issueId: string) => Promise<MulticaBridgeResult<null>>;
     onUpdate: (callback: (payload: TodoUpdatePayload) => void) => () => void;
   };
 

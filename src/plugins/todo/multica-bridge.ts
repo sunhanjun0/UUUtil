@@ -17,6 +17,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { info, warn } from '../../core/logger';
+import {
+  buildMulticaExternalRef,
+  parseMulticaExternalRef,
+} from '../../shared/todo-multica';
 import type {
   CreateMulticaIssueInput,
   MulticaBridgeApi,
@@ -30,23 +34,8 @@ const CLI_TIMEOUT_MS = 15000;
 /** 回写评论的统一标注（定稿决策：Mika 凭据代发，内容标注代驾驶舱回写）。 */
 export const MULTICA_REWRITE_TAG = '——代驾驶舱回写';
 
-const EXTERNAL_REF_PREFIX = 'multica:';
-
-/** 组装 external_ref：multica:<issue-uuid>:<identifier>（identifier 可缺省）。 */
-export function buildMulticaExternalRef(issueId: string, identifier?: string): string {
-  const base = `${EXTERNAL_REF_PREFIX}${issueId}`;
-  return identifier ? `${base}:${identifier}` : base;
-}
-
-/** 解析 external_ref；非 multica ref 或缺 issue id 返回 null。 */
-export function parseMulticaExternalRef(ref: string): { issueId: string; identifier: string | null } | null {
-  if (typeof ref !== 'string' || !ref.startsWith(EXTERNAL_REF_PREFIX)) return null;
-  const rest = ref.slice(EXTERNAL_REF_PREFIX.length);
-  const sep = rest.indexOf(':');
-  if (sep === -1) return rest ? { issueId: rest, identifier: null } : null;
-  const issueId = rest.slice(0, sep);
-  return issueId ? { issueId, identifier: rest.slice(sep + 1) || null } : null;
-}
+// external_ref 组装/解析已上提到 shared/todo-multica.ts（渲染层共用），此处转出口保持既有 import 路径
+export { buildMulticaExternalRef, parseMulticaExternalRef };
 
 interface CliRunResult {
   ok: boolean;
@@ -131,7 +120,7 @@ function toNullStr(v: unknown): string | null {
   return s ? s : null;
 }
 
-/** CLI issue JSON → 摘要；缺 id 视为不可识别返回 null。 */
+/** CLI issue JSON → 摘要；缺 id 视为不可识别返回 null。projectTitle 由调用方按 projectId 回填。 */
 function mapIssue(raw: unknown): MulticaIssueSummary | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -144,7 +133,9 @@ function mapIssue(raw: unknown): MulticaIssueSummary | null {
     status: toStr(o.status),
     priority: toStr(o.priority),
     projectId: toNullStr(o.project_id),
+    projectTitle: null,
     dueAt: toNullStr(o.due_date),
+    description: toNullStr(o.description),
     updatedAt: toStr(o.updated_at),
   };
 }
@@ -162,11 +153,38 @@ async function resolveMemberId(): Promise<MulticaBridgeResult<string>> {
   return { ok: true, data: id };
 }
 
+/** 项目 id → 标题缓存：项目名录变动极少，60s TTL 避免每次投影多拉一次 CLI。 */
+const PROJECT_CACHE_TTL_MS = 60_000;
+let projectCache: { at: number; map: Map<string, string> } | null = null;
+
+/** 拉取项目名录；失败静默降级（沿用旧缓存或空表，项目列仅作展示，不阻塞投影）。 */
+async function resolveProjectTitles(): Promise<Map<string, string>> {
+  if (projectCache && Date.now() - projectCache.at < PROJECT_CACHE_TTL_MS) return projectCache.map;
+  const r = await runJson<unknown>(['project', 'list', '--output', 'json']);
+  if (!r.ok) {
+    warn(SCOPE, 'project_list_failed', { error: r.error });
+    return projectCache?.map ?? new Map();
+  }
+  const map = new Map<string, string>();
+  const arr = Array.isArray(r.data) ? (r.data as unknown[]) : [];
+  for (const p of arr) {
+    if (!p || typeof p !== 'object') continue;
+    const id = toStr((p as Record<string, unknown>).id);
+    const title = toStr((p as Record<string, unknown>).title);
+    if (id && title) map.set(id, title);
+  }
+  projectCache = { at: Date.now(), map };
+  return map;
+}
+
 async function listAssignedIssues(): Promise<MulticaBridgeResult<MulticaIssueSummary[]>> {
   const who = await resolveMemberId();
   if (!who.ok) return who;
-  const r = await runJson<{ issues?: unknown }>([
-    'issue', 'list', '--assignee-id', who.data, '--status', 'todo,in_progress', '--output', 'json',
+  const [r, projects] = await Promise.all([
+    runJson<{ issues?: unknown }>([
+      'issue', 'list', '--assignee-id', who.data, '--status', 'todo,in_progress', '--output', 'json',
+    ]),
+    resolveProjectTitles(),
   ]);
   if (!r.ok) return r;
   const raw = Array.isArray((r.data as Record<string, unknown> | null)?.issues)
@@ -174,7 +192,8 @@ async function listAssignedIssues(): Promise<MulticaBridgeResult<MulticaIssueSum
     : [];
   const issues = raw
     .map(mapIssue)
-    .filter((i): i is MulticaIssueSummary => i !== null);
+    .filter((i): i is MulticaIssueSummary => i !== null)
+    .map((i) => ({ ...i, projectTitle: i.projectId ? projects.get(i.projectId) ?? null : null }));
   return { ok: true, data: issues };
 }
 
@@ -257,3 +276,26 @@ export const multicaBridge: MulticaBridgeApi = {
   addComment,
   createIssue,
 };
+
+/** 缓存的 Multica Web app 地址（null = 已探测但不可解析）。 */
+let cachedAppUrl: string | null | undefined;
+
+/**
+ * 解析 Multica Web app 地址（「打开 issue」跳系统浏览器的落点）：
+ * 只读 ~/.multica/config.json 的 app_url 字段（缺省回退 server_url），
+ * 文件内含凭据 token——绝不记录内容、绝不外传；不可解析时返回 null（打开入口静默禁用）。
+ */
+export function resolveMulticaAppUrl(): string | null {
+  if (cachedAppUrl !== undefined) return cachedAppUrl;
+  let url: string | null = null;
+  try {
+    const file = path.join(os.homedir(), '.multica', 'config.json');
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    const candidate = toNullStr(raw.app_url) ?? toNullStr(raw.server_url);
+    if (candidate && /^https?:\/\//.test(candidate)) url = candidate.replace(/\/+$/, '');
+  } catch {
+    // 配置文件缺失/不可解析：静默降级
+  }
+  cachedAppUrl = url;
+  return url;
+}

@@ -98,6 +98,11 @@ const assistantApi: AssistantApi = {
     createList: (input) => ipcRenderer.invoke('todo:createList', input),
     updateList: (id, patch) => ipcRenderer.invoke('todo:updateList', id, patch),
     removeList: (id) => ipcRenderer.invoke('todo:removeList', id),
+    getByExternalRef: (ref) => ipcRenderer.invoke('todo:get-by-external-ref', ref),
+    multicaList: () => ipcRenderer.invoke('todo:multica-list'),
+    multicaGet: (id) => ipcRenderer.invoke('todo:multica-get', id),
+    multicaPull: (input) => ipcRenderer.invoke('todo:multica-pull', input),
+    multicaOpen: (issueId) => ipcRenderer.invoke('todo:multica-open', issueId),
     onUpdate: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         try { callback(payload as any); } catch { /* 忽略消费方异常 */ }
