@@ -664,6 +664,8 @@ export interface Todo {
   subtasks: TodoSubtask[];
   sortOrder: number;
   completedAt: string | null;
+  /** 外部系统链接，形如 multica:<issue-uuid>:<identifier>；null = 原生事项。 */
+  externalRef: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -788,9 +790,56 @@ export interface TodoApi {
    * 「到期」以 epoch 比较：date-only（YYYY-MM-DD）按本地零点计，避免 sqlite date() 的 UTC 偏差。
    */
   listDue(now: Date): Todo[];
+  /** 绑定外部链接（形如 multica:<issue-uuid>:HANJ-123）；同一 ref 已被其他事项占用时抛错。 */
+  linkExternal(id: string, ref: string): Todo;
+  /** 解除外部链接（externalRef 置 null）。 */
+  unlinkExternal(id: string): Todo;
+  /** 按外部链接精确查询（拉入防双拉的数据源）；ref 为空返回 null。 */
+  getByExternalRef(ref: string): Todo | null;
   createList(input: CreateTodoListInput): TodoList;
   updateList(id: string, patch: UpdateTodoListInput): TodoList;
   /** 删除清单；清单内事项移回收集箱。 */
   removeList(id: string): void;
   listLists(): TodoList[];
+}
+
+// ===== Multica 桥接（todo × Multica 打通）=====
+
+/** 桥接层返回的 Multica issue 摘要：投影分组与链接所需字段子集，已 camelCase 化。 */
+export interface MulticaIssueSummary {
+  id: string;
+  /** 识别号，如 HANJ-123。 */
+  identifier: string;
+  title: string;
+  status: string;
+  /** urgent / high / medium / low / none。 */
+  priority: string;
+  projectId: string | null;
+  /** 截止日期（YYYY-MM-DD），可空。 */
+  dueAt: string | null;
+  updatedAt: string;
+}
+
+/** 桥接调用结果：错误内化，永不抛出；CLI 缺失/未认证/超时一律 { ok:false, error }。 */
+export type MulticaBridgeResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+/** createIssue 入参（Stage 4 升级链路使用）。 */
+export interface CreateMulticaIssueInput {
+  title: string;
+  description?: string;
+  /** Multica 项目 UUID；不传走 CLI 默认落点。 */
+  project?: string;
+}
+
+/**
+ * multica 桥接层接口：主进程 spawn 本机 multica CLI（复用已认证凭据），
+ * todo 插件经 api.ts 出口暴露；超时 ≤15s，错误内化，Multica 不可用时静默降级。
+ */
+export interface MulticaBridgeApi {
+  /** 当前成员名下 todo/in_progress 状态的 issue（投影分组数据源）。 */
+  listAssignedIssues(): Promise<MulticaBridgeResult<MulticaIssueSummary[]>>;
+  getIssue(id: string): Promise<MulticaBridgeResult<MulticaIssueSummary>>;
+  /** 回写评论；正文尾部统一追加「——代驾驶舱回写」标注。 */
+  addComment(issueId: string, body: string): Promise<MulticaBridgeResult<null>>;
+  createIssue(input: CreateMulticaIssueInput): Promise<MulticaBridgeResult<MulticaIssueSummary>>;
 }
