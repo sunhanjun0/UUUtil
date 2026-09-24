@@ -690,6 +690,11 @@ export interface CreateTodoInput {
   listId?: string | null;
   tags?: string[];
   subtasks?: TodoSubtask[];
+  /**
+   * 创建时一步到位绑定外部链接（形如 multica:<issue-uuid>:HANJ-123，Multica ⇩ 拉入用）；
+   * 同一 ref 已被其他事项占用时 create 抛错，不产生无链接的孤儿事项。
+   */
+  externalRef?: string;
 }
 
 /** 更新事项入参：undefined = 不动；note/dueAt/listId 传 null = 清空（listId null = 移回收集箱）。 */
@@ -816,8 +821,12 @@ export interface MulticaIssueSummary {
   /** urgent / high / medium / low / none。 */
   priority: string;
   projectId: string | null;
+  /** 项目名（listAssignedIssues 经 project list 解析；getIssue 不解析恒为 null）。 */
+  projectTitle: string | null;
   /** 截止日期（YYYY-MM-DD），可空。 */
   dueAt: string | null;
+  /** issue 正文（⇩ 拉入 note 预填数据源；list/get 均携带，可空）。 */
+  description: string | null;
   updatedAt: string;
 }
 
@@ -831,6 +840,23 @@ export interface CreateMulticaIssueInput {
   /** Multica 项目 UUID；不传走 CLI 默认落点。 */
   project?: string;
 }
+
+/**
+ * ⇩ 拉入入参（Stage 2）：字段在渲染层按映射规则组装好（见 shared/todo-multica.ts），
+ * 主进程只负责 create+link 一步到位；external_ref 由主进程按 issueId/identifier 组装。
+ */
+export interface PullMulticaTodoInput {
+  issueId: string;
+  /** 识别号（HANJ-123），并入 external_ref。 */
+  identifier?: string;
+  title: string;
+  note?: string;
+  priority?: number;
+  dueAt?: string | null;
+}
+
+/** ⇩ 拉入结果：已拉入 / 数据非法等失败内化 ok:false，不抛出。 */
+export type PullMulticaTodoResult = { ok: true; todo: Todo } | { ok: false; error: string };
 
 /**
  * multica 桥接层接口：主进程 spawn 本机 multica CLI（复用已认证凭据），

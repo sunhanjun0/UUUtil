@@ -7,15 +7,23 @@
  * 以 origin=cli 发出，两边共用同一载荷形状（TodoUpdatePayload）。
  */
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import { defineInvoke } from './types';
 import type { IpcModule } from './types';
-import { api as todoApi } from '../../plugins/todo/api';
+import {
+  api as todoApi,
+  multicaBridge,
+  buildMulticaExternalRef,
+  resolveMulticaAppUrl,
+} from '../../plugins/todo/api';
 import { bus } from '../../core/event-bus';
 import type {
   CreateTodoInput,
   CreateTodoListInput,
   ListTodosOptions,
+  MulticaBridgeResult,
+  PullMulticaTodoInput,
+  PullMulticaTodoResult,
   TodoUpdatePayload,
   UpdateTodoInput,
   UpdateTodoListInput,
@@ -89,6 +97,45 @@ export const todoIpc: IpcModule = {
     defineInvoke('todo:removeList', (_event, id: string) => {
       todoApi.removeList(id);
       emitChanged({ reason: 'lists', id });
+    }),
+
+    // ===== Multica 投影（Stage 2）=====
+    // 桥接层能力暴露到渲染层：全部错误内化（ok:false），Multica 不可用不阻塞事项本体
+    defineInvoke('todo:get-by-external-ref', (_event, ref: string) => todoApi.getByExternalRef(ref)),
+    defineInvoke('todo:multica-list', () => multicaBridge.listAssignedIssues()),
+    defineInvoke('todo:multica-get', (_event, id: string) => multicaBridge.getIssue(id)),
+    // ⇩ 拉入：create+link 一步到位；重复拉入（ref 已占用）返回 ok:false 而非抛错
+    defineInvoke('todo:multica-pull', (_event, input: PullMulticaTodoInput): PullMulticaTodoResult => {
+      try {
+        const issueId = typeof input?.issueId === 'string' ? input.issueId.trim() : '';
+        if (!issueId) return { ok: false, error: 'issueId 必填' };
+        const ref = buildMulticaExternalRef(issueId, typeof input.identifier === 'string' ? input.identifier : undefined);
+        if (todoApi.getByExternalRef(ref)) return { ok: false, error: '该 issue 已拉入' };
+        const todo = todoApi.create({
+          title: input.title,
+          note: input.note,
+          priority: input.priority,
+          dueAt: input.dueAt ?? null,
+          externalRef: ref,
+        });
+        emitChanged({ reason: 'create', id: todo.id });
+        return { ok: true, todo };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    }),
+    // 打开对应 Multica issue：面板内无 Multica 视图 → 系统浏览器（实现时择可用者）
+    defineInvoke('todo:multica-open', async (_event, issueId: string): Promise<MulticaBridgeResult<null>> => {
+      const id = typeof issueId === 'string' ? issueId.trim() : '';
+      const appUrl = resolveMulticaAppUrl();
+      if (!id) return { ok: false, error: 'issueId 必填' };
+      if (!appUrl) return { ok: false, error: 'Multica app_url 不可解析' };
+      try {
+        await shell.openExternal(`${appUrl}/issues/${encodeURIComponent(id)}`);
+        return { ok: true, data: null };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
     }),
   ],
 };

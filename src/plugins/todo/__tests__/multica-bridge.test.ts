@@ -72,8 +72,10 @@ const ISSUE_RAW = {
   priority: 'high',
   project_id: 'proj-1',
   due_date: '2026-09-30',
+  description: '阶段一描述',
   updated_at: '2026-09-23T08:00:00Z',
 };
+const PROJECTS_JSON = JSON.stringify([{ id: 'proj-1', title: '个人AI建设' }]);
 
 beforeEach(async () => {
   vi.resetModules();
@@ -87,9 +89,10 @@ afterEach(() => {
 });
 
 describe('listAssignedIssues', () => {
-  it('先探测身份再按 assignee-id 拉取；参数拼装正确、字段映射 camelCase', async () => {
+  it('先探测身份再按 assignee-id 拉取；参数拼装正确、字段映射 camelCase、项目名回填', async () => {
     scriptNextSpawn({ stdout: PROFILE_JSON });
     scriptNextSpawn({ stdout: JSON.stringify({ has_more: false, issues: [ISSUE_RAW] }) });
+    scriptNextSpawn({ stdout: PROJECTS_JSON });
 
     const r = await bridge.listAssignedIssues();
 
@@ -102,30 +105,35 @@ describe('listAssignedIssues', () => {
       status: 'todo',
       priority: 'high',
       projectId: 'proj-1',
+      projectTitle: '个人AI建设',
       dueAt: '2026-09-30',
+      description: '阶段一描述',
       updatedAt: '2026-09-23T08:00:00Z',
     }]);
 
-    expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(spawnMock).toHaveBeenCalledTimes(3);
     expect(spawnMock.mock.calls[0][1]).toEqual(['user', 'profile', 'get', '--output', 'json']);
     expect(spawnMock.mock.calls[1][1]).toEqual([
       'issue', 'list', '--assignee-id', 'member-uuid-1', '--status', 'todo,in_progress', '--output', 'json',
     ]);
+    expect(spawnMock.mock.calls[2][1]).toEqual(['project', 'list', '--output', 'json']);
     // 始终以 argv 数组调 spawn（不走 shell）
     expect(spawnMock.mock.calls[0][0]).toBe('multica');
   });
 
-  it('成员 id 进程内缓存：第二次调用不再探测身份', async () => {
+  it('成员 id 与项目名录进程内缓存：第二次调用只拉 issue 列表', async () => {
     scriptNextSpawn({ stdout: PROFILE_JSON });
     scriptNextSpawn({ stdout: JSON.stringify({ issues: [] }) });
+    scriptNextSpawn({ stdout: PROJECTS_JSON });
     scriptNextSpawn({ stdout: JSON.stringify({ issues: [ISSUE_RAW] }) });
 
     await bridge.listAssignedIssues();
     const r2 = await bridge.listAssignedIssues();
 
     expect(r2.ok).toBe(true);
-    expect(spawnMock).toHaveBeenCalledTimes(3);
-    expect(spawnMock.mock.calls[2][1][0]).toBe('issue');
+    if (r2.ok) expect(r2.data[0]?.projectTitle).toBe('个人AI建设');
+    expect(spawnMock).toHaveBeenCalledTimes(4);
+    expect(spawnMock.mock.calls[3][1][0]).toBe('issue');
   });
 
   it('身份探测失败（未认证）→ 静默降级 ok:false，不继续拉取', async () => {
@@ -142,11 +150,24 @@ describe('listAssignedIssues', () => {
   it('issues 缺省 / 畸形条目被容错为空数组', async () => {
     scriptNextSpawn({ stdout: PROFILE_JSON });
     scriptNextSpawn({ stdout: JSON.stringify({ issues: [null, { no_id: true }, ISSUE_RAW] }) });
+    scriptNextSpawn({ stdout: PROJECTS_JSON });
 
     const r = await bridge.listAssignedIssues();
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.data).toHaveLength(1);
+  });
+
+  it('项目名录拉取失败：静默降级 projectTitle=null，不影响 issue 列表', async () => {
+    scriptNextSpawn({ stdout: PROFILE_JSON });
+    scriptNextSpawn({ stdout: JSON.stringify({ issues: [ISSUE_RAW] }) });
+    scriptNextSpawn({ stderr: 'project list denied', code: 1 });
+
+    const r = await bridge.listAssignedIssues();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data).toHaveLength(1);
+    expect(r.data[0]?.projectTitle).toBeNull();
   });
 });
 

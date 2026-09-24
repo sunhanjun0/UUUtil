@@ -8,6 +8,8 @@
  * Stage 5：listDue（到期巡查数据源）+ parseDueAtMs（date-only 按本地零点解析）。
  * Multica 打通 Stage 1：todos.external_ref 列（幂等迁移）+ link/unlink/getByExternalRef
  *          + multica 桥接层出口（multicaBridge，spawn 本机 CLI，错误内化静默降级）。
+ * Multica 打通 Stage 2：create 支持 externalRef（拉入 create+link 一步到位，占用先验）；
+ *          拉入的优先级/note 映射规则在 shared/todo-multica.ts（渲染层共用）。
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -263,13 +265,22 @@ export const api: TodoApi = {
     const listId = input.listId ? String(input.listId) : null;
     if (listId) assertListExists(listId);
 
+    // create+link 一步到位（Multica ⇩ 拉入）：先验占用再落库，不产生无链接孤儿
+    const externalRef = typeof input?.externalRef === 'string' && input.externalRef.trim()
+      ? input.externalRef.trim()
+      : null;
+    if (externalRef) {
+      const occupied = this.getByExternalRef(externalRef);
+      if (occupied) throw new Error(`external_ref 已链接到其他事项: ${occupied.id}`);
+    }
+
     const id = `todo_${uuidv4()}`;
     const now = nowIso();
     const db = getDatabase();
     db.run(
       `INSERT INTO todos
-       (id, title, note, status, priority, due_at, list_id, tags, subtasks, sort_order, completed_at, created_at, updated_at)
-       VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+       (id, title, note, status, priority, due_at, list_id, tags, subtasks, sort_order, completed_at, external_ref, created_at, updated_at)
+       VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
       [
         id,
         title,
@@ -280,6 +291,7 @@ export const api: TodoApi = {
         JSON.stringify(normalizeTags(input.tags)),
         JSON.stringify(normalizeSubtasks(input.subtasks)),
         nextSortOrder(listId),
+        externalRef,
         now,
         now,
       ],
@@ -538,5 +550,6 @@ export {
   multicaBridge,
   buildMulticaExternalRef,
   parseMulticaExternalRef,
+  resolveMulticaAppUrl,
   MULTICA_REWRITE_TAG,
 } from './multica-bridge';

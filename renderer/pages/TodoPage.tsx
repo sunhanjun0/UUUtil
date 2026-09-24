@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Clock, Plus, Trash2, X } from 'lucide-react';
-import type { Todo, TodoList, TodoUpdatePayload } from '../../src/shared/types';
+import type { MulticaIssueSummary, Todo, TodoList, TodoUpdatePayload } from '../../src/shared/types';
+import {
+  buildMulticaExternalRef,
+  buildMulticaPullNote,
+  mapMulticaPriority,
+} from '../../src/shared/todo-multica';
 
 /**
  * 事项管理 · 驾驶舱列表页（HANJ-77 Stage 3 中央单栏 + Stage 4 舷侧仪表台/月历/动效）
@@ -422,6 +427,60 @@ const CSS = `
 .todo-cockpit .view.date-chip { display: inline-flex; align-items: center; gap: 6px; }
 .todo-cockpit .view.date-chip svg { width: 11px; height: 11px; opacity: 0.75; }
 .todo-cockpit .view.date-chip svg:hover { opacity: 1; }
+
+/* ===== Multica 打通 Stage 2：◈ MULTICA // UPLINK 投影分组 ===== */
+.todo-cockpit .group.multica { color: var(--phos-dim); }
+.todo-cockpit .mc-refresh {
+  cursor: pointer; color: var(--ink-3); font-size: 12px; line-height: 1;
+  display: inline-flex; align-items: center; transition: color .15s ease; user-select: none;
+}
+.todo-cockpit .mc-refresh:hover { color: var(--phos); text-shadow: 0 0 8px rgba(103,232,249,.5); }
+.todo-cockpit .mc-refresh.spin { color: var(--phos); animation: todo-mc-spin 0.9s linear infinite; }
+@keyframes todo-mc-spin { to { transform: rotate(360deg); } }
+.todo-cockpit .mc-note {
+  padding: 12px 6px; font-size: 10px; letter-spacing: 0.18em; color: var(--ink-3);
+}
+.todo-cockpit .mc-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 6px; border-bottom: 1px solid var(--line);
+  cursor: pointer; transition: background .15s ease, opacity .15s ease;
+}
+.todo-cockpit .mc-row:hover { background: rgba(103, 232, 249, 0.04); }
+.todo-cockpit .mc-id {
+  flex-shrink: 0; font-size: 10px; letter-spacing: 0.08em; color: var(--phos-dim);
+  border: 1px solid var(--line); border-radius: 3px; padding: 2px 6px;
+  font-variant-numeric: tabular-nums;
+}
+.todo-cockpit .mc-title {
+  flex: 1; min-width: 0; font-size: 12.5px; color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color .15s ease;
+}
+.todo-cockpit .mc-row:hover .mc-title { color: var(--ink); }
+.todo-cockpit .mc-meta {
+  display: flex; align-items: center; gap: 9px; flex-shrink: 0;
+  font-size: 10px; color: var(--ink-3); font-variant-numeric: tabular-nums; letter-spacing: 0.05em;
+}
+.todo-cockpit .mc-pri.urgent { color: var(--red); text-shadow: 0 0 8px rgba(248,113,113,.4); }
+.todo-cockpit .mc-pri.high { color: var(--amber); text-shadow: 0 0 8px rgba(251,191,36,.3); }
+.todo-cockpit .mc-pri.med { color: var(--phos); }
+.todo-cockpit .mc-pri.low { color: var(--ink-3); }
+.todo-cockpit .mc-due.overdue { color: var(--red); text-shadow: 0 0 8px rgba(248,113,113,.4); }
+.todo-cockpit .mc-due.today { color: var(--amber); }
+.todo-cockpit .mc-proj { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-cockpit .mc-pull {
+  flex-shrink: 0; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line-strong); border-radius: 3px; color: var(--phos);
+  cursor: pointer; transition: all .15s ease; font-size: 13px; user-select: none;
+}
+.todo-cockpit .mc-pull:hover { background: rgba(103,232,249,0.12); box-shadow: 0 0 10px rgba(103,232,249,0.25); }
+.todo-cockpit .mc-pull.busy { opacity: 0.35; pointer-events: none; }
+/* 已拉入：整行灰态 + IN LOG 印记，⇩ 不再出现（不可重复拉入） */
+.todo-cockpit .mc-row.pulled { opacity: 0.42; }
+.todo-cockpit .mc-row.pulled .mc-title { color: var(--ink-3); }
+.todo-cockpit .mc-inlog {
+  flex-shrink: 0; font-size: 9px; letter-spacing: 0.14em; color: var(--green);
+  border: 1px solid rgba(52,211,153,0.35); border-radius: 3px; padding: 2px 6px; white-space: nowrap;
+}
 
 /* 窄面板保底：优先隐藏两侧舷台，中央列表独占 */
 @media (max-width: 720px) {
@@ -983,6 +1042,102 @@ function TodayOutputPanel({ done, total }: { done: number; total: number }) {
   );
 }
 
+// ===== Multica 打通 Stage 2：◈ MULTICA // UPLINK 投影分组 =====
+
+/** 投影加载状态：loading/offline 都静默降级为单行提示，不阻塞事项本体。 */
+type McStatus = 'loading' | 'offline' | 'ready';
+
+/** Multica 优先级 → 投影行徽标（none 不显示）。 */
+const MC_PRI_BADGE: Record<string, { label: string; cls: string }> = {
+  urgent: { label: 'URG', cls: 'urgent' },
+  high: { label: 'HI', cls: 'high' },
+  medium: { label: 'MED', cls: 'med' },
+  low: { label: 'LOW', cls: 'low' },
+};
+
+/** 投影行到期标签：逾期 T-Nd 红 / 今天 TODAY 琥珀 / 其余 MM-DD。 */
+function mcDueLabel(issue: MulticaIssueSummary, today: string): { text: string; cls: string } | null {
+  const due = dueDateStr(issue.dueAt);
+  if (!due) return null;
+  if (due < today) return { text: `T-${diffDays(today, due)}D`, cls: 'overdue' };
+  if (due === today) return { text: 'TODAY', cls: 'today' };
+  return { text: due.slice(5), cls: '' };
+}
+
+interface MulticaSectionProps {
+  status: McStatus;
+  issues: MulticaIssueSummary[];
+  today: string;
+  /** 已拉入的 external_ref 集合（getByExternalRef 判定）。 */
+  pulledRefs: ReadonlySet<string>;
+  /** 拉入进行中的 issue id 集合（防连点）。 */
+  pullingIds: ReadonlySet<string>;
+  onRefresh: () => void;
+  onPull: (issue: MulticaIssueSummary) => void;
+  onOpen: (issueId: string) => void;
+}
+
+/** ◈ MULTICA // UPLINK：分配给当前用户的待办 issue 投影（只读）+ ⇩ 拉入。 */
+function MulticaSection(props: MulticaSectionProps) {
+  const { status, issues, today, pulledRefs, pullingIds } = props;
+  return (
+    <>
+      <div className="group multica">
+        ◈ MULTICA // UPLINK
+        <span className="n">{status === 'ready' ? issues.length : '–'}</span>
+        <span
+          className={`mc-refresh${status === 'loading' ? ' spin' : ''}`}
+          title="刷新 MULTICA 投影"
+          onClick={props.onRefresh}
+        >
+          ↻
+        </span>
+      </div>
+      {status === 'loading' && <div className="mc-note">// UPLINK SYNC…</div>}
+      {status === 'offline' && <div className="mc-note">// UPLINK OFFLINE</div>}
+      {status === 'ready' && issues.length === 0 && (
+        <div className="mc-note">// NO SIGNALS — 无指派给你的待办 issue</div>
+      )}
+      {status === 'ready' && issues.map((issue) => {
+        const ref = buildMulticaExternalRef(issue.id, issue.identifier);
+        const pulled = pulledRefs.has(ref);
+        const pri = MC_PRI_BADGE[issue.priority];
+        const due = mcDueLabel(issue, today);
+        return (
+          <div
+            key={issue.id}
+            className={`mc-row${pulled ? ' pulled' : ''}`}
+            title="在浏览器中打开该 issue"
+            onClick={() => props.onOpen(issue.id)}
+          >
+            <span className="mc-id">{issue.identifier || '—'}</span>
+            <span className="mc-title">{issue.title}</span>
+            <span className="mc-meta">
+              {pri && <span className={`mc-pri ${pri.cls}`}>{pri.label}</span>}
+              {due && <span className={`mc-due ${due.cls}`}>{due.text}</span>}
+              {issue.projectTitle && <span className="mc-proj">{issue.projectTitle}</span>}
+            </span>
+            {pulled
+              ? <span className="mc-inlog">已拉入 IN LOG</span>
+              : (
+                <span
+                  className={`mc-pull${pullingIds.has(issue.id) ? ' busy' : ''}`}
+                  title="⇩ 拉入为本地事项"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onPull(issue);
+                  }}
+                >
+                  ⇩
+                </span>
+              )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 export default function TodoPage() {
   const [view, setView] = useState<ViewKey>('today');
   const [data, setData] = useState<Record<ViewKey, Todo[]>>({ today: [], inbox: [], all: [], done: [] });
@@ -1004,6 +1159,11 @@ export default function TodoPage() {
   const incomingTimer = useRef<number | undefined>(undefined);
   // TELEMETRY NOW 标记走秒
   const [now, setNow] = useState(() => new Date());
+  // Multica 打通 Stage 2：◈ MULTICA // UPLINK 投影分组
+  const [mcStatus, setMcStatus] = useState<McStatus>('loading');
+  const [mcIssues, setMcIssues] = useState<MulticaIssueSummary[]>([]);
+  const [mcPulledRefs, setMcPulledRefs] = useState<ReadonlySet<string>>(new Set());
+  const [mcPullingIds, setMcPullingIds] = useState<ReadonlySet<string>>(new Set());
 
   const today = todayStr();
   const [sdMain, sdDate] = useMemo(() => stardate().split(' // '), []);
@@ -1027,6 +1187,78 @@ export default function TodoPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // MULTICA 投影：tab 进入拉取一次 + 手动 ↻ 刷新；失败静默降级 OFFLINE，不阻塞事项本体。
+  // 已拉入判定逐条走 getByExternalRef（数据层唯一口径），与列表加载解耦。
+  const loadProjection = useCallback(async () => {
+    setMcStatus('loading');
+    try {
+      const r = await window.assistant.todo.multicaList();
+      if (!r.ok) {
+        setMcIssues([]);
+        setMcStatus('offline');
+        return;
+      }
+      setMcIssues(r.data);
+      setMcStatus('ready');
+      const refs = r.data.map((i) => buildMulticaExternalRef(i.id, i.identifier));
+      const linked = await Promise.all(refs.map((ref) => window.assistant.todo.getByExternalRef(ref)));
+      setMcPulledRefs(new Set(refs.filter((_, idx) => linked[idx] !== null)));
+    } catch (err) {
+      logError('Multica 投影加载失败', { error: String(err) });
+      setMcIssues([]);
+      setMcStatus('offline');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProjection();
+  }, [loadProjection]);
+
+  // ⇩ 拉入：create+link 一步到位；成功后新行走既有的滑入 + COM 灯闪动效
+  const pullMultica = async (issue: MulticaIssueSummary) => {
+    const ref = buildMulticaExternalRef(issue.id, issue.identifier);
+    if (mcPulledRefs.has(ref) || mcPullingIds.has(issue.id)) return;
+    setMcPullingIds((s) => new Set(s).add(issue.id));
+    try {
+      const r = await window.assistant.todo.multicaPull({
+        issueId: issue.id,
+        identifier: issue.identifier,
+        title: issue.title,
+        note: buildMulticaPullNote(issue),
+        priority: mapMulticaPriority(issue.priority),
+        dueAt: issue.dueAt,
+      });
+      if (r.ok) {
+        setMcPulledRefs((s) => new Set(s).add(ref));
+        setComSeq((s) => s + 1);
+        setIncomingId(r.todo.id);
+        window.clearTimeout(incomingTimer.current);
+        incomingTimer.current = window.setTimeout(() => setIncomingId(null), 1600);
+        await load();
+      } else {
+        logError('拉入 Multica issue 失败', { error: r.error, id: issue.id });
+        // 双拉口径以数据层为准：失败时重核该 ref（如已被其他窗口拉入则转灰态）
+        const linked = await window.assistant.todo.getByExternalRef(ref);
+        if (linked) setMcPulledRefs((s) => new Set(s).add(ref));
+      }
+    } catch (err) {
+      logError('拉入 Multica issue 异常', { error: String(err), id: issue.id });
+    } finally {
+      setMcPullingIds((s) => {
+        const next = new Set(s);
+        next.delete(issue.id);
+        return next;
+      });
+    }
+  };
+
+  // 行点击打开对应 Multica issue（系统浏览器；app_url 不可解析时静默记日志）
+  const openMulticaIssue = (issueId: string) => {
+    void window.assistant.todo.multicaOpen(issueId).then((r) => {
+      if (!r.ok) logError('打开 Multica issue 失败', { error: r.error, id: issueId });
+    });
+  };
 
   // CLI / 其他窗口写入时实时刷新（todo:changed → todo:update 广播）；
   // CLI 外部写入新事项时 COM 灯闪两下 + 新行滑入
@@ -1298,6 +1530,19 @@ export default function TodoPage() {
                     </React.Fragment>
                   );
                 })}
+          {/* Multica 打通 Stage 2：今日/全部视图底部的 MULTICA 投影分组 */}
+          {!dateItems && (view === 'today' || view === 'all') && (
+            <MulticaSection
+              status={mcStatus}
+              issues={mcIssues}
+              today={today}
+              pulledRefs={mcPulledRefs}
+              pullingIds={mcPullingIds}
+              onRefresh={() => void loadProjection()}
+              onPull={(issue) => void pullMultica(issue)}
+              onOpen={openMulticaIssue}
+            />
+          )}
         </div>
 
         <div className="foot">
