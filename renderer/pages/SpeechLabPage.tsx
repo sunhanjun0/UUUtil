@@ -135,6 +135,8 @@ export default function SpeechLabPage() {
       if (result.success && result.audioBase64) {
         setAudioUrl(base64ToBlobUrl(result.audioBase64, 'audio/mpeg'));
       }
+    } catch (err) {
+      setTtsResult({ success: false, error: `合成失败：${String(err)}` });
     } finally {
       setTtsBusy(false);
     }
@@ -201,6 +203,8 @@ export default function SpeechLabPage() {
       } else {
         setAsrError(result.error || '识别失败');
       }
+    } catch (err) {
+      setAsrError(`识别失败：${String(err)}`);
     } finally {
       setAsrBusy(false);
     }
